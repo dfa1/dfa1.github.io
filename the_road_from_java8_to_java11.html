@@ -437,7 +437,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6,</span>
+<span id="revnumber">version v0.6.1,</span>
 <span id="revdate">2018-10-01</span>
 </div>
 <div id="toc" class="toc">
@@ -924,11 +924,11 @@ jshell&gt; a[<span class="integer">4</span>]
 <div class="sect2">
 <h3 id="_string_lines"><code>String.lines()</code></h3>
 <div class="paragraph">
-<p>Sometimes this is very convenient: get a stream divided by line breaks:</p>
+<p>Create a <code>Stream&lt;String&gt;</code> by lazily splitting string using line separators (e.g. <code>"\n" "\r" "\r\n"</code>):</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">a</span><span class="char">\n</span><span class="content">b</span><span class="char">\n</span><span class="content">c</span><span class="char">\n</span><span class="delimiter">&quot;</span></span>.lines().toUpperCase().toArray()
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">a</span><span class="char">\n</span><span class="content">b</span><span class="char">\n</span><span class="content">c</span><span class="char">\n</span><span class="delimiter">&quot;</span></span>.lines().map(<span class="predefined-type">String</span>::toUpperCase).toArray()
 <span class="error">$</span><span class="integer">1</span> ==&gt; <span class="predefined-type">Object</span>[<span class="integer">2</span>] { <span class="string"><span class="delimiter">&quot;</span><span class="content">A</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">B</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">C }</span></span></code></pre>
 </div>
 </div>
@@ -1050,7 +1050,7 @@ jshell&gt; fullSpace.strip()
 </ol>
 </div>
 <div class="paragraph">
-<p>Furthermore let&#8217;s cover quickly <code>stripLeading()</code>/<code>stripTrailing()</code>:</p>
+<p>Finally let&#8217;s cover quickly <code>stripLeading()</code>/<code>stripTrailing()</code>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1137,7 +1137,12 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 </ul>
 </div>
 <div class="paragraph">
-<p>it is very convenient to use <code>java.nio.charset.StandardCharsets</code>, <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html" class="bare">https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html</a></p>
+<p>It is very convenient to use <code>java.nio.charset.StandardCharsets</code> (see <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html">javadoc</a>):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">String</span> content = Files.readString(Path.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">main.adoc</span><span class="delimiter">&quot;</span></span>), StandardCharsets.UTF_8)</code></pre>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -1173,7 +1178,9 @@ a path string. Please note that this API is following the <em>Item 42</em> of <e
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">static</span> Path        of(<span class="predefined-type">String</span> first, <span class="predefined-type">String</span>... more)</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java"><span class="directive">static</span> Path of(<span class="predefined-type">String</span> first, <span class="predefined-type">String</span>... more) {
+    ...
+}</code></pre>
 </div>
 </div>
 </div>
@@ -1955,13 +1962,13 @@ The purpose of the flag is to store which encoding to use:</p>
 <h2 id="_appendix_upgrade_to_java8">Appendix: Upgrade to Java8</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Since some project are stuck in Java7 let&#8217;s quickly cover JDK8.
-The main project were:</p>
+<p>Since some projects and products are stuck in Java7 let&#8217;s quickly cover JDK8.
+The main features were:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Project Lambda (lambda and streams)  <a href="https://openjdk.java.net/projects/lambda/" class="bare">https://openjdk.java.net/projects/lambda/</a></p>
+<p>Project Lambda (lambda and streams) <a href="https://openjdk.java.net/projects/lambda/" class="bare">https://openjdk.java.net/projects/lambda/</a></p>
 </li>
 <li>
 <p>ThreeTen (new date/time library) <a href="https://openjdk.java.net/projects/threeten/" class="bare">https://openjdk.java.net/projects/threeten/</a></p>
@@ -1969,7 +1976,7 @@ The main project were:</p>
 </ul>
 </div>
 <div class="paragraph">
-<p>Nevertheless the are hidden gem in this release that simplifies a lot certain tasks.</p>
+<p>Nevertheless there are hidden gems in this release, that often are ignored.</p>
 </div>
 <div class="sect2">
 <h3 id="_java_io_uncheckedioexception"><code>java.io.UncheckedIOException</code></h3>
@@ -2053,8 +2060,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6<br>
-Last updated 2018-10-01 20:42:03 CEST
+Version v0.6.1<br>
+Last updated 2018-10-01 21:24:17 CEST
 </div>
 </div>
 </body>
