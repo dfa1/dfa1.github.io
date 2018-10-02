@@ -437,8 +437,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6.1,</span>
-<span id="revdate">2018-10-01</span>
+<span id="revnumber">version v0.6.2,</span>
+<span id="revdate">2018-10-02</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -450,9 +450,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_license">License</a></li>
 </ul>
 </li>
-<li><a href="#_upgrade_to_java11">Upgrade to Java11</a></li>
-<li><a href="#_which_jdk">Which JDK?</a>
+<li><a href="#_upgrade_to_java11">Upgrade to Java11</a>
 <ul class="sectlevel2">
+<li><a href="#_which_jdk">Which JDK?</a></li>
 <li><a href="#_solving_migration_problems">Solving migration problems</a></li>
 <li><a href="#_launch_single_file_source_code_programs">Launch Single-File Source-Code Programs</a></li>
 <li><a href="#_java_net_http"><code>java.net.http</code></a></li>
@@ -570,6 +570,9 @@ style:</p>
 <h2 id="_upgrade_to_java11">Upgrade to Java11</h2>
 <div class="sectionbody">
 <div class="paragraph">
+<p><a href="https://jdk.java.net/11/release-notes" class="bare">https://jdk.java.net/11/release-notes</a></p>
+</div>
+<div class="paragraph">
 <p>Java11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as possible to this
 version of Java. More details on the LTS releases can be found at <a href="https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html" class="bare">https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html</a>.</p>
 </div>
@@ -596,16 +599,10 @@ version of Java. More details on the LTS releases can be found at <a href="https
 <li>
 <p>removal of JavaFX: the FX libraries have moved to the OpenJFX project</p>
 </li>
-<li>
-<p>official relese notes: <a href="https://jdk.java.net/11/release-notes" class="bare">https://jdk.java.net/11/release-notes</a></p>
-</li>
 </ul>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_which_jdk">Which JDK?</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="_which_jdk">Which JDK?</h3>
 <div class="paragraph">
 <p>Since <a href="https://blog.joda.org/2018/09/do-not-fall-into-oracles-java-11-trap.htmlOracle">JDK11 is a commercial
 product</a>, to use it in production you have to pay Oracle, details here: <a href="https://www.oracle.com/technetwork/java/javaseproducts/overview/javasesubscriptionfaq-4891443.html" class="bare">https://www.oracle.com/technetwork/java/javaseproducts/overview/javasesubscriptionfaq-4891443.html</a>.</p>
@@ -613,6 +610,7 @@ product</a>, to use it in production you have to pay Oracle, details here: <a hr
 <div class="paragraph">
 <p>However, there are free, zero-cost, alteratives: <a href="https://jdk.java.net/11/">OpenJDK binaries</a> with related <a href="https://hub.docker.com/_/openjdk/">docker images</a>. Checkout also the <a href="https://adoptopenjdk.net/index.html">adoptopenjdk</a> project, that provides prebuilt JDK binaries as well as <a href="https://hub.docker.com/u/adoptopenjdk">docker images</a>.
 More details can be found <a href="https://blog.joda.org/2018/09/time-to-look-beyond-oracles-jdk.html" class="bare">https://blog.joda.org/2018/09/time-to-look-beyond-oracles-jdk.html</a>.</p>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_solving_migration_problems">Solving migration problems</h3>
@@ -681,7 +679,7 @@ hello world!</code></pre>
 <div class="colist arabic">
 <ol>
 <li>
-<p>class name and file name must be match</p>
+<p>class name and file name must match</p>
 </li>
 <li>
 <p>two separate steps: compile and run</p>
@@ -789,11 +787,11 @@ Let&#8217;s test it with curl:</p>
 </div>
 </div>
 <div class="paragraph">
-<p>Let&#8217;s try simulating a busy web server, that delays each requests by 5 seconds, whereas our client timeouts after 1 second:</p>
+<p>Let&#8217;s try simulating a busy web server, that delays each request by 2 seconds (whereas our client timeouts after 1 second):</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>dfa@aman:~ $ java java11_http_client.java http://localhost/delay/5
+<pre>dfa@aman:~ $ java java11_http_client.java http://localhost/delay/2
 Exception in thread "main" java.net.http.HttpTimeoutException: request timed out <b class="conum">(1)</b>
 	at java.net.http/jdk.internal.net.http.HttpClientImpl.send(HttpClientImpl.java:559)
 	at java.net.http/jdk.internal.net.http.HttpClientFacade.send(HttpClientFacade.java:119)
@@ -803,7 +801,7 @@ Exception in thread "main" java.net.http.HttpTimeoutException: request timed out
 <div class="colist arabic">
 <ol>
 <li>
-<p>as expected a timed out is triggered client side</p>
+<p>as expected a timeout is triggered on the client client side</p>
 </li>
 </ol>
 </div>
@@ -884,7 +882,7 @@ var ws = client.newWebSocketBuilder().buildAsync(uri, listener);</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> a = {<span class="integer">1</span>}
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> a = { <span class="integer">1</span> }
 a ==&gt; <span class="type">int</span>[<span class="integer">1</span>] { <span class="integer">1</span> }
 
 jshell&gt; a[<span class="integer">4</span>]
@@ -893,11 +891,11 @@ jshell&gt; a[<span class="integer">4</span>]
 </div>
 </div>
 <div class="paragraph">
-<p>In previous Java versions we have a much more cryptic message:</p>
+<p>Before this change the message was much more cryptic:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> a ={<span class="integer">1</span>}
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> a = { <span class="integer">1</span> }
 a ==&gt; <span class="type">int</span>[<span class="integer">1</span>] { <span class="integer">1</span> }
 
 jshell&gt; a[<span class="integer">4</span>]
@@ -1091,7 +1089,7 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 <div class="colist arabic">
 <ol>
 <li>
-<p>comparing a <code>StringBuilder</code> with <code>StringBuffer</code> yields 0 (they have the same content)</p>
+<p>comparing a <code>StringBuilder</code> with <code>StringBuffer</code> yields 0</p>
 </li>
 <li>
 <p>ditto for comparing a <code>String</code> with <code>StringBuffer</code></p>
@@ -1137,11 +1135,11 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 </ul>
 </div>
 <div class="paragraph">
-<p>It is very convenient to use <code>java.nio.charset.StandardCharsets</code> (see <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html">javadoc</a>):</p>
+<p>It is very convenient to use <code>java.nio.charset.StandardCharsets</code> (introduced in JDK7, see <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html">javadoc</a>):</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">String</span> content = Files.readString(Path.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">main.adoc</span><span class="delimiter">&quot;</span></span>), StandardCharsets.UTF_8)</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">String</span> content = Files.readString(Path.of(<span class="string"><span class="delimiter">&quot;</span><span class="content">main.adoc</span><span class="delimiter">&quot;</span></span>), StandardCharsets.UTF_8);</code></pre>
 </div>
 </div>
 </div>
@@ -1193,8 +1191,7 @@ a path string. Please note that this API is following the <em>Item 42</em> of <e
 <p>This release includes combined support for both <em>Unicode 9.0</em> as well as <em>Unicode 10.0</em>.</p>
 </div>
 <div class="paragraph">
-<p>By now it is possible to use Bitcoin, since the Bitcoin sign is part of <em>Unicode 10.0</em>
-(released June 2017) with code point <code>U+20BF</code>.</p>
+<p>By now it is possible to use the Bitcoin sign (code point <code>U+20BF</code>) released on June 2017 as part of  <em>Unicode 10.0</em>.</p>
 </div>
 </div>
 <div class="sect2">
@@ -1203,7 +1200,7 @@ a path string. Please note that this API is following the <em>Item 42</em> of <e
 <p><a href="https://openjdk.java.net/jeps/309" class="bare">https://openjdk.java.net/jeps/309</a></p>
 </div>
 <div class="paragraph">
-<p>This is mostly for compilers that target the JVM however it could have interesting ripples in the
+<p>This is mostly for compilers that target the JVM. However it could have interesting ripples in the
 whole ecosystem, as <code>invokedynamic</code> did.</p>
 </div>
 </div>
@@ -1213,11 +1210,16 @@ whole ecosystem, as <code>invokedynamic</code> did.</p>
 <h2 id="_upgrade_to_java10">Upgrade to Java10</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>This is the big new feature of Java 10, introduced by <a href="https://openjdk.java.net/jeps/286" class="bare">https://openjdk.java.net/jeps/286</a>
-There are also other important features:</p>
+<p><a href="http://openjdk.java.net/projects/jdk/10/" class="bare">http://openjdk.java.net/projects/jdk/10/</a></p>
+</div>
+<div class="paragraph">
+<p>Main features:</p>
 </div>
 <div class="ulist">
 <ul>
+<li>
+<p>JEP 286 local type inference</p>
+</li>
 <li>
 <p>JEP 304 garbage collector interface</p>
 </li>
@@ -1249,6 +1251,12 @@ There are also other important features:</p>
 </div>
 <div class="sect2">
 <h3 id="_local_type_inference">local type inference</h3>
+<div class="paragraph">
+<p><a href="https://openjdk.java.net/jeps/286" class="bare">https://openjdk.java.net/jeps/286</a></p>
+</div>
+<div class="paragraph">
+<p>This is the big new feature of Java10.</p>
+</div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">HashMap</span>&lt;<span class="predefined-type">String</span>, <span class="predefined-type">String</span>&gt; a = <span class="keyword">new</span> <span class="predefined-type">HashMap</span>&lt;&gt;();
@@ -1257,7 +1265,7 @@ var b = <span class="keyword">new</span> <span class="predefined-type">HashMap</
 </div>
 </div>
 <div class="paragraph">
-<p>Ofter using var is quite convenient:</p>
+<p>Ofter using <code>var</code> is quite convenient:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1284,21 +1292,48 @@ var map2 = <span class="predefined-type">Map</span>.copyOf(map); <b class="conum
 </div>
 <div class="paragraph">
 <p>It is important to know that <code>var</code> is not a keyword, it is a special type: in this way you can continue
-to use var as variable name or method name (see section "3.9" of <em>The Java Language Specification, Java SE 11 Edition</em>).</p>
+to use var as variable name or method name (see section "3.9" of <em>The Java Language Specification, Java SE 11 Edition</em>):</p>
 </div>
-<div class="paragraph">
-<p>Now it is possible to express things not possible before:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; var var = <span class="integer">1</span> <b class="conum">(1)</b>
+var ==&gt; <span class="integer">1</span>
+
+jshell&gt; <span class="type">class</span> <span class="class">var</span> { } <b class="conum">(2)</b>
+|  <span class="exception">Error</span>:
+|  <span class="string"><span class="delimiter">'</span><span class="content">var</span><span class="delimiter">'</span></span> not allowed here
+|    as of release <span class="integer">10</span>, <span class="string"><span class="delimiter">'</span><span class="content">var</span><span class="delimiter">'</span></span> is a restricted local variable type and cannot be used <span class="keyword">for</span> type declarations
+|  <span class="type">class</span> <span class="class">var</span> { }</code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>still possible to use <code>var</code> as variable name</p>
+</li>
+<li>
+<p>not possible anymore to use <code>var</code> as <code>class</code> or <code>interface</code></p>
+</li>
+</ol>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+now it is possible to use anonymous types, this was not possible before:
+</td>
+</tr>
+</table>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java">var a = <span class="keyword">new</span> <span class="predefined-type">Object</span>() {
-
    <span class="type">void</span> m() {
-
    }
-
 };
-
 a.m(); <b class="conum">(1)</b></code></pre>
 </div>
 </div>
@@ -1510,6 +1545,9 @@ jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBe
 <h2 id="_upgrade_to_java9">Upgrade to Java9</h2>
 <div class="sectionbody">
 <div class="paragraph">
+<p><a href="http://openjdk.java.net/projects/jdk9/" class="bare">http://openjdk.java.net/projects/jdk9/</a></p>
+</div>
+<div class="paragraph">
 <p>Java9 delivers an impressive set of features, by far the most important are:</p>
 </div>
 <div class="ulist">
@@ -1520,18 +1558,23 @@ jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBe
 <li>
 <p>JShell <a href="https://openjdk.java.net/jeps/222" class="bare">https://openjdk.java.net/jeps/222</a></p>
 </li>
-<li>
-<p>incubating new HTTP API <a href="https://openjdk.java.net/jeps/110" class="bare">https://openjdk.java.net/jeps/110</a></p>
-</li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Describing any of these items is beyond the scope of this document.
-By the way it is important to say that  <em>you don’t need modules to run on Java 9</em>.</p>
+<p>Describing any of these items is beyond the scope of this document.</p>
 </div>
-<div class="paragraph">
-<p>For the complete list of features is available at <a href="https://openjdk.java.net/projects/jdk9/" class="bare">https://openjdk.java.net/projects/jdk9/</a>
-but let&#8217;s dig some important API changes.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+it is important to say that <strong>you don’t need modules to run on Java9</strong>, classpath is
+still supported.
+</td>
+</tr>
+</table>
 </div>
 <div class="sect2">
 <h3 id="_immutable_collections">Immutable collections</h3>
@@ -2060,8 +2103,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6.1<br>
-Last updated 2018-10-01 21:24:17 CEST
+Version v0.6.2<br>
+Last updated 2018-10-02 08:30:40 CEST
 </div>
 </div>
 </body>
