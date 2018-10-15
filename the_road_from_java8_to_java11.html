@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 1.5.7.1">
 <meta name="author" content="Davide Angelocola">
-<title>The road from Java8 to Java11</title>
+<title>The road from Java 8 to Java 11</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /* Asciidoctor default stylesheet | MIT License | http://asciidoctor.org */
@@ -433,12 +433,12 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </head>
 <body class="book">
 <div id="header">
-<h1>The road from Java8 to Java11</h1>
+<h1>The road from Java 8 to Java 11</h1>
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6.3,</span>
-<span id="revdate">2018-10-03</span>
+<span id="revnumber">version v0.6.4,</span>
+<span id="revdate">2018-10-15</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -450,7 +450,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_license">License</a></li>
 </ul>
 </li>
-<li><a href="#_upgrade_to_java11">Upgrade to Java11</a>
+<li><a href="#_upgrade_to_java_11">Upgrade to Java 11</a>
 <ul class="sectlevel2">
 <li><a href="#_which_jdk">Which JDK?</a></li>
 <li><a href="#_solving_migration_problems">Solving migration problems</a></li>
@@ -473,7 +473,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_dynamic_class_file_constants">Dynamic Class-File Constants</a></li>
 </ul>
 </li>
-<li><a href="#_upgrade_to_java10">Upgrade to Java10</a>
+<li><a href="#_upgrade_to_java_10">Upgrade to Java 10</a>
 <ul class="sectlevel2">
 <li><a href="#_local_type_inference">local type inference</a></li>
 <li><a href="#_docker_awareness">Docker awareness</a></li>
@@ -482,7 +482,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_runtimemxbean_getpid"><code>RuntimeMXBean.getPid()</code></a></li>
 </ul>
 </li>
-<li><a href="#_upgrade_to_java9">Upgrade to Java9</a>
+<li><a href="#_upgrade_to_java_9">Upgrade to Java 9</a>
 <ul class="sectlevel2">
 <li><a href="#_immutable_collections">Immutable collections</a></li>
 <li><a href="#_java_util_optional_stream"><code>java.util.Optional.stream()</code></a></li>
@@ -496,7 +496,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_compact_strings">Compact Strings</a></li>
 </ul>
 </li>
-<li><a href="#_appendix_upgrade_to_java8">Appendix: Upgrade to Java8</a>
+<li><a href="#_appendix_upgrade_to_java_8">Appendix: Upgrade to Java 8</a>
 <ul class="sectlevel2">
 <li><a href="#_java_io_uncheckedioexception"><code>java.io.UncheckedIOException</code></a></li>
 <li><a href="#_stampedlocks"><code>StampedLocks</code></a></li>
@@ -514,15 +514,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_introduction">Introduction</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>As Java developers we will very busy in the following months upgrading our projects and products to
-newest Java releases. It will be a slow, incremental process, especially regarding the upgrade from classpath
-to the module path and new tooling. This document tries to summarize new features in a very minimalistic
-style:</p>
+<p>As Java developers, we will busy in the upcoming months, upgrading our projects and products to
+the newest Java releases. It will be a slow, incremental process, especially regarding the migration
+from <code>classpath</code> to the <code>modulepath</code>.</p>
+</div>
+<div class="paragraph">
+<p>This document tries to summarize new features in a very minimalistic style:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>focus is on the language level changes, secondarily on deploy/production</p>
+<p>focus is on the language level changes, secondarily on deploy/production features</p>
 </li>
 <li>
 <p>use standard <strong>Java Class Library</strong> as much as possible</p>
@@ -567,14 +569,14 @@ style:</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_upgrade_to_java11">Upgrade to Java11</h2>
+<h2 id="_upgrade_to_java_11">Upgrade to Java 11</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p><a href="https://jdk.java.net/11/release-notes" class="bare">https://jdk.java.net/11/release-notes</a></p>
 </div>
 <div class="paragraph">
-<p>Java11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as possible to this
-version of Java. More details on the LTS releases can be found at <a href="https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html" class="bare">https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html</a>.</p>
+<p>Java 11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as possible to this
+version. More details on the LTS releases can be found at <a href="https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html" class="bare">https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html</a>.</p>
 </div>
 <div class="paragraph">
 <p>The main feature are:</p>
@@ -719,7 +721,7 @@ hello world!</code></pre>
 <p><a href="https://openjdk.java.net/groups/net/httpclient/intro.html" class="bare">https://openjdk.java.net/groups/net/httpclient/intro.html</a></p>
 </div>
 <div class="paragraph">
-<p>Introduced in Java9, and promoted from incubator in Java11. This is a somewhat big API and it is
+<p>Introduced in Java 9, and promoted from incubator in Java 11. This is a somewhat big API and it is
 a huge step from <code>java.net.URLConnection</code>.</p>
 </div>
 <div class="paragraph">
@@ -992,7 +994,7 @@ jshell&gt; <span class="string"><span class="delimiter">&quot;</span><span class
 </div>
 </div>
 <div class="paragraph">
-<p>In this version of JDK it is possible to just use <code>String.isBlank</code>:</p>
+<p>In this version of Java it is possible to just use <code>String.isBlank</code>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1135,7 +1137,7 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 </ul>
 </div>
 <div class="paragraph">
-<p>It is very convenient to use <code>java.nio.charset.StandardCharsets</code> (introduced in JDK7, see <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html">javadoc</a>):</p>
+<p>It is very convenient to use <code>java.nio.charset.StandardCharsets</code> (introduced in Java 7, see <a href="https://docs.oracle.com/javase/7/docs/api/java/nio/charset/StandardCharsets.html">javadoc</a>):</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1207,7 +1209,7 @@ whole ecosystem, as <code>invokedynamic</code> did.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_upgrade_to_java10">Upgrade to Java10</h2>
+<h2 id="_upgrade_to_java_10">Upgrade to Java 10</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p><a href="http://openjdk.java.net/projects/jdk/10/" class="bare">http://openjdk.java.net/projects/jdk/10/</a></p>
@@ -1242,7 +1244,7 @@ whole ecosystem, as <code>invokedynamic</code> did.</p>
 <p>JEP 314 unicode extentions</p>
 </li>
 <li>
-<p>JEP 319 root certificates, to easy migration from oracle JDK &#8594; open JDK</p>
+<p>JEP 319 root certificates, to easy migration from Oracle JDK &#8594; OpenJDK</p>
 </li>
 <li>
 <p>removal of <code>policytool</code></p>
@@ -1255,7 +1257,7 @@ whole ecosystem, as <code>invokedynamic</code> did.</p>
 <p><a href="https://openjdk.java.net/jeps/286" class="bare">https://openjdk.java.net/jeps/286</a></p>
 </div>
 <div class="paragraph">
-<p>This is the big new feature of Java10.</p>
+<p>This is the big new feature of Java 10.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1378,7 +1380,7 @@ $1 ==&gt; 4 <b class="conum">(2)</b></pre>
 </div>
 <div class="paragraph">
 <p>Before this release JVM was not aware of this <code>--cpus 1</code>, so this is why JVM sees 4 CPUs.
-Whereas in Java10:</p>
+Whereas in Java 10:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1542,13 +1544,13 @@ jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBe
 </div>
 </div>
 <div class="sect1">
-<h2 id="_upgrade_to_java9">Upgrade to Java9</h2>
+<h2 id="_upgrade_to_java_9">Upgrade to Java 9</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p><a href="http://openjdk.java.net/projects/jdk9/" class="bare">http://openjdk.java.net/projects/jdk9/</a></p>
 </div>
 <div class="paragraph">
-<p>Java9 delivers an impressive set of features, by far the most important are:</p>
+<p>Java 9 delivers an impressive set of features, by far the most important are:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -1570,7 +1572,7 @@ jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBe
 <div class="title">Note</div>
 </td>
 <td class="content">
-it is important to say that <strong>you don’t need modules to run on Java9</strong>, classpath is
+it is important to say that <strong>you don’t need modules to run on Java 9</strong>, classpath is
 still supported.
 </td>
 </tr>
@@ -1705,7 +1707,7 @@ to build an unmodificableList/Set/Map.</p>
 </div>
 </div>
 <div class="paragraph">
-<p>in Java8:</p>
+<p>in Java 8:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1726,7 +1728,7 @@ to build an unmodificableList/Set/Map.</p>
 </ol>
 </div>
 <div class="paragraph">
-<p>in Java9 it is possible to write:</p>
+<p>in Java 9 it is possible to write:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1806,7 +1808,7 @@ Additionally a security check is performed on creation of the <code>StackWalker<
 </div>
 <div class="paragraph">
 <p>The small language changes included in Project Coin were low hanging fruits but neverthless the project was
-quite successful. Java9 introduces the following small changes:</p>
+quite successful. Java 9 introduces the following small changes:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -2002,10 +2004,10 @@ The purpose of the flag is to store which encoding to use:</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_appendix_upgrade_to_java8">Appendix: Upgrade to Java8</h2>
+<h2 id="_appendix_upgrade_to_java_8">Appendix: Upgrade to Java 8</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Since some projects and products are stuck in Java7 let&#8217;s quickly cover JDK8.
+<p>Since some projects and products are stuck in Java 7 let&#8217;s quickly cover Java 8.
 The main features were:</p>
 </div>
 <div class="ulist">
@@ -2103,8 +2105,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6.3<br>
-Last updated 2018-10-03 20:48:58 CEST
+Version v0.6.4<br>
+Last updated 2018-10-15 09:00:39 CEST
 </div>
 </div>
 </body>
