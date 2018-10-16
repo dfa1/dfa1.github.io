@@ -437,8 +437,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6.4,</span>
-<span id="revdate">2018-10-15</span>
+<span id="revnumber">version v0.6.5,</span>
+<span id="revdate">2018-10-16</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -514,12 +514,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_introduction">Introduction</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>As Java developers, we will busy in the upcoming months, upgrading our projects and products to
-the newest Java releases. It will be a slow, incremental process, especially regarding the migration
-from <code>classpath</code> to the <code>modulepath</code>.</p>
-</div>
-<div class="paragraph">
-<p>This document tries to summarize new features in a very minimalistic style:</p>
+<p>As Java developers, we will be busy in the upcoming months upgrading to the newest Java releases.
+It will be a slow, incremental process, especially regarding the migration
+from <code>classpath</code> to the <code>modulepath</code>. This document tries to summarize new features in a very
+minimalistic style:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -576,10 +574,7 @@ from <code>classpath</code> to the <code>modulepath</code>.</p>
 </div>
 <div class="paragraph">
 <p>Java 11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as possible to this
-version. More details on the LTS releases can be found at <a href="https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html" class="bare">https://blog.joda.org/2018/08/java-is-still-available-at-zero-cost.html</a>.</p>
-</div>
-<div class="paragraph">
-<p>The main feature are:</p>
+version. These are the main features of Java 11:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -625,7 +620,7 @@ More details can be found <a href="https://blog.joda.org/2018/09/time-to-look-be
 <p>removal of <code>Thread.destroy()</code> and <code>Thread.stop(Throwable)</code> methods, see <a href="https://bugs.openjdk.java.net/browse/JDK-8204243" class="bare">https://bugs.openjdk.java.net/browse/JDK-8204243</a></p>
 </li>
 <li>
-<p>removal of <code>com.sun.awt.AWTUtilities</code> Class, see <a href="https://bugs.openjdk.java.net/browse/JDK-8200149" class="bare">https://bugs.openjdk.java.net/browse/JDK-8200149</a></p>
+<p>removal of <code>com.sun.awt.AWTUtilities</code> class, see <a href="https://bugs.openjdk.java.net/browse/JDK-8200149" class="bare">https://bugs.openjdk.java.net/browse/JDK-8200149</a></p>
 </li>
 <li>
 <p>removal of removal of <code>sun.misc.Unsafe.defineClass</code>, see <a href="https://bugs.openjdk.java.net/browse/JDK-8193033" class="bare">https://bugs.openjdk.java.net/browse/JDK-8193033</a></p>
@@ -636,7 +631,8 @@ More details can be found <a href="https://blog.joda.org/2018/09/time-to-look-be
 </ul>
 </div>
 <div class="paragraph">
-<p>Several packages, such as JAXB, are not provided by the JDK anymore so it is required to provide an external dependency for them.</p>
+<p>For example, let&#8217;s start from JEP 320. Several packages, such as JAXB, are not provided by the JDK
+anymore so it is required to provide an external dependency for them.</p>
 </div>
 <div class="paragraph">
 <p>For example using JAXB in an Apache Maven just add:</p>
@@ -663,6 +659,9 @@ More details can be found <a href="https://blog.joda.org/2018/09/time-to-look-be
 <h3 id="_launch_single_file_source_code_programs">Launch Single-File Source-Code Programs</h3>
 <div class="paragraph">
 <p><a href="https://openjdk.java.net/jeps/330" class="bare">https://openjdk.java.net/jeps/330</a></p>
+</div>
+<div class="paragraph">
+<p>Historically to run a Java program we had to:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -721,8 +720,8 @@ hello world!</code></pre>
 <p><a href="https://openjdk.java.net/groups/net/httpclient/intro.html" class="bare">https://openjdk.java.net/groups/net/httpclient/intro.html</a></p>
 </div>
 <div class="paragraph">
-<p>Introduced in Java 9, and promoted from incubator in Java 11. This is a somewhat big API and it is
-a huge step from <code>java.net.URLConnection</code>.</p>
+<p>Introduced in Java 9, and promoted from incubator in Java 11. This is a rather big API and it is
+a huge step forward from <code>java.net.URLConnection</code>.</p>
 </div>
 <div class="paragraph">
 <p>Let&#8217;s start with an example with <code>httpbin</code>:</p>
@@ -737,8 +736,10 @@ a huge step from <code>java.net.URLConnection</code>.</p>
 </div>
 </div>
 <div class="paragraph">
-<p>this container exposes well-known resources, check <a href="https://www.kennethreitz.org/essays/httpbin" class="bare">https://www.kennethreitz.org/essays/httpbin</a> for reference.
-Let&#8217;s test it with curl:</p>
+<p>this container exposes well-known resources, check <a href="https://www.kennethreitz.org/essays/httpbin" class="bare">https://www.kennethreitz.org/essays/httpbin</a> for reference.</p>
+</div>
+<div class="paragraph">
+<p>Let&#8217;s test it with curl:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -986,7 +987,36 @@ jshell&gt; <span class="string"><span class="delimiter">&quot;</span><span class
 <p><a href="https://bugs.openjdk.java.net/browse/JDK-8200437" class="bare">https://bugs.openjdk.java.net/browse/JDK-8200437</a></p>
 </div>
 <div class="paragraph">
-<p>This is correct but too technical, and perhaps the intent is not clear:</p>
+<p>This is a Unicode-aware alternative to <code>isEmpty()</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; var halfSpace = <span class="string"><span class="delimiter">&quot;</span><span class="char">\u0020</span><span class="delimiter">&quot;</span></span>
+halfSpace ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content"> </span><span class="delimiter">&quot;</span></span>
+
+jshell&gt; var fullSpace = <span class="string"><span class="delimiter">&quot;</span><span class="char">\u3000</span><span class="delimiter">&quot;</span></span>
+fullSpace ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">　</span><span class="delimiter">&quot;</span></span>
+
+jshell&gt; halfSpace.trim().isEmpty()
+<span class="error">$</span><span class="integer">1</span> ==&gt; <span class="predefined-constant">true</span> <b class="conum">(1)</b>
+
+jshell&gt; fullSpace.trim().isEmpty()
+<span class="error">$</span><span class="integer">2</span> ==&gt; <span class="predefined-constant">false</span> <b class="conum">(2)</b></code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>working as expected</p>
+</li>
+<li>
+<p>not working as expected</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>To fix this problem let&#8217;s use <code>Character.isWhitespace</code> method, that is aware of the different types of
+spaces:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -994,7 +1024,10 @@ jshell&gt; <span class="string"><span class="delimiter">&quot;</span><span class
 </div>
 </div>
 <div class="paragraph">
-<p>In this version of Java it is possible to just use <code>String.isBlank</code>:</p>
+<p>This is correct but too technical and, perhaps, the intent is not clear:</p>
+</div>
+<div class="paragraph">
+<p>As per Java 11 it is possible to just use <code>String.isBlank</code>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1011,6 +1044,19 @@ jshell&gt; fullSpace.repeat(<span class="integer">10</span>).isBlank()
 <span class="error">$</span><span class="integer">2</span> ==&gt; <span class="predefined-constant">true</span></code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p>Be aware that there are surprising results around the definition of <a href="https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/lang/Character.html#isWhitespace(int)"><code>Character.isWhitespace</code></a>, such as
+non-breaking spaces or newlines:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; var nonBreakingSpace = <span class="string"><span class="delimiter">&quot;</span><span class="char">\u00A0</span><span class="delimiter">&quot;</span></span>
+nonBreakingSpace ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content"> </span><span class="delimiter">&quot;</span></span>
+
+jshell&gt; nonBreakingSpace.isBlank()
+<span class="error">$</span><span class="integer">1</span> ==&gt; <span class="predefined-constant">false</span></code></pre>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_string_strip"><code>String.strip()</code></h3>
@@ -1019,7 +1065,7 @@ jshell&gt; fullSpace.repeat(<span class="integer">10</span>).isBlank()
 </div>
 <div class="paragraph">
 <p>While almost the same as <code>trim()</code>/<code>trimLeft()</code>/<code>trimRight()</code>, this takes full-width spaces as a
-space (0x20 ASCII character). This new method is Unicode-aware, by using <code>Character.isWhitespace()</code>.</p>
+space (0x20 ASCII character).</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2105,8 +2151,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6.4<br>
-Last updated 2018-10-15 09:00:39 CEST
+Version v0.6.5<br>
+Last updated 2018-10-16 08:51:10 CEST
 </div>
 </div>
 </body>
