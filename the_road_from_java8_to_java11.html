@@ -437,8 +437,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6.5,</span>
-<span id="revdate">2018-10-16</span>
+<span id="revnumber">version v0.6.6,</span>
+<span id="revdate">2018-10-19</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -457,7 +457,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_launch_single_file_source_code_programs">Launch Single-File Source-Code Programs</a></li>
 <li><a href="#_java_net_http"><code>java.net.http</code></a></li>
 <li><a href="#_security">Security</a></li>
-<li><a href="#_var_in_lambda">var in lambda</a></li>
+<li><a href="#_var_in_lambda"><code>var</code> in lambda</a></li>
 <li><a href="#_optional_isempty"><code>Optional.isEmpty()</code></a></li>
 <li><a href="#_arrayindexoutofbounds"><code>ArrayIndexOutOfBounds</code></a></li>
 <li><a href="#_character_tostringint"><code>Character.toString(int)</code></a></li>
@@ -475,7 +475,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li><a href="#_upgrade_to_java_10">Upgrade to Java 10</a>
 <ul class="sectlevel2">
-<li><a href="#_local_type_inference">local type inference</a></li>
+<li><a href="#_local_type_inference">Local type inference</a></li>
 <li><a href="#_docker_awareness">Docker awareness</a></li>
 <li><a href="#_new_javadoc_summary_tag">new javadoc <code>@summary</code> tag</a></li>
 <li><a href="#_java_io_reader_transfertowriter"><code>java.io.Reader.transferTo(Writer)</code></a></li>
@@ -489,7 +489,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_stream_takewhilestream_dropwhile"><code>Stream.takeWhile()</code>/<code>Stream.dropWhile()</code></a></li>
 <li><a href="#_stack_walk_api">Stack walk API</a></li>
 <li><a href="#_milling_project_coin">Milling Project Coin</a></li>
-<li><a href="#_version">Version</a></li>
+<li><a href="#_java_lang_runtime_version"><code>java.lang.Runtime.Version</code></a></li>
 <li><a href="#_java_lang_processhandle"><code>java.lang.ProcessHandle</code></a></li>
 <li><a href="#_deprecated_enhancements"><code>@Deprecated</code> enhancements</a></li>
 <li><a href="#_unified_jvm_logging">Unified JVM logging</a></li>
@@ -843,7 +843,7 @@ var ws = client.newWebSocketBuilder().buildAsync(uri, listener);</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_var_in_lambda">var in lambda</h3>
+<h3 id="_var_in_lambda"><code>var</code> in lambda</h3>
 <div class="paragraph">
 <p><a href="https://openjdk.java.net/jeps/323" class="bare">https://openjdk.java.net/jeps/323</a></p>
 </div>
@@ -1298,7 +1298,7 @@ whole ecosystem, as <code>invokedynamic</code> did.</p>
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_local_type_inference">local type inference</h3>
+<h3 id="_local_type_inference">Local type inference</h3>
 <div class="paragraph">
 <p><a href="https://openjdk.java.net/jeps/286" class="bare">https://openjdk.java.net/jeps/286</a></p>
 </div>
@@ -1596,7 +1596,7 @@ jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBe
 <p><a href="http://openjdk.java.net/projects/jdk9/" class="bare">http://openjdk.java.net/projects/jdk9/</a></p>
 </div>
 <div class="paragraph">
-<p>Java 9 delivers an impressive set of features, by far the most important are:</p>
+<p>Java 9 delivers an impressive set of features. By far, the most important are:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -1630,8 +1630,7 @@ still supported.
 <p><a href="https://openjdk.java.net/jeps/269" class="bare">https://openjdk.java.net/jeps/269</a></p>
 </div>
 <div class="paragraph">
-<p>JEP 269 introduced some new factory methods for collections.
-New APIs are:</p>
+<p>JEP 269 introduced some new factory methods for collections:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1656,10 +1655,10 @@ New APIs are:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; var list = <span class="keyword">new</span> <span class="predefined-type">ArrayList</span>&lt;&gt;()
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">List</span>&lt;<span class="predefined-type">Object</span>&gt; list = <span class="keyword">new</span> <span class="predefined-type">ArrayList</span>&lt;&gt;()
 list ==&gt; <span class="type">[]</span>
 
-jshell&gt; var unmodificableList = <span class="predefined-type">Collections</span>.unmodifiableList(list)
+jshell&gt; <span class="predefined-type">List</span>&lt;<span class="predefined-type">Object</span>&gt; unmodificableList = <span class="predefined-type">Collections</span>.unmodifiableList(list)
 unmodificableList ==&gt; <span class="type">[]</span>
 
 jshell&gt; list.add(<span class="integer">1</span>) <b class="conum">(1)</b>
@@ -1681,7 +1680,7 @@ unmodificableList ==&gt; [<span class="integer">1</span>]</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; var immutableList = <span class="predefined-type">List</span>.of();
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">List</span>&lt;<span class="predefined-type">Object</span>&gt; immutableList = <span class="predefined-type">List</span>.of();
 immutableList ==&gt; <span class="type">[]</span>
 
 jshell&gt; immutableList.add(<span class="integer">1</span>)
@@ -1698,7 +1697,6 @@ jshell&gt; immutableList.add(<span class="integer">1</span>)
 <div class="title">Note</div>
 </td>
 <td class="content">
-<div class="title">Gotcha:</div>
 sometimes <code>List.copyOf</code> is a no-op
 </td>
 </tr>
@@ -1706,10 +1704,10 @@ sometimes <code>List.copyOf</code> is a no-op
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">List</span>&lt;?&gt; a = <span class="predefined-type">List</span>.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>)
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">List</span>&lt;<span class="predefined-type">Integer</span>&gt; a = <span class="predefined-type">List</span>.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>)
 a ==&gt; [<span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>]
 
-jshell&gt; <span class="predefined-type">List</span>&lt;?&gt; b = <span class="predefined-type">List</span>.copyOf(a)
+jshell&gt; <span class="predefined-type">List</span>&lt;<span class="predefined-type">Integer</span>&gt; b = <span class="predefined-type">List</span>.copyOf(a)
 b ==&gt; [<span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>]
 
 jshell&gt; a == b
@@ -1723,8 +1721,7 @@ jshell&gt; a == b
 <div class="title">Note</div>
 </td>
 <td class="content">
-<div class="title">Gotcha:</div>
-cannot use <code>Set.of</code> to filter away duplicated.
+it is not possible to use <code>Set.of()</code> to filter away duplicates
 </td>
 </tr>
 </table>
@@ -1737,61 +1734,69 @@ cannot use <code>Set.of</code> to filter away duplicated.
 |        at <span class="predefined-type">Set</span>.of (<span class="predefined-type">Set</span>.java:<span class="integer">521</span>)</code></pre>
 </div>
 </div>
+<div class="sect3">
+<h4 id="_unmodificable_collectors">Unmodificable collectors</h4>
 <div class="paragraph">
-<p>Now it is also possible to use <code>java.util.stream.Collectors</code>
-to build an unmodificableList/Set/Map.</p>
+<p>Now it is possible to use <code>java.util.stream.Collectors</code> to build unmodificable collections, avoiding
+using <code>Collections</code> factory methods.</p>
+</div>
+<div class="paragraph">
+<p>For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">Collections</span>.unmodifiableList(Stream.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>).collect(Collectors.toList()))
+<span class="error">$</span><span class="integer">1</span> ==&gt; [<span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>]
+
+jshell&gt; Stream.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>).collect(Collectors.toUnmodifiableList())
+<span class="error">$</span><span class="integer">2</span> ==&gt; [<span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Likewise it is possible to build immutable lists and maps:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; Stream.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>).collect(Collectors.toUnmodifiableList())
+<span class="error">$</span><span class="integer">26</span> ==&gt; [<span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>]
+
+jshell&gt; Stream.of(<span class="integer">1</span>,<span class="integer">2</span>,<span class="integer">3</span>).collect(Collectors.toUnmodifiableMap(e -&gt; e, e -&gt; e * e))
+<span class="error">$</span><span class="integer">27</span> ==&gt; {<span class="integer">1</span>=<span class="integer">1</span>, <span class="integer">2</span>=<span class="integer">4</span>, <span class="integer">3</span>=<span class="integer">9</span>}</code></pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_java_util_optional_stream"><code>java.util.Optional.stream()</code></h3>
 <div class="paragraph">
-<p>Given:</p>
+<p>This is a small enhancement that enables the use of <code>Stream.flatMap()</code>.
+For example:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">List</span>&lt;Optional&lt;<span class="predefined-type">String</span>&gt;&gt; listOfOptionals = something();</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>in Java 8:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; filteredList = listOfOptionals.stream()
-  .filter(Optional::isPresent) <b class="conum">(1)</b>
-  .map(Optional::get) <b class="conum">(2)</b>
-  .collect(Collectors.toList());</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">List</span>&lt;Optional&lt;<span class="predefined-type">Integer</span>&gt;&gt; data = <span class="predefined-type">List</span>.of(Optional.of(<span class="integer">42</span>), Optional.empty(), Optional.of(-<span class="integer">1</span>));
+data ==&gt; [Optional[<span class="integer">42</span>], Optional.empty, Optional[-<span class="integer">1</span>]]
+
+jshell&gt; data.stream().filter(Optional::isPresent).map(Optional::get).collect(Collectors.toList()); <b class="conum">(1)</b>
+<span class="error">$</span><span class="integer">1</span> ==&gt; [<span class="integer">42</span>, -<span class="integer">1</span>]
+
+jshell&gt; data.stream().flatMap(Optional::stream).collect(Collectors.toList()); <b class="conum">(2)</b>
+<span class="error">$</span><span class="integer">2</span> ==&gt; [<span class="integer">42</span>, -<span class="integer">1</span>]
+<span class="predefined-type">List</span>&lt;Optional&lt;<span class="predefined-type">String</span>&gt;&gt; listOfOptionals = something();</code></pre>
 </div>
 </div>
 <div class="colist arabic">
 <ol>
 <li>
-<p>discarding empty optionals</p>
+<p>this is a common Java 8 pattern: <code>filter</code> then <code>map</code></p>
 </li>
 <li>
-<p>unwrapping optionals</p>
+<p>this is Java 9</p>
 </li>
 </ol>
 </div>
 <div class="paragraph">
-<p>in Java 9 it is possible to write:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; filteredList = listOfOptionals.stream()
-  .flatMap(Optional::stream) <b class="conum">(1)</b>
-  .collect(Collectors.toList());</code></pre>
-</div>
-</div>
-<div class="colist arabic">
-<ol>
-<li>
-<p><code>Optional</code> as <code>Stream</code></p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p><code>Optional.stream()</code> implementation is straightforward:</p>
+<p>Please note that <code>Optional.stream()</code> implementation is straightforward (source has been taken from JDK9):</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1887,7 +1892,7 @@ quite successful. Java 9 introduces the following small changes:</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_version">Version</h3>
+<h3 id="_java_lang_runtime_version"><code>java.lang.Runtime.Version</code></h3>
 <div class="paragraph">
 <p><a href="https://openjdk.java.net/jeps/223" class="bare">https://openjdk.java.net/jeps/223</a></p>
 </div>
@@ -1950,9 +1955,20 @@ ProcessHandle.Info procInfo = self.info();
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">java.time</span>.*;
-
-ProcessHandle.allProcesses().map(ProcessHandle::info).forEach(<span class="predefined-type">System</span>.out::println);</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java">ProcessHandle.allProcesses().map(ProcessHandle::info).forEach(<span class="predefined-type">System</span>.out::println);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Sample output on macOS:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>[user: Optional[dfa], cmd: /Library/Java/JavaVirtualMachines/jdk-11.jdk/Contents/Home/bin/java, args: [-agentlib:jdwp=transport=dt_socket,address=localhost:61581, jdk.jshell.execution.RemoteExecutionControl, 61580], startTime: Optional[2018-10-19T06:15:44.622Z], totalTime: Optional[PT0.459124S]]
+[user: Optional[dfa], cmd: /Library/Java/Home//bin/jshell, startTime: Optional[2018-10-19T06:15:44.225Z]]
+[user: Optional[root], startTime: Optional[2018-10-19T06:14:33.378Z]]
+[user: Optional[dfa], cmd: /System/Library/PrivateFrameworks/AOSKit.framework/Versions/A/XPCServices/com.apple.iCloudHelper.xpc/Contents/MacOS/com.apple.iCloudHelper, startTime: Optional[2018-10-19T06:14:33.081Z]]
+[user: Optional[dfa], cmd: /Library/Java/JavaVirtualMachines/jdk-11.jdk/Contents/Home/bin/java, args: [-agentlib:jdwp=transport=dt_socket,address=localhost:61572, jdk.jshell.execution.RemoteExecutionControl, 61571], startTime: Optional[2018-10-19T06:14:32.070Z]]
+...</pre>
 </div>
 </div>
 </div>
@@ -2030,7 +2046,7 @@ by capture and log interesting events happening inside the JVM.</p>
 </div>
 <div class="paragraph">
 <p>This is just a more efficient internal representation of <code>java.lang.String</code>, no public methods
-will be changed.</p>
+has been changed.</p>
 </div>
 <div class="paragraph">
 <p>In practice, the internal representation of string has been changed from <code>char[]</code> to <code>byte[]</code> + flag.
@@ -2072,7 +2088,7 @@ The main features were:</p>
 <div class="sect2">
 <h3 id="_java_io_uncheckedioexception"><code>java.io.UncheckedIOException</code></h3>
 <div class="paragraph">
-<p>This is a little know class that wraps an <code>IOException</code> with an unchecked exception.</p>
+<p>This is a little known class that wraps an <code>IOException</code> with an unchecked exception.</p>
 </div>
 </div>
 <div class="sect2">
@@ -2151,8 +2167,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6.5<br>
-Last updated 2018-10-16 08:51:10 CEST
+Version v0.6.6<br>
+Last updated 2018-10-19 08:47:10 CEST
 </div>
 </div>
 </body>
