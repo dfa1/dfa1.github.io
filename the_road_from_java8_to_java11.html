@@ -437,8 +437,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.6.6,</span>
-<span id="revdate">2018-10-19</span>
+<span id="revnumber">version v0.6.7,</span>
+<span id="revdate">2018-10-24</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -467,8 +467,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_string_strip"><code>String.strip()</code></a></li>
 <li><a href="#_charsequence_compare"><code>CharSequence.compare()</code></a></li>
 <li><a href="#_null_objects_for_readerwriter_and_inputstreamoutputstream">Null objects for Reader/Writer and InputStream/OutputStream</a></li>
-<li><a href="#_java_nio_file_files"><code>java.nio.file.Files</code></a></li>
-<li><a href="#_java_nio_path"><code>java.nio.Path</code></a></li>
+<li><a href="#_additions_to_java_nio_file_files">Additions to <code>java.nio.file.Files</code></a></li>
+<li><a href="#_java_nio_path_of"><code>java.nio.Path.of()</code></a></li>
 <li><a href="#_unicode">Unicode</a></li>
 <li><a href="#_dynamic_class_file_constants">Dynamic Class-File Constants</a></li>
 </ul>
@@ -487,6 +487,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_immutable_collections">Immutable collections</a></li>
 <li><a href="#_java_util_optional_stream"><code>java.util.Optional.stream()</code></a></li>
 <li><a href="#_stream_takewhilestream_dropwhile"><code>Stream.takeWhile()</code>/<code>Stream.dropWhile()</code></a></li>
+<li><a href="#_more_concurrency_updates">More concurrency updates</a></li>
 <li><a href="#_stack_walk_api">Stack walk API</a></li>
 <li><a href="#_milling_project_coin">Milling Project Coin</a></li>
 <li><a href="#_java_lang_runtime_version"><code>java.lang.Runtime.Version</code></a></li>
@@ -573,8 +574,11 @@ minimalistic style:</p>
 <p><a href="https://jdk.java.net/11/release-notes" class="bare">https://jdk.java.net/11/release-notes</a></p>
 </div>
 <div class="paragraph">
-<p>Java 11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as possible to this
-version. These are the main features of Java 11:</p>
+<p>Java 11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as
+possible to this version.</p>
+</div>
+<div class="paragraph">
+<p>These are the main features of Java 11:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -595,6 +599,12 @@ version. These are the main features of Java 11:</p>
 </li>
 <li>
 <p>removal of JavaFX: the FX libraries have moved to the OpenJFX project</p>
+</li>
+<li>
+<p>preparing for removal of Nashorn JavaScript Engine (<a href="https://openjdk.java.net/jeps/335" class="bare">https://openjdk.java.net/jeps/335</a>)</p>
+</li>
+<li>
+<p>preparing for removal of <code>sun.misc.Unsafe</code></p>
 </li>
 </ul>
 </div>
@@ -626,13 +636,16 @@ More details can be found <a href="https://blog.joda.org/2018/09/time-to-look-be
 <p>removal of removal of <code>sun.misc.Unsafe.defineClass</code>, see <a href="https://bugs.openjdk.java.net/browse/JDK-8193033" class="bare">https://bugs.openjdk.java.net/browse/JDK-8193033</a></p>
 </li>
 <li>
+<p>removal of the <code>sun.misc.Unsafe.defineClass</code> method. Users should use the public replacement,<code>java.lang.invoke.MethodHandles.Lookup.defineClass</code>, added in Java 9</p>
+</li>
+<li>
 <p>source incompatibility for <code>java.util.Stream.toArray(null)</code>, see <a href="https://bugs.openjdk.java.net/browse/JDK-8060192" class="bare">https://bugs.openjdk.java.net/browse/JDK-8060192</a></p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>For example, let&#8217;s start from JEP 320. Several packages, such as JAXB, are not provided by the JDK
-anymore so it is required to provide an external dependency for them.</p>
+<p>For example, let&#8217;s start from JEP 320. Several packages, such as JAXB, are not provided
+by the JDK anymore so it is required to provide an external dependency for them.</p>
 </div>
 <div class="paragraph">
 <p>For example using JAXB in an Apache Maven just add:</p>
@@ -1171,7 +1184,7 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 </div>
 </div>
 <div class="sect2">
-<h3 id="_java_nio_file_files"><code>java.nio.file.Files</code></h3>
+<h3 id="_additions_to_java_nio_file_files">Additions to <code>java.nio.file.Files</code></h3>
 <div class="ulist">
 <ul>
 <li>
@@ -1192,7 +1205,7 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 </div>
 </div>
 <div class="sect2">
-<h3 id="_java_nio_path"><code>java.nio.Path</code></h3>
+<h3 id="_java_nio_path_of"><code>java.nio.Path.of()</code></h3>
 <div class="paragraph">
 <p>This is a very nice shortcut to build paths:</p>
 </div>
@@ -1828,6 +1841,17 @@ jshell&gt; data.stream().flatMap(Optional::stream).collect(Collectors.toList());
 </div>
 </div>
 <div class="sect2">
+<h3 id="_more_concurrency_updates">More concurrency updates</h3>
+<div class="paragraph">
+<p><a href="http://openjdk.java.net/jeps/266" class="bare">http://openjdk.java.net/jeps/266</a></p>
+</div>
+<div class="paragraph">
+<p>This includes:
+- Reactive Streams publish-subscribe framework (see <a href="http://www.reactive-streams.org/" class="bare">http://www.reactive-streams.org/</a>)
+- refinements in <code>java.util.concurrent.CompletableFuture</code></p>
+</div>
+</div>
+<div class="sect2">
 <h3 id="_stack_walk_api">Stack walk API</h3>
 <div class="paragraph">
 <p><a href="https://openjdk.java.net/jeps/259" class="bare">https://openjdk.java.net/jeps/259</a></p>
@@ -1858,7 +1882,7 @@ Additionally a security check is performed on creation of the <code>StackWalker<
 <p><a href="https://openjdk.java.net/jeps/213" class="bare">https://openjdk.java.net/jeps/213</a></p>
 </div>
 <div class="paragraph">
-<p>The small language changes included in Project Coin were low hanging fruits but neverthless the project was
+<p>The small language changes included in Project Coin were low hanging fruits but nevertheless the project was
 quite successful. Java 9 introduces the following small changes:</p>
 </div>
 <div class="ulist">
@@ -2167,8 +2191,8 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.6.6<br>
-Last updated 2018-10-19 08:47:10 CEST
+Version v0.6.7<br>
+Last updated 2018-10-24 21:32:05 CEST
 </div>
 </div>
 </body>
