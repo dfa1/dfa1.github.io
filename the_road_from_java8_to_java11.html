@@ -437,8 +437,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.7.0,</span>
-<span id="revdate">2018-12-06</span>
+<span id="revnumber">version v0.7.1
+,</span>
+<span id="revdate">2018-12-14</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -530,7 +531,7 @@ minimalistic style:</p>
 <p>use standard <strong>Java Class Library</strong> as much as possible</p>
 </li>
 <li>
-<p>use <strong>JShell</strong> as much as possible</p>
+<p>use <strong>JShell</strong> as much as possible, <a href="https://www.infoq.com/articles/jshell-java-repl">a well written introduction to JShell</a></p>
 </li>
 <li>
 <p>provide links to release notes, JEPs and bug reports</p>
@@ -2152,8 +2153,7 @@ The purpose of the flag is to store which encoding to use:</p>
 <h2 id="_appendix_upgrade_to_java_8">Appendix: Upgrade to Java 8</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Since some projects and products are stuck in Java 7 let&#8217;s quickly cover Java 8.
-The main features were:</p>
+<p>The main features of Java 8 are:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -2177,7 +2177,7 @@ The main features were:</p>
 <div class="sect2">
 <h3 id="_stampedlocks"><code>StampedLocks</code></h3>
 <div class="paragraph">
-<p>A fast alternative to <code>ReadWriteLock</code>, that has an "optimistic" mode.</p>
+<p>A fast alternative to <code>ReadWriteLock</code>, that has an optimistic mode.</p>
 </div>
 </div>
 <div class="sect2">
@@ -2206,11 +2206,12 @@ overflow are detected:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>long a = Integer.MAX_VALUE * 2; <b class="conum">(1)</b>
-long b = Math.multiplyExact(Integer.MAX_VALUE, 2) <b class="conum">(2)</b>
-|  Exception java.lang.ArithmeticException: integer overflow
-|        at Math.multiplyExact (Math.java:906)
-|        at (#2:1)</pre>
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">Integer</span>.MAX_VALUE * <span class="integer">2</span> <b class="conum">(1)</b>
+<span class="error">$</span><span class="integer">1</span> ==&gt; -<span class="integer">2</span>
+jshell&gt; <span class="predefined-type">Math</span>.multiplyExact(<span class="predefined-type">Integer</span>.MAX_VALUE, <span class="integer">2</span>) <b class="conum">(2)</b>
+|  <span class="exception">Exception</span> java.lang.ArithmeticException: integer overflow
+|        at <span class="predefined-type">Math</span>.multiplyExact (<span class="predefined-type">Math</span>.java:<span class="integer">906</span>)
+|        at (<span class="error">#</span><span class="integer">2</span>:<span class="integer">1</span>)</code></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -2231,14 +2232,14 @@ long b = Math.multiplyExact(Integer.MAX_VALUE, 2) <b class="conum">(2)</b>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>jshell&gt; String.join(",");
-$10 ==&gt; ""
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="predefined-type">String</span>.join(<span class="string"><span class="delimiter">&quot;</span><span class="content">,</span><span class="delimiter">&quot;</span></span>);
+<span class="error">$</span><span class="integer">10</span> ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="delimiter">&quot;</span></span>
 
-jshell&gt; String.join(",", "a");
-$11 ==&gt; "a"
+jshell&gt; <span class="predefined-type">String</span>.join(<span class="string"><span class="delimiter">&quot;</span><span class="content">,</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">a</span><span class="delimiter">&quot;</span></span>);
+<span class="error">$</span><span class="integer">11</span> ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">a</span><span class="delimiter">&quot;</span></span>
 
-jshell&gt; String.join(",", "a", "b");
-$12 ==&gt; "a,b"</pre>
+jshell&gt; <span class="predefined-type">String</span>.join(<span class="string"><span class="delimiter">&quot;</span><span class="content">,</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">a</span><span class="delimiter">&quot;</span></span>, <span class="string"><span class="delimiter">&quot;</span><span class="content">b</span><span class="delimiter">&quot;</span></span>);
+<span class="error">$</span><span class="integer">12</span> ==&gt; <span class="string"><span class="delimiter">&quot;</span><span class="content">a,b</span><span class="delimiter">&quot;</span></span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2250,8 +2251,9 @@ $12 ==&gt; "a,b"</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.7.0<br>
-Last updated 2018-12-06 13:55:08 CET
+Version v0.7.1
+<br>
+Last updated 2018-12-13 22:42:46 CET
 </div>
 </div>
 </body>
