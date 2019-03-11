@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <!--[if IE]><meta http-equiv="X-UA-Compatible" content="IE=edge"><![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 1.5.7.1">
+<meta name="generator" content="Asciidoctor 1.5.7">
 <meta name="author" content="Davide Angelocola">
 <title>The road from Java 8 to Java 11</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -198,7 +198,7 @@ body.toc2.toc-right{padding-left:0;padding-right:20em}}
 .admonitionblock td.content>.title,.audioblock>.title,.exampleblock>.title,.imageblock>.title,.listingblock>.title,.literalblock>.title,.stemblock>.title,.openblock>.title,.paragraph>.title,.quoteblock>.title,table.tableblock>.title,.verseblock>.title,.videoblock>.title,.dlist>.title,.olist>.title,.ulist>.title,.qlist>.title,.hdlist>.title{text-rendering:optimizeLegibility;text-align:left;font-family:"Noto Serif","DejaVu Serif",serif;font-size:1rem;font-style:italic}
 table.tableblock.fit-content>caption.title{white-space:nowrap;width:0}
 .paragraph.lead>p,#preamble>.sectionbody>[class="paragraph"]:first-of-type p{font-size:1.21875em;line-height:1.6;color:rgba(0,0,0,.85)}
-table.tableblock #preamble>.sectionbody>[class="paragraph"]:first-of-type p{font-size:inherit}
+table.tableblock #preamble>.sectionbody>.paragraph:first-of-type p{font-size:inherit}
 .admonitionblock>table{border-collapse:separate;border:0;background:none;width:100%}
 .admonitionblock>table td.icon{text-align:center;width:80px}
 .admonitionblock>table td.icon img{max-width:none}
@@ -437,9 +437,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.7.1
+<span id="revnumber">version v0.8.0
 ,</span>
-<span id="revdate">2018-12-14</span>
+<span id="revdate">2019-03-11</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -507,6 +507,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_strong_algorithm_for_securerandom">Strong algorithm for <code>SecureRandom</code></a></li>
 <li><a href="#_overflow_free_operations">Overflow free operations</a></li>
 <li><a href="#_string_join"><code>String.join()</code></a></li>
+<li><a href="#_generalized_target_type_inference">Generalized Target-Type Inference</a></li>
+<li><a href="#_explicit_receiver_parameters">Explicit Receiver Parameters</a></li>
+<li><a href="#_arrays">Arrays</a></li>
 </ul>
 </li>
 </ul>
@@ -711,7 +714,7 @@ It is required to provide an external dependency for them.</p>
 <p>gradle TBD</p>
 </li>
 <li>
-<p>sonarcube TBD</p>
+<p>sonarcube fully supports Java 11 (at least for me using version 7.4 with SonarJava 5.10, probably also earlier versions would be fine)</p>
 </li>
 </ul>
 </div>
@@ -1586,7 +1589,8 @@ $1 ==&gt; 123 <b class="conum">(2)</b></pre>
 </ol>
 </div>
 <div class="paragraph">
-<p>It is possible then to fine tune the memory settings by using JVM flags <code>-Xmx</code>, <code>-Xms</code>, etc.</p>
+<p>It is possible then to fine tune the memory settings by using JVM flags <code>-Xmx</code>, <code>-Xms</code>, etc.
+A very nice explanation about Docker and JVM memory settings can be found here <a href="https://stackoverflow.com/questions/53451103/" class="bare">https://stackoverflow.com/questions/53451103/</a></p>
 </div>
 <div class="sect3">
 <h4 id="_references">References</h4>
@@ -1917,23 +1921,36 @@ jshell&gt; data.stream().flatMap(Optional::stream).collect(Collectors.toList());
 <p><a href="https://openjdk.java.net/jeps/259" class="bare">https://openjdk.java.net/jeps/259</a></p>
 </div>
 <div class="paragraph">
+<p><code>StackWalker</code> instances are thread-safe and thus can be shared between threads: each thread will see
+its own stack.
+Additionally a security check is performed on creation of the <code>StackWalker</code> instance, no further checks are performed later.</p>
+</div>
+<div class="paragraph">
 <p>This is useful in several occasions and now it is possible to capture a partial stacktrace
 in a very simple and effective way.</p>
 </div>
 <div class="paragraph">
-<p>For example getting the caller it is trivial now:</p>
+<p>That could be used to write a generic <code>LoggerFactory</code> for JUL:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">StackWalker
-        .getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
-        .getCallerClass()</code></pre>
+<pre class="CodeRay highlight"><code data-lang="java"><span class="keyword">import</span> <span class="include">java.lang.StackWalker.Option</span>;
+<span class="keyword">import</span> <span class="include">java.util.logging.Logger</span>;
+
+<span class="directive">public</span> <span class="type">class</span> <span class="class">LoggerFactory</span> {
+        <span class="directive">public</span> <span class="directive">static</span> <span class="predefined-type">Logger</span> forEnclosingClass() {
+                <span class="predefined-type">Class</span>&lt;?&gt; callerClass = StackWalker.getInstance(<span class="predefined-type">Option</span>.RETAIN_CLASS_REFERENCE).getCallerClass();
+                <span class="keyword">return</span> <span class="predefined-type">Logger</span>.getLogger(callerClass.getCanonicalName());
+        }
+}
+
+<span class="comment">// client code</span>
+<span class="directive">public</span> <span class="type">class</span> <span class="class">Demo</span> {
+
+    <span class="directive">private</span> <span class="directive">final</span> <span class="predefined-type">Logger</span> logger = LoggerFactory.forEnclosingClass();
+
+}</code></pre>
 </div>
-</div>
-<div class="paragraph">
-<p><code>StackWalker</code> instances are thread-safe and thus can be shared between threads: each thread will see
-its own stack.
-Additionally a security check is performed on creation of the <code>StackWalker</code> instance, no further checks are performed later.</p>
 </div>
 </div>
 <div class="sect2">
@@ -2084,11 +2101,10 @@ ProcessHandle.Info procInfo = self.info();
 <p><a href="https://openjdk.java.net/jeps/158" class="bare">https://openjdk.java.net/jeps/158</a></p>
 </div>
 <div class="paragraph">
-<p>This is invaluable in debugging problems in production problems,by
-by capture and log interesting events happening inside the JVM.</p>
+<p>This is invaluable for debugging production problems.</p>
 </div>
 <div class="paragraph">
-<p>For example it is possible to include every tag around gc:</p>
+<p>For example, it is possible to include every tag around gc:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2106,7 +2122,7 @@ by capture and log interesting events happening inside the JVM.</p>
 </div>
 </div>
 <div class="paragraph">
-<p>Or restrict to a more specific tag, such as gc+heap:</p>
+<p>Or restrict to a more specific tag, such as <code>gc+heap</code>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2243,7 +2259,153 @@ jshell&gt; <span class="predefined-type">String</span>.join(<span class="string"
 </div>
 </div>
 <div class="paragraph">
-<p>There are two overloads: one for vararg array and another one for <code>Iterable&lt;? extends CharSequence&gt;</code>.</p>
+<p>There are two overloads of this method: one for <code>String&#8230;&#8203;</code> and another one for <code>Iterable&lt;? extends CharSequence&gt;</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_generalized_target_type_inference">Generalized Target-Type Inference</h3>
+<div class="paragraph">
+<p><a href="https://openjdk.java.net/jeps/101" class="bare">https://openjdk.java.net/jeps/101</a></p>
+</div>
+<div class="paragraph">
+<p>This is a little know feature, almost invisible but it is extremely valuable for
+users of our classes:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">void</span> foo(<span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt; args) { <span class="predefined-type">System</span>.out.println(args); }
+|  created method foo(<span class="predefined-type">List</span>&lt;<span class="predefined-type">String</span>&gt;)
+
+jshell&gt; foo(<span class="predefined-type">Collections</span>.&lt;<span class="predefined-type">String</span>&gt;emptyList()) <b class="conum">(1)</b>
+<span class="type">[]</span>
+
+jshell&gt; foo(<span class="predefined-type">Collections</span>.emptyList()) <b class="conum">(2)</b>
+[a, b]</code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>Java 7: <code>&lt;String&gt;</code> is needed by the compiler to avoid this error <code>incompatible types: java.util.List&lt;java.lang.Object&gt; cannot be converted to java.util.List&lt;java.lang.String&gt;</code></p>
+</li>
+<li>
+<p>Java 8: <code>&lt;String&gt;</code> is not needed anymore: compiler can infers it</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_explicit_receiver_parameters">Explicit Receiver Parameters</h3>
+<div class="paragraph">
+<p><a href="https://blog.joda.org/2015/12/explicit-receiver-parameters.html" class="bare">https://blog.joda.org/2015/12/explicit-receiver-parameters.html</a></p>
+</div>
+<div class="paragraph">
+<p>I discovered this recently but never found a decent use of this feature:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="directive">public</span> <span class="type">class</span> <span class="class">Foo</span> {
+   ...&gt;   <span class="directive">public</span> <span class="type">void</span> foo() { }
+   ...&gt; }
+|  created <span class="type">class</span> <span class="class">Foo</span> <b class="conum">(1)</b>
+
+jshell&gt; <span class="directive">public</span> <span class="type">class</span> <span class="class">Foo2</span> {
+   ...&gt;   <span class="directive">public</span> <span class="type">void</span> foo(Foo2 <span class="local-variable">this</span>) { }
+   ...&gt; }
+|  created <span class="type">class</span> <span class="class">Foo2</span> <b class="conum">(2)</b></code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>without explicit receiver type</p>
+</li>
+<li>
+<p>with explicit receiver type, fully equivalent to &lt;1&gt;</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The purpose is to allow receiver type to be annotated, later it is possible
+to make use of the annotation by using
+<a href="https://docs.oracle.com/javase/8/docs/api/java/lang/reflect/Executable.html#getAnnotatedReceiverType--">Executable#getAnnotatedReceiverType</a>. Please note that <code>java.lang.reflect.Executable</code> is the superclass of both <code>Method</code> as well as <code>Constructor</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_arrays">Arrays</h3>
+<div class="paragraph">
+<p>Very specific yet useful methods has been added to <code>java.util.Arrays</code>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>parallelSort</code></p>
+</li>
+<li>
+<p><code>parallelPrefix</code></p>
+</li>
+<li>
+<p><code>parallelSetAll</code></p>
+</li>
+<li>
+<p><code>setAll</code></p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Warning</div>
+</td>
+<td class="content">
+be aware that parallelPrefix with <code>double[]</code> may yield different results of a sequential algorithm (this because floating point operation may be not associative).
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>It is very easy to implement <a href="https://en.wikipedia.org/wiki/Triangular_number">Triangular number</a>
+with this new methods. Let&#8217;s explore the solution with JShell:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> array = <span class="keyword">new</span> <span class="type">int</span>[<span class="integer">10</span>]
+array ==&gt; <span class="type">int</span>[<span class="integer">10</span>] { <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span>, <span class="integer">0</span> }
+
+jshell&gt; <span class="predefined-type">Arrays</span>.setAll(array, idx -&gt; idx + <span class="integer">1</span>)
+
+jshell&gt; array
+array ==&gt; <span class="type">int</span>[<span class="integer">10</span>] { <span class="integer">1</span>, <span class="integer">2</span>, <span class="integer">3</span>, <span class="integer">4</span>, <span class="integer">5</span>, <span class="integer">6</span>, <span class="integer">7</span>, <span class="integer">8</span>, <span class="integer">9</span>, <span class="integer">10</span> }
+
+jshell&gt; <span class="predefined-type">Arrays</span>.parallelPrefix(array, (acc, e) -&gt; acc + e)
+
+jshell&gt; array
+array ==&gt; <span class="type">int</span>[<span class="integer">10</span>] { <span class="integer">1</span>, <span class="integer">3</span>, <span class="integer">6</span>, <span class="integer">10</span>, <span class="integer">15</span>, <span class="integer">21</span>, <span class="integer">28</span>, <span class="integer">36</span>, <span class="integer">45</span>, <span class="integer">55</span> }</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Let&#8217;s put all the pieces together:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="type">int</span><span class="type">[]</span> triangularNumber(<span class="type">int</span> n) {
+   ...&gt;   <span class="type">int</span><span class="type">[]</span> result = <span class="keyword">new</span> <span class="type">int</span>[n];
+   ...&gt;   <span class="predefined-type">Arrays</span>.parallelSetAll(result, idx -&gt; idx + <span class="integer">1</span>);
+   ...&gt;   <span class="predefined-type">Arrays</span>.parallelPrefix(result, (acc, e) -&gt; acc + e);
+   ...&gt;   <span class="keyword">return</span> result;
+   ...&gt; }
+|  created method triangularNumber(<span class="type">int</span>)
+
+jshell&gt; triangularNumber(<span class="integer">4</span>)
+<span class="error">$</span><span class="integer">1</span> ==&gt; <span class="type">int</span>[<span class="integer">4</span>] { <span class="integer">1</span>, <span class="integer">3</span>, <span class="integer">6</span>, <span class="integer">10</span> }
+
+jshell&gt; triangularNumber(<span class="integer">10</span>)
+<span class="error">$</span><span class="integer">2</span> ==&gt; <span class="type">int</span>[<span class="integer">10</span>] { <span class="integer">1</span>, <span class="integer">3</span>, <span class="integer">6</span>, <span class="integer">10</span>, <span class="integer">15</span>, <span class="integer">21</span>, <span class="integer">28</span>, <span class="integer">36</span>, <span class="integer">45</span>, <span class="integer">55</span> }
+
+jshell&gt; triangularNumber(<span class="integer">100</span>)
+<span class="error">$</span><span class="integer">3</span> ==&gt; <span class="type">int</span>[<span class="integer">100</span>] { <span class="integer">1</span>, <span class="integer">3</span>, <span class="integer">6</span>, <span class="integer">10</span>, <span class="integer">15</span>, <span class="integer">21</span>, <span class="integer">28</span>, <span class="integer">36</span>, <span class="integer">45</span>, <span class="integer">55</span>, <span class="integer">66</span>, <span class="integer">78</span>, <span class="integer">91</span>, <span class="integer">105</span>, <span class="integer">120</span>, <span class="integer">136</span>, <span class="integer">153</span>, <span class="integer">171</span>, <span class="integer">190</span>, <span class="integer">210</span>, <span class="integer">231</span>, <span class="integer">253</span>, <span class="integer">276</span>, <span class="integer">300</span>, <span class="integer">325</span>, <span class="integer">351</span>, <span class="integer">378</span>, <span class="integer">406</span>, <span class="integer">435</span>, <span class="integer">465</span>, <span class="integer">496</span>, <span class="integer">528</span>, <span class="integer">561</span>, <span class="integer">595</span>, <span class="integer">630</span>, <span class="integer">666</span>, <span class="integer">703</span>, <span class="integer">741</span>, <span class="integer">780</span>, <span class="integer">820</span>, <span class="integer">861</span>, <span class="integer">903</span>, <span class="integer">946</span>, <span class="integer">990</span>, <span class="integer">1035</span>, <span class="integer">1081</span>, <span class="integer">1128</span>, <span class="integer">1176</span>, <span class="integer">1225</span>, <span class="integer">1275</span>, <span class="integer">1326</span>, <span class="integer">1378</span>, <span class="integer">1431</span>, <span class="integer">1485</span>, <span class="integer">1540</span>, <span class="integer">1596</span>, <span class="integer">1653</span>, <span class="integer">1711</span>, <span class="integer">1770</span>, <span class="integer">1830</span>, <span class="integer">1891</span>, <span class="integer">1953</span>, <span class="integer">2016</span>, <span class="integer">2080</span>, <span class="integer">2145</span>, <span class="integer">2211</span>, <span class="integer">2278</span>, <span class="integer">2346</span>, <span class="integer">2415</span>, <span class="integer">2485</span>, <span class="integer">2556</span>, <span class="integer">2628</span>, <span class="integer">2701</span>, <span class="integer">2775</span>, <span class="integer">2850</span>, <span class="integer">2926</span>, <span class="integer">3003</span>, <span class="integer">3081</span>, <span class="integer">3160</span>, <span class="integer">3240</span>, <span class="integer">3321</span>, <span class="integer">3403</span>, <span class="integer">3486</span>, <span class="integer">3570</span>, <span class="integer">3655</span>, <span class="integer">3741</span>, <span class="integer">3828</span>, <span class="integer">3916</span>, <span class="integer">4005</span>, <span class="integer">4095</span>, <span class="integer">4186</span>, <span class="integer">4278</span>, <span class="integer">4371</span>, <span class="integer">4465</span>, <span class="integer">4560</span>, <span class="integer">4656</span>, <span class="integer">4753</span>, <span class="integer">4851</span>, <span class="integer">4950</span>, <span class="integer">5050</span> }</code></pre>
+</div>
 </div>
 </div>
 </div>
@@ -2251,9 +2413,9 @@ jshell&gt; <span class="predefined-type">String</span>.join(<span class="string"
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.7.1
+Version v0.8.0
 <br>
-Last updated 2018-12-13 22:42:46 CET
+Last updated 2019-03-11 22:57:18 CET
 </div>
 </div>
 </body>
