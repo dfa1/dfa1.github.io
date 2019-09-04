@@ -443,8 +443,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="details">
 <span id="author" class="author">Davide Angelocola</span><br>
 <span id="email" class="email"><a href="mailto:davide.angelocola@gmail.com">davide.angelocola@gmail.com</a></span><br>
-<span id="revnumber">version v0.9.0,</span>
-<span id="revdate">2019-05-19</span>
+<span id="revnumber">version v0.9.1,</span>
+<span id="revdate">2019-06-09</span>
 </div>
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
@@ -539,7 +539,7 @@ minimalistic style:</p>
 <p>use standard <strong>Java Class Library</strong> as much as possible</p>
 </li>
 <li>
-<p>use <strong>JShell</strong> as much as possible, <a href="https://www.infoq.com/articles/jshell-java-repl">a well written introduction to JShell</a></p>
+<p>use <strong>JShell</strong> as much as possible, <a href="https://www.infoq.com/articles/jshell-java-repl/">a well written introduction to JShell</a></p>
 </li>
 <li>
 <p>provide links to release notes, JEPs and bug reports</p>
@@ -587,7 +587,7 @@ minimalistic style:</p>
 <h2 id="_upgrade_to_java_11">Upgrade to Java 11</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p><a href="https://jdk.java.net/11/release-notes" class="bare">https://jdk.java.net/11/release-notes</a></p>
+<p><a href="https://openjdk.java.net/projects/jdk/11/" class="bare">https://openjdk.java.net/projects/jdk/11/</a></p>
 </div>
 <div class="paragraph">
 <p>Java 11 is the new LTS (Long Term Support), so it is über-important to upgrade as soon as
@@ -627,7 +627,7 @@ possible to this version.</p>
 <div class="sect2">
 <h3 id="_which_jdk">Which JDK?</h3>
 <div class="paragraph">
-<p>Since <a href="https://blog.joda.org/2018/09/do-not-fall-into-oracles-java-11-trap.htmlOracle">JDK11 is a commercial
+<p>Since <a href="https://blog.joda.org/2018/09/do-not-fall-into-oracles-java-11-trap.html">JDK11 is a commercial
 product</a>, to use it in production you have to pay Oracle, details here: <a href="https://www.oracle.com/technetwork/java/javaseproducts/overview/javasesubscriptionfaq-4891443.html" class="bare">https://www.oracle.com/technetwork/java/javaseproducts/overview/javasesubscriptionfaq-4891443.html</a>.</p>
 </div>
 <div class="paragraph">
@@ -1218,7 +1218,7 @@ jshell&gt; <span class="predefined-type">CharSequence</span>.compare(string, buf
 <div class="sect2">
 <h3 id="_null_objects_for_readerwriter_and_inputstreamoutputstream">Null objects for Reader/Writer and InputStream/OutputStream</h3>
 <div class="paragraph">
-<p><a href="https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/io/Reader.html#nullReader(" class="bare">https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/io/Reader.html#nullReader(</a>)</p>
+<p><a href="https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/io/Reader.html#nullReader%28%29" class="bare">https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/io/Reader.html#nullReader%28%29</a></p>
 </div>
 <div class="ulist">
 <ul>
@@ -1635,38 +1635,45 @@ it is possible to use <code>@summary</code>:</p>
 <div class="sect2">
 <h3 id="_java_io_reader_transfertowriter"><code>java.io.Reader.transferTo(Writer)</code></h3>
 <div class="paragraph">
-<p>This is a long awaited feature, usually provided by external libraries such as Apache IOUtils.</p>
+<p>A long awaited feature, usually provided by external libraries such as <a href="https://commons.apache.org/proper/commons-io/javadocs/api-2.5/org/apache/commons/io/IOUtils.html">Apache IOUtils</a>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="keyword">import</span> <span class="include">java.io</span>.*
 
-<span class="include">jshell</span>&gt; <span class="include">var</span> <span class="include">a</span> = <span class="include">new</span> <span class="include">StringReader</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">hello world</span><span class="delimiter">&quot;</span></span>);
-a ==&gt; java.io.StringReader<span class="error">@</span><span class="integer">3</span>abbfa04
+<span class="include">jshell</span>&gt; <span class="include">var</span> <span class="include">a</span> = <span class="include">new</span> <span class="include">StringReader</span>(<span class="string"><span class="delimiter">&quot;</span><span class="content">hello world</span><span class="delimiter">&quot;</span></span>)
+<span class="include">a</span> ==&gt; <span class="include">java.io.StringReader</span><span class="error">@</span><span class="integer">3</span><span class="include">abbfa04</span>
 
-jshell&gt; var b = <span class="keyword">new</span> <span class="predefined-type">StringWriter</span>();
-b ==&gt;
+<span class="include">jshell</span>&gt; <span class="include">var</span> <span class="include">b</span> = <span class="include">new</span> <span class="include">StringWriter</span>()
+<span class="include">b</span> ==&gt;
 
-jshell&gt; a.transferTo(b)
+<span class="include">jshell</span>&gt; <span class="include">a.transferTo</span>(<span class="include">b</span>)
 <span class="error">$</span><span class="integer">4</span> ==&gt; <span class="integer">11</span>
 
-jshell&gt; b
-b ==&gt; hello world</code></pre>
+<span class="include">jshell</span>&gt; <span class="include">b</span>
+<span class="include">b</span> ==&gt; <span class="include">hello</span> <span class="include">world</span></code></pre>
 </div>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_runtimemxbean_getpid"><code>RuntimeMXBean.getPid()</code></h3>
-<div class="paragraph">
-<p>This new method returns the process ID representing the running JVM:</p>
-</div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="keyword">import</span> <span class="include">java.lang.management</span>.*;
+<pre class="CodeRay highlight"><code data-lang="java">jshell&gt; <span class="keyword">import</span> <span class="include">java.lang.management</span>.*
 
-jshell&gt; <span class="predefined-type">ManagementFactory</span>.getRuntimeMXBean().getPid()
-<span class="error">$</span><span class="integer">8</span> ==&gt; <span class="integer">11429</span></code></pre>
+<span class="include">jshell</span>&gt; <span class="include">ProcessHandle.current</span>()
+<span class="error">$</span><span class="integer">1</span> ==&gt; <span class="integer">20674</span> <b class="conum">(2)</b>
+
+<span class="include">jshell</span>&gt; <span class="include">ManagementFactory.getRuntimeMXBean</span>().<span class="include">getPid</span>()
+<span class="error">$</span><span class="integer">2</span> ==&gt; <span class="integer">11429</span> <b class="conum">(1)</b></code></pre>
 </div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>current PID is exported also via JMX</p>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -2423,8 +2430,8 @@ jshell&gt; triangularNumber(<span class="integer">100</span>)
 </div>
 <div id="footer">
 <div id="footer-text">
-Version v0.9.0<br>
-Last updated 2019-05-19 18:26:17 +0200
+Version v0.9.1<br>
+Last updated 2019-06-07 20:29:04 +0200
 </div>
 </div>
 <style>
