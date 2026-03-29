@@ -80,9 +80,9 @@ Let’s walk through every option available in 2026 for handling SIGINT in Java 
 
 ## What the module system got right
 
-Here’s where my perspective might be unpopular: I think the module system is doing exactly what it should.Before modules, the boundary between “public API” and “implementation detail” was a gentleman’s agreement. You *could* import `sun.misc.Signal`. The compiler would warn you. Experienced developers would tell you not to. But nothing stopped you, and over time the entire ecosystem became dependent on internal APIs that were never designed to be stable.
+Here’s where my perspective might be unpopular: I think the module system is doing exactly what it should. Before modules, the boundary between “public API” and “implementation detail” was a gentleman’s agreement. You *could* import `sun.misc.Signal`. The compiler would warn you. Experienced developers would tell you not to. But nothing stopped you, and over time the entire ecosystem became dependent on internal APIs that were never designed to be stable.
 
-The module system turned a social contract into an enforced one. When I had `--add-exports java.base/jdk.internal.misc=hosh.runtime` in my build, that flag was a declaration of technical debt. It was visible, searchable, and ugly on purpose (I think). Every time I looked at it, I knew I was doing something I shouldn’t.
+The module system turned a social contract into an enforced one. When I had `--add-exports java.base/jdk.internal.misc=hosh.runtime` in my build, that flag was a declaration of technical debt. It was visible, searchable, and ugly on purpose. Every time I looked at it, I knew I was doing something I shouldn’t.
 
 Compare that to the pre-module world where the same dependency would hide in a regular import statement, indistinguishable from any other.
 
@@ -94,8 +94,7 @@ This is the joy of proper encapsulation: *it makes the wrong thing look wrong*. 
 No `--add-exports`. No broken semantics.
 Crucially, JLine is already a dependency of hosh, it is well-maintained, and they recently released a [FFM-based terminal](https://github.com/jline/jline3/tree/master/terminal-ffm) that drops the JNA and JAnsi backends entirely — with proper module exports for all modules.
 
-
-The correct answer for hosh, today, is to use `JLine` in the `Supervisor` class:
+The updated `Supervisor` class:
 
 ```java
 class Supervisor implements AutoCloseable {
@@ -134,7 +133,6 @@ class Supervisor implements AutoCloseable {
 
 You might wonder: if `sun.misc.Signal` is officially supported via `jdk.unsupported`, why not just use that? The answer is that hosh already depends on JLine for terminal handling, and JLine wraps signal management as a first-class concern. Delegating to it means one less direct dependency on JDK internals — even blessed ones — and the signal handling composes naturally with the rest of the terminal lifecycle.
 
-See the [JEP 260](https://openjdk.org/jeps/260) for more information.
 
 ## The lesson
 
@@ -144,9 +142,9 @@ When I tried to “fix” it by switching to shutdown hooks, I was optimizing fo
 
 Good encapsulation doesn’t just protect you from other people’s implementation details. It protects you from your own wishful thinking.
 
-## And another small joy...
+## Another small joy
 
-While enforcing the zero-warnings policy, another **opportunity** appeared: javac emitted this when processing `Compiler.java`:
+While enforcing the zero-warnings policy, another case surfaced: javac emitted this when processing `Compiler.java`:
 
 ```
 interface org.antlr.v4.runtime.tree.ParseTree in module org.antlr.antlr4.runtime
@@ -175,6 +173,5 @@ This eliminated the `ParseTree` import entirely. The `InternalBug` constructor n
 `String`, keeping ANTLR as a true implementation detail of `hosh.runtime` with no surface
 area leaking outward.
 
-This is a small change (10 lines net), but it's a good example of how JPMS surfaces
-coupling that would otherwise be invisible in a classpath-based build. In case you're interested, [this is the commit](https://github.com/hosh-shell/hosh/commit/513a9219f7298189d243333e3556c3e0620b95ae).
+A good example of how the module system surfaces coupling that would otherwise be invisible in a classpath-based build. The [commit](https://github.com/hosh-shell/hosh/commit/513a9219f7298189d243333e3556c3e0620b95ae) is ten lines.
 
