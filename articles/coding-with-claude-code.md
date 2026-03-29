@@ -12,7 +12,7 @@ I've been experimenting with [Claude Code](https://code.claude.com) on my side p
 
 ## The experiment
 
-The idea was simple: take a mature codebase (~1,500 commits, `JDK11`, `Maven`, junit, archunit) and see how productive I could be with an AI coding agent. Not on a greenfield toy project, but on something with real constraints — a module system, an SPI layer, acceptance tests, and opinions about code style.
+The idea was simple: take a mature codebase (~1,500 commits, `JDK11`, `Maven`, junit, archunit, >90% test coverage) and see how productive I could be with an AI coding agent. Not on a greenfield toy project, but on something with real constraints — a module system, an SPI layer, acceptance tests, and opinions about code style.
 
 I started by throwing tasks at Claude Code the way you'd throw them at a new team member:
 - "fix this SonarQube warning about thread-safety"
