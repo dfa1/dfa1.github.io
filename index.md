@@ -21,7 +21,8 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
-- [The road from Java 8 to Java 11](https://github.com/dfa1/the_road_from_java8_to_java11) (2018), [PDF](the_road_from_java8_to_java11.pdf) [HTML](the_road_from_java8_to_java11.html)
+- *Coding With Claude Code* [HTML](articles/coding-with-claude-code) (2026)
+- *The road from Java 8 to Java 11* [PDF](the_road_from_java8_to_java11.pdf) [HTML](the_road_from_java8_to_java11.html) (2020)
 
 ## Presentations
 
