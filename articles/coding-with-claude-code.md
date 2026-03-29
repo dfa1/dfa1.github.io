@@ -8,7 +8,7 @@ date: 2026-03-29
 
 *29 March 2026*
 
-I've been experimenting with [Claude Code](https://code.claude.com) on my side project [hosh](https://github.com/hosh-shell/hosh), an experimental shell written in Java (!). After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — I have some observations worth sharing.
+I've been experimenting with [Claude Code](https://code.claude.com) on my side project [hosh](https://github.com/hosh-shell/hosh), an experimental shell written in Java (!). After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — here's what I found.
 
 ## The experiment
 
@@ -19,7 +19,7 @@ I started by throwing tasks at Claude Code the way you'd throw them at a new tea
 - "upgrade Mockito to work with JDK 25"
 - "add a new built-in command".
 
-The results were mixed (very human). Some changes were good. Others were technically correct but stylistically wrong - the kind of code that passes CI but fails code review.
+The results were mixed (very human). Some changes were good. Others were technically correct but stylistically wrong — the kind of code that passes CI but fails code review.
 
 ## The need for guardrails
 
@@ -29,7 +29,7 @@ So I wrote a `CLAUDE.md` file. This is a project-level document that Claude Code
 
 The effect was immediate. With guardrails in place, Claude stopped reinventing decisions that were already made. It respected the module boundaries. It wrote tests first. It stopped suggesting Gradle or Kotlin.
 
-This is the part that surprised me: the `CLAUDE.md` is not just documentation for the agent. It forced me to articulate things I had only kept in my head — project conventions, architectural invariants, the reasoning behind certain trade-offs. Writing guardrails for an AI turned out to be a useful exercise in making implicit knowledge explicit. We know that **writing is thinking made visible**.
+This is the part that surprised me: the `CLAUDE.md` is not just documentation for the agent. It forced me to articulate things I had only kept in my head — project conventions, architectural invariants, the reasoning behind certain trade-offs. Writing guardrails for an AI turned out to be a useful exercise in making implicit knowledge explicit. **Writing is thinking made visible.**
 
 ## The fast loop
 
@@ -41,7 +41,7 @@ The best sessions were the ones where I acted as a director: setting the goal, r
 
 ## Human in the loop, not human out of the loop
 
-This maps surprisingly well to what Anthropic themselves have found. Their research on agent autonomy shows that experienced users shift from approving each individual action to a monitoring-and-intervening approach — but they also interrupt *more* often, not less. Trust grows, but so does the skill of knowing *when* to intervene (see [here](https://www.anthropic.com/research/measuring-agent-autonomy?utm_source=copilot.com)).
+This maps surprisingly well to what Anthropic themselves have found. Their research on agent autonomy shows that experienced users shift from approving each individual action to a monitoring-and-intervening approach — but they also interrupt *more* often, not less. Trust grows, but so does the skill of knowing *when* to intervene (see [Anthropic's research on agent autonomy](https://www.anthropic.com/research/measuring-agent-autonomy)).
 
 There's a deeper question here: does the "human as director" model resonate with how AI tools should work? I think it does. The most productive pattern I found was collaboration — not delegation. The agent handles the mechanical work (boilerplate, test scaffolding, refactoring), while the human handles the architectural judgment, the "should we even do this?" questions, and the quality bar.
 
@@ -63,14 +63,15 @@ The hype around AI coding tends to oscillate between "it will replace developers
 
 ## Outcome
 
-- `JDK11` -> `JDK25`
-- upgraded other all dependencies to 2026
+- `JDK11` → `JDK25`
+- upgraded all other dependencies to 2026
 - fully modular classpath with [JPMS](https://en.wikipedia.org/wiki/Java_Platform_Module_System)
 - enforced *zero-warnings* policy
 - code base is now more friendly to humans
 - better [Domain Primitives](https://www.oreilly.com/library/view/secure-by-design/9781617294358/Text/c05.xhtml)
 - many new built-in commands were written from scratch by Claude (**checksum**, **from-csv**, **to-csv**, etc)
 - a couple of nasty race conditions were fixed too
+
 ---
 
 *The [hosh](https://github.com/hosh-shell/hosh) source code, including the `CLAUDE.md`, is available on GitHub.*
