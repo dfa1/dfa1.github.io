@@ -34,13 +34,13 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
-- [hosh](https://github.com/dfa1/hosh), Human Oriented SHell in Java (2018)
+- [hosh](https://github.com/hosh-shell/hosh), **H**uman *O*riented **SH**ell in Java (2018)
 - [fungoid](https://github.com/dfa1/fungoid.js), transducer library in Javascript (2016)
 - [jresync](https://github.com/dfa1/jresync), translate forward/backward SRT subtitles in Java (2012)
 - [uritemplate](https://github.com/dfa1/uritemplate), [RFC 6570](https://tools.ietf.org/html/rfc6570) implementation in Clojure (2011)
-- [wrcli](https://github.com/dfa1/wr) command line client and library for [wordreference.com](https://www.wordreference.com/) in Java (2011)
+- [wr](https://github.com/dfa1/wr) command line client and library for [wordreference.com](https://www.wordreference.com/) in Java (2011)
 - [elisp-split-init](https://github.com/dfa1/emacs-split-init), GNU Emacs library (2011)
-- [Dollar](https://bitbucket.org/adamldavis/dollar/), jQuery like DSL in Java (2009-2010)
+- Dollar (repository lost), jQuery like DSL in Java (2009-2010)
 - [LambdaScript](https://github.com/dfa1/lambdascript), yet another functional library in Javascript (2009)
 - [maven s3 wagon provider](https://github.com/dfa1/-maven-s3-wagon-provider), deploy maven artifacts to S3 in Java (2009)
 - [strtotime() clone](https://github.com/yourabi/strtotime), in Java (2009)
@@ -55,4 +55,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 25 March 2026
+Updated: 29 March 2026

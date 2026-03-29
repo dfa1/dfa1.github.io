@@ -42,6 +42,7 @@ The best sessions were the ones where I acted as a director: setting the goal, r
 ## Human in the loop, not human out of the loop
 
 This maps surprisingly well to what Anthropic themselves have found. Their research on agent autonomy shows that experienced users shift from approving each individual action to a monitoring-and-intervening approach — but they also interrupt *more* often, not less. Trust grows, but so does the skill of knowing *when* to intervene (see [here](https://www.anthropic.com/research/measuring-agent-autonomy?utm_source=copilot.com)).
+
 There's a deeper question here: does the "human as director" model resonate with how AI tools should work? I think it does. The most productive pattern I found was collaboration — not delegation. The agent handles the mechanical work (boilerplate, test scaffolding, refactoring), while the human handles the architectural judgment, the "should we even do this?" questions, and the quality bar.
 
 This isn't a limitation. It's the point. A fully autonomous agent that produces code I have to review anyway doesn't save me time — it shifts the work from writing to reading, which is arguably harder. An agent that works *with* me, proposing changes I can steer in real time, actually makes me faster.
@@ -62,14 +63,14 @@ The hype around AI coding tends to oscillate between "it will replace developers
 
 ## Outcome
 
-Huge progress in few days:
 - `JDK11` -> `JDK25`
 - upgraded other all dependencies to 2026
-- fully modular classpath (see [JPMS](https://en.wikipedia.org/wiki/Java_Platform_Module_System), dropping all warnings
-- code base is more friendly to humans (e.g. [Domain Primitives](https://www.oreilly.com/library/view/secure-by-design/9781617294358/Text/c05.xhtml)
+- fully modular classpath with [JPMS](https://en.wikipedia.org/wiki/Java_Platform_Module_System)
+- enforced *zero-warnings* policy
+- code base is now more friendly to humans
+- better [Domain Primitives](https://www.oreilly.com/library/view/secure-by-design/9781617294358/Text/c05.xhtml)
 - many new built-in commands were written from scratch by Claude (**checksum**, **from-csv**, **to-csv**, etc)
-- a couple of nasty race conditions were fixed
-
+- a couple of nasty race conditions were fixed too
 ---
 
 *The [hosh](https://github.com/hosh-shell/hosh) source code, including the `CLAUDE.md`, is available on GitHub.*
