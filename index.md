@@ -35,7 +35,7 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
-- [hosh](https://github.com/hosh-shell/hosh), **H**uman *O*riented **SH**ell in Java (2018)
+- [hosh](https://github.com/hosh-shell/hosh), **H**uman **O**riented **SH**ell in Java (2018)
 - [fungoid](https://github.com/dfa1/fungoid.js), transducer library in Javascript (2016)
 - [jresync](https://github.com/dfa1/jresync), translate forward/backward SRT subtitles in Java (2012)
 - [uritemplate](https://github.com/dfa1/uritemplate), [RFC 6570](https://tools.ietf.org/html/rfc6570) implementation in Clojure (2011)
