@@ -9,7 +9,7 @@ date: 2026-03-27
 Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The [commit](https://github.com/hosh-shell/hosh/commit/7d51c4838faeb3ce42486e374c1eb45f395a5a49) message was innocent enough: *“fix: avoid usage of jdk.internal.Signal”*. The diff was 20 lines added, 31 removed.
 And it was wrong — not syntactically, but semantically. It changed the behavior of my program in a way I didn’t fully appreciate until I sat down and thought about what the module system was actually telling me.
 
-This is a story about that mistake, and about why I think Java’s module system, for all the grief it gets,  is one of the best things that happened to the platform.
+This is a story about that mistake, and about why I think Java’s module system, for all the grief it gets, is one of the best things that happened to the platform.
 
 ## The problem
 
@@ -131,7 +131,7 @@ class Supervisor implements AutoCloseable {
 ```
 
 No `--add-exports`. No broken semantics. The final [fix](https://github.com/hosh-shell/hosh/commit/40890e0d984b4f6a8f986a20c9f9a956f5ad1fd8) is just delegating the hard work to JLine.
-Why? Because JLine is already a dependency of hosh, it is well-maintained and responsive, they recently released a [FFM-based terminal](https://github.com/jline/jline3/tree/master/terminal-ffm), dropping the JNA and JAnsi backends entirely and it has already proper module exports for all modules..
+JLine is already a dependency of hosh, it is well-maintained, and they recently released a [FFM-based terminal](https://github.com/jline/jline3/tree/master/terminal-ffm) that drops the JNA and JAnsi backends entirely — with proper module exports for all modules.
 
 ## The lesson
 
@@ -143,8 +143,7 @@ Good encapsulation doesn’t just protect you from other people’s implementati
 
 ### PS
 
-While enforcing the zero warnings policy another interesting warning popped up when javac
-processed `Compiler.java`, it emitted this warning:
+While enforcing the zero-warnings policy, another interesting warning appeared: javac emitted this when processing `Compiler.java`:
 
 ```
   interface org.antlr.v4.runtime.tree.ParseTree in module org.antlr.antlr4.runtime
@@ -167,18 +166,11 @@ The fix was simple:
 ```java
   // After
   throw new InternalBug(ctx.getText()); // plain String — no ANTLR leakage
-``
+```
 
 This eliminated the `ParseTree` import entirely. The `InternalBug` constructor now takes a
 `String`, keeping ANTLR as a true implementation detail of `hosh.runtime` with no surface
 area leaking outward.
-
-Why it is important?
-
-The Java Platform Module System (JPMS) enforces encapsulation at compile time, but
-accidental type references in internal APIs can still generate warnings and, depending
-on `module-info.java` settings, errors. Hosh uses zero warnings policy, so javac warnings **are** errors, so
-  keeping module boundaries clean is not just good hygiene — it's required to build.
 
 This is a small change (10 lines net), but it's a good example of how JPMS surfaces
 coupling that would otherwise be invisible in a classpath-based build. In case you're interested, [this is the commit](https://github.com/hosh-shell/hosh/commit/513a9219f7298189d243333e3556c3e0620b95ae).
