@@ -1,4 +1,12 @@
+---
+title: "Coding with Claude Code: A Week on hosh"
+author: Davide Angelocola
+date: 2026-03-29
+---
+
 # Coding with Claude Code: A Week on hosh
+
+*29 March 2026*
 
 I've been experimenting with [Claude Code](https://code.claude.com) on my side project [hosh](https://github.com/hosh-shell/hosh), a shell written in Java. After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — I have some observations worth sharing.
 
@@ -52,4 +60,3 @@ The hype around AI coding tends to oscillate between "it will replace developers
 
 *The [hosh](https://github.com/hosh-shell/hosh) source code, including the `CLAUDE.md`, is available on GitHub.*
 
-Updated: 25 March 2026
