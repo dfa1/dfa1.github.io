@@ -51,3 +51,5 @@ The hype around AI coding tends to oscillate between "it will replace developers
 ---
 
 *The [hosh](https://github.com/hosh-shell/hosh) source code, including the `CLAUDE.md`, is available on GitHub.*
+
+Updated: 25 March 2026
