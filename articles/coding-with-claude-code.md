@@ -8,7 +8,7 @@ date: 2026-03-29
 
 *29 March 2026*
 
-I've been experimenting with [Claude Code](https://code.claude.com) on my side project [hosh](https://github.com/hosh-shell/hosh), an experimental shell written in Java (!). After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — here's what I found.
+I've been experimenting with [Claude Code](https://code.claude.com) on my side project [hosh](https://github.com/hosh-shell/hosh), an experimental shell written in Java. After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — here's what I found.
 
 ## The experiment
 
@@ -17,9 +17,9 @@ The idea was simple: take a mature codebase (~1,500 commits, `JDK11`, `Maven`, j
 I started by throwing tasks at Claude Code the way you'd throw them at a new team member:
 - "fix this SonarQube warning about thread-safety"
 - "upgrade Mockito to work with JDK 25"
-- "add a new built-in command".
+- "add a new small feature".
 
-The results were mixed (very human). Some changes were good. Others were technically correct but stylistically wrong — the kind of code that passes CI but fails code review.
+The results were mixed. Some changes were good. Others were technically correct but stylistically wrong — the kind of code that passes CI but fails code review.
 
 ## The need for guardrails
 
