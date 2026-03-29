@@ -77,11 +77,10 @@ Let’s walk through every option available in 2026 for handling SIGINT in Java 
 
 **Panama FFM** — you could register a POSIX `sigaction` handler through the Foreign Function & Memory API. Technically pure public API, but the amount of ceremony required to handle a two-letter signal is absurd. And you’d be reimplementing what the JVM already does internally.
 
+
 ## What the module system got right
 
-Here’s where my perspective might be unpopular: I think the module system is doing exactly what it should.
-
-Before modules, the boundary between “public API” and “implementation detail” was a gentleman’s agreement. You *could* import `sun.misc.Signal`. The compiler would warn you. Experienced developers would tell you not to. But nothing stopped you, and over time the entire ecosystem became dependent on internal APIs that were never designed to be stable.
+Here’s where my perspective might be unpopular: I think the module system is doing exactly what it should.Before modules, the boundary between “public API” and “implementation detail” was a gentleman’s agreement. You *could* import `sun.misc.Signal`. The compiler would warn you. Experienced developers would tell you not to. But nothing stopped you, and over time the entire ecosystem became dependent on internal APIs that were never designed to be stable.
 
 The module system turned a social contract into an enforced one. When I had `--add-exports java.base/jdk.internal.misc=hosh.runtime` in my build, that flag was a declaration of technical debt. It was visible, searchable, and ugly on purpose (I think). Every time I looked at it, I knew I was doing something I shouldn’t.
 
@@ -91,7 +90,10 @@ This is the joy of proper encapsulation: *it makes the wrong thing look wrong*. 
 
 ## The right fix
 
-You might wonder: if `sun.misc.Signal` is officially supported via `jdk.unsupported`, why not just use that? The answer is that hosh already depends on JLine for terminal handling, and JLine wraps signal management as a first-class concern. Delegating to it means one less direct dependency on JDK internals — even blessed ones — and the signal handling composes naturally with the rest of the terminal lifecycle.
+[The final fix](https://github.com/hosh-shell/hosh/commit/40890e0d984b4f6a8f986a20c9f9a956f5ad1fd8) is just delegating the hard work to [JLine](https://jline.org/versions/4.0/).
+No `--add-exports`. No broken semantics.
+Crucially, JLine is already a dependency of hosh, it is well-maintained, and they recently released a [FFM-based terminal](https://github.com/jline/jline3/tree/master/terminal-ffm) that drops the JNA and JAnsi backends entirely — with proper module exports for all modules.
+
 
 The correct answer for hosh, today, is to use `JLine` in the `Supervisor` class:
 
@@ -130,24 +132,25 @@ class Supervisor implements AutoCloseable {
 	}
 ```
 
-No `--add-exports`. No broken semantics. The final [fix](https://github.com/hosh-shell/hosh/commit/40890e0d984b4f6a8f986a20c9f9a956f5ad1fd8) is just delegating the hard work to JLine.
-JLine is already a dependency of hosh, it is well-maintained, and they recently released a [FFM-based terminal](https://github.com/jline/jline3/tree/master/terminal-ffm) that drops the JNA and JAnsi backends entirely — with proper module exports for all modules.
+You might wonder: if `sun.misc.Signal` is officially supported via `jdk.unsupported`, why not just use that? The answer is that hosh already depends on JLine for terminal handling, and JLine wraps signal management as a first-class concern. Delegating to it means one less direct dependency on JDK internals — even blessed ones — and the signal handling composes naturally with the rest of the terminal lifecycle.
+
+See the [JEP 260](https://openjdk.org/jeps/260) for more information.
 
 ## The lesson
 
-The module system didn’t create this problem. The problem, no public signal API after three decades, existed long before modules. What the module system did was make the problem *visible*. It forced me to confront the fact that I was depending on an implementation detail, and it made that dependency explicit in my build.
+The module system didn’t create this problem. What the module system did was make the problem *visible*. It forced me to confront the fact that I was depending on an implementation detail, and it made that dependency explicit.
 
 When I tried to “fix” it by switching to shutdown hooks, I was optimizing for the wrong thing. I was making the module system happy at the cost of correctness. The module boundary was a signal (*pun intended*) that I should have listened to more carefully.
 
 Good encapsulation doesn’t just protect you from other people’s implementation details. It protects you from your own wishful thinking.
 
-### PS
+## And another small joy...
 
-While enforcing the zero-warnings policy, another interesting warning appeared: javac emitted this when processing `Compiler.java`:
+While enforcing the zero-warnings policy, another **opportunity** appeared: javac emitted this when processing `Compiler.java`:
 
 ```
-  interface org.antlr.v4.runtime.tree.ParseTree in module org.antlr.antlr4.runtime
-  is not indirectly exported using 'requires transitive'
+interface org.antlr.v4.runtime.tree.ParseTree in module org.antlr.antlr4.runtime
+is not indirectly exported using 'requires transitive'
 ```
 
 The root cause was subtle: `InternalBug`, a private exception class inside `Compiler`,
@@ -159,13 +162,13 @@ ANTLR type at the constructor signature level — forcing the module system to c
 The fix was simple:
 
 ```java
-  // Before
-  throw new InternalBug(ctx);           // ctx is a ParseTree
+// Before
+throw new InternalBug(ctx);           // ctx is a ParseTree
 ```
 
 ```java
-  // After
-  throw new InternalBug(ctx.getText()); // plain String — no ANTLR leakage
+// After
+throw new InternalBug(ctx.getText()); // plain String — no ANTLR leakage
 ```
 
 This eliminated the `ParseTree` import entirely. The `InternalBug` constructor now takes a
