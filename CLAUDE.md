@@ -7,6 +7,7 @@ Personal website and blog of Davide Angelocola — Technical Lead/Senior Softwar
 ## Author
 
 - Name: Davide Angelocola
+- Homepage: [homepage](https://dfa1.github.io)
 - GitHub: [@dfa1](https://github.com/dfa1)
 - Primary project: [hosh](https://github.com/hosh-shell/hosh), a Human Oriented Shell written in Java
 
