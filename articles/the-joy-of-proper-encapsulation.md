@@ -4,6 +4,8 @@ author: Davide Angelocola
 date: 2026-03-27
 ---
 
+*27 March 2026*
+
 # The Joy of Proper Encapsulation
 
 Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
@@ -11,7 +13,7 @@ Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
 message was innocent enough: *“fix: avoid usage of jdk.internal.Signal”*. The
 diff was 20 lines added, 31 removed.  And it was wrong — not syntactically, but
 semantically. It changed the behavior of my program in a way I didn’t fully
-appreciate until I sat down and thought about what the 
+appreciate until I sat down and thought about what the
 [Java Platform Module System](https://openjdk.org/jeps/261)
 was actually telling me.
 
@@ -165,7 +167,7 @@ class Supervisor implements AutoCloseable {
 	}
 
 	// ... other code using the 2 methods below
-	
+
 	private void installSigintHandler() {
 		if (terminal != null) {
 			LOGGER.fine("register INT signal handler");
