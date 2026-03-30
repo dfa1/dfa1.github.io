@@ -1,5 +1,8 @@
---- title: "Coding with Claude Code: A Week on hosh" author: Davide Angelocola
-date: 2026-03-29 ---
+---
+title: "Coding with Claude Code: A Week on hosh"
+author: Davide Angelocola
+date: 2026-03-29
+---
 
 # Coding with Claude Code: A Week on hosh
 
@@ -16,13 +19,14 @@ found.
 The idea was simple: take a mature codebase (~1,500 commits, `JDK11`, `Maven`,
 junit, archunit, >90% test coverage) and see how productive I could be with an
 AI coding agent. Not on a greenfield toy project, but on something with real
-constraints — a module system, an `[SPI
-layer](https://en.wikipedia.org/wiki/Service_provider_interface), acceptance
-tests, and opinions about code style.
+constraints — a module system, a [SPI](https://en.wikipedia.org/wiki/Service_provider_interface) and some opinions about code style.
 
 I started by throwing tasks at Claude Code the way you'd throw them at a new
-team member: - "fix this SonarQube warning about thread-safety" - "upgrade
-Mockito to work with JDK 25" - "add a new small feature".
+team member: 
+- "add a new small feature";
+- "consolidate the usage of this helper class"
+- "fix this SonarQube warning about thread-safety";
+- "upgrade Mockito to work with JDK 25".
 
 The results were mixed. Some changes were good. Others were technically correct
 but stylistically wrong — the kind of code that passes CI but fails code review.

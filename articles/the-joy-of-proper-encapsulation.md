@@ -11,12 +11,13 @@ Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
 message was innocent enough: *“fix: avoid usage of jdk.internal.Signal”*. The
 diff was 20 lines added, 31 removed.  And it was wrong — not syntactically, but
 semantically. It changed the behavior of my program in a way I didn’t fully
-appreciate until I sat down and thought about what the module system was
-actually telling me.
+appreciate until I sat down and thought about what the 
+[Java Platform Module System](https://openjdk.org/jeps/261)
+was actually telling me.
 
 This is a story about that mistake, and about why I think Java’s module system,
 for all the grief it gets, is one of the best things that happened to the
-platform.
+platform (and soon it will be even better with [JEP 500](https://openjdk.org/jeps/500)).
 
 ## The problem
 
@@ -59,7 +60,7 @@ cannot be avoided as far as I know.”*
 
 With JDK 25 tightening encapsulation further, I decided to bite the bullet and
 remove the internal API usage. Since Claude was in rate limited mode, I asked
-another AI (to be fair, with little context) how to prooced and I replaced the
+another AI (to be fair, with little context) how to proceed and I replaced the
 signal handler with `Runtime.addShutdownHook`:
 
 ```java
@@ -143,7 +144,7 @@ wrong in the structure of the build itself.
 [The final fix](https://github.com/hosh-shell/hosh/commit/40890e0d984b4) is just
 delegating the hard work to [JLine](https://jline.org/versions/4.0/).  No
 `--add-exports`. No broken semantics.  Crucially, JLine is already a dependency
-of hosh, it is well-maintained, and they recently released a [FFM-based
+of Hosh, it is well-maintained, and they recently released a [FFM-based
 terminal](https://github.com/jline/jline3/tree/master/terminal-ffm) that drops
 the JNA and JAnsi backends entirely — with proper module exports for all
 modules.
@@ -163,7 +164,9 @@ class Supervisor implements AutoCloseable {
 		this.terminal = terminal;
 	}
 
-    private void installSigintHandler() {
+	// ... other code using the 2 methods below
+	
+	private void installSigintHandler() {
 		if (terminal != null) {
 			LOGGER.fine("register INT signal handler");
 			previousSigintHandler = terminal.handle(Terminal.Signal.INT, signal -> {
@@ -176,13 +179,14 @@ class Supervisor implements AutoCloseable {
 		}
 	}
 
-    private void restoreDefaultSigintHandler() {
+	private void restoreDefaultSigintHandler() {
 		if (terminal != null && previousSigintHandler != null) {
 			LOGGER.fine("restoring default INT signal handler");
 			terminal.handle(Terminal.Signal.INT, previousSigintHandler);
 			previousSigintHandler = null;
 		}
 	}
+}
 ```
 
 You might wonder: if `sun.misc.Signal` is officially supported via
@@ -191,7 +195,6 @@ depends on JLine for terminal handling, and JLine wraps signal management as a
 first-class concern. Delegating to it means one less direct dependency on JDK
 internals — even blessed ones — and the signal handling composes naturally with
 the rest of the terminal lifecycle.
-
 
 ## The lesson
 
@@ -205,7 +208,8 @@ correctness. The module boundary was a signal (*pun intended*) that I should
 have listened to more carefully.
 
 Good encapsulation doesn’t just protect you from other people’s implementation
-details. It protects you from your own wishful thinking.
+details. It protects you from your own wishful thinking. Document your module
+boundaries in the `CLAUDE.md` file ([why](coding-with-claude-code)).
 
 ## Another small joy
 
@@ -241,9 +245,7 @@ now takes a `String`, keeping ANTLR as a true implementation detail of
 `hosh.runtime` with no surface area leaking outward.
 
 A good example of how the module system surfaces coupling that would otherwise
-be invisible in a classpath-based build. The
-[commit](https://github.com/hosh-shell/hosh/commit/513a92190620b95ae) is ten
-lines.
+be invisible in a classpath-based build. The [commit](https://github.com/hosh-shell/hosh/commit/513a92190620b95ae) is ten lines.
 
 ---
 

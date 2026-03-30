@@ -9,7 +9,8 @@ Personal website and blog of Davide Angelocola — Technical Lead/Senior Softwar
 - Name: Davide Angelocola
 - Homepage: [homepage](https://dfa1.github.io)
 - GitHub: [@dfa1](https://github.com/dfa1)
-- Primary project: [hosh](https://github.com/hosh-shell/hosh), a Human Oriented Shell written in Java
+Sereval projects, one of them is
+- [hosh](https://github.com/hosh-shell/hosh), a Human Oriented Shell written in Java
 
 ## Writing style
 
@@ -32,4 +33,5 @@ Personal website and blog of Davide Angelocola — Technical Lead/Senior Softwar
 ```
 /                     → site root (index.md, favicon, robots.txt, sitemap.xml)
 articles/             → blog posts in Markdown
+articles/draft        → blog posts in Markdown (don't wire them in the sitemap)
 ```
