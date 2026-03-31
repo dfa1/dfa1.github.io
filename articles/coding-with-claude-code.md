@@ -134,3 +134,10 @@ and knowing when to trust your tools and when to override them.
 *The [hosh](https://github.com/hosh-shell/hosh) source code, including the
 `CLAUDE.md`, is available on GitHub.*
 
+### Update on 31 March 2026
+
+[Rahul Garg's Encoding Team Standards](https://martinfowler.com/articles/reduce-friction-ai/encoding-team-standards.html)  
+makes the case for treating these instructions as team infrastructure — versioned, reviewed, and shared. 
+The `CLAUDE.md` approach fits exactly into that pattern.
+
+
