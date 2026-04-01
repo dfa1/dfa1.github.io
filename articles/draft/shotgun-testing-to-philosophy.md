@@ -127,3 +127,8 @@ A working alternative, demonstrated in practice and supported by a colleague who
 persuasive than any proposal. And an explicit document that captures the *why* outlasts any individual on the team.
 
 **Write down the why. Make it visible. The alignment follows.**
+
+---
+
+### Update on 2 April 2026
+This was 2019. Six years later, the same principle applies with even greater urgency. Today we routinely delegate coding tasks to AI agents — and an agent without context will produce the same kind of misaligned output that a new team member without onboarding would. It will write shotgun tests. It will pick the wrong abstraction. It will optimise for the metric you gave it, not the one you meant. The document that captures your testing philosophy, your branching model, your "why" — that is not just onboarding material for humans anymore. It is the prompt. If you never wrote down the why, you will not be able to align the machine either.
