@@ -1,9 +1,9 @@
-# From Shotgun Testing to a Testing Philosophy
+# Write Down the Why
 
 1 May 2020
 
 *Late 2019, early 2020. A newly formed team at SIX Group, building the next generation of a financial market data
-platform from scratch. Eight people, a greenfield project, and a testing approach that would take us a while to
+platform from scratch. Several developers that never worked together, a greenfield project, and a testing approach that would take us a while to
 outgrow. Every team has a moment where brute force stops working. Mine came the day I realized shotgun testing wasn’t a
 strategy — it was a symptom.*
 
@@ -23,7 +23,7 @@ fails for external reasons is not a safety net. It is noise. And noise trains pe
 
 ## The Model
 
-To understand why data-driven testing was never going to work here, you need to understand the scale of the model.
+To understand why data-driven testing was never going to work here, you need to understand the scale of the model: reference data and market data (snapshot only).
 
 For reference data — the descriptive attributes of a financial instrument — we have around **4000 fields** (in 2026 they
 are almost **8000**). Each field has a mapping behind it: sometimes trivial, sometimes involving complex
