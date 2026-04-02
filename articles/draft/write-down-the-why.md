@@ -3,57 +3,44 @@
 1 October 2020
 
 *Late 2019, early 2020. A newly formed team at SIX Group, building the next generation of a financial market data
-platform from scratch. Several developers that never worked together, a greenfield project, and a testing approach that
-would take us a while to
-outgrow. Every team has a moment where brute force stops working. Mine came the day I realized shotgun testing wasn’t a
-strategy — it was a symptom.*
+platform from scratch. Several developers that never worked together, a greenfield project, a deadline, and two problems
+we had not yet named: a testing approach that would take us a while to outgrow, and a branching model we had not agreed on yet.
+Every team has a moment where brute force stops working. Ours came on two fronts at once.
+Without a shared “why” every engineer filled in the gaps differently.*
 
 ## The Starting Point
 
-The initial approach to testing was what I came to call **shotgun testing**: write tests that assert data mappings
-against a live system. Point the suite at a running environment, fire requests, capture the responses, assert they match
-expectations. Our system was responsible for data mappings from various upstream sources, applying entitlements and exposing an
-easy-to-use set of APIs.
+Our system is responsible for data mappings from various upstream sources, applying entitlements and
+exposing an easy-to-use set of APIs.
 
-The intent was honest — test against reality, catch regressions early. The problem was that the tests were coupled to
+The initial approach to testing is what I call **shotgun testing**: write tests that assert data mappings
+against a live system. Point the suite at a running environment, fire requests, capture the responses, assert they match
+expectations. The intent is honest — test against reality, catch regressions early. The problem is that the tests are coupled to
 the live system, not to the code. Data changes. Environments drift. A field gets updated upstream, a mapping gets
 adjusted, and suddenly twenty tests are red for reasons that have nothing to do with what we just wrote.
 
-The suite broke often. Not from bugs we introduced, but from the world moving underneath us. A test suite that
+The suite breaks often. Not from bugs we introduce, but from the world moving underneath us. A test suite that
 fails for external reasons is not a safety net. It is noise. And noise trains people to ignore failures.
 
-## The Model
+The root cause is a confusion between two things that look the same but are not: **test coverage** (exercising your
+code paths) and **data coverage** (exercising every possible input value). Our model has around **4000 fields** for
+reference data alone, each with its own mapping logic, conditional branches, and chains of relationships. The
+permutations are effectively infinite. No test suite can achieve data coverage at this scale. Confusing the two goals
+leads to shotgun testing; naming the distinction is what frees the team to focus on what actually matters.
 
-To understand why data-driven testing was never going to work here, you need to understand the scale of the model:
-reference data and market data (minus streaming).
+Around the same time, the team has not agreed on a branching strategy either. The proposal on the table is
+[git flow](https://nvie.com/posts/a-successful-git-branching-model): long-lived feature branches, deployed in isolated
+OpenShift environments, merge when the feature is complete. The appeal is obvious — isolation, reviewability, nothing
+half-finished in the main branch. But the appeal hides a cost: branches diverge, merges become events, and the fragile
+test suite breaks in unpredictable ways when two long-lived branches finally meet.
 
-For reference data — the descriptive attributes of a financial instrument — we have around **4000 fields**. Each field
-has a mapping behind it: sometimes trivial, sometimes involving complex
-transformations, conditional logic, and chains of relationships across hundreds of classes. The object graph is deep.
-The permutations are effectively infinite.
-
-Market data is even more complex. Every data point is identified not by a single key but by four dimensions. A single
-instrument can have hundreds of valid combinations. Writing a test per combination is not a strategy. It is a different
-problem.
-
-No test suite can achieve **data coverage** at this scale. There is simply too much data, too many valid states, too
-many combinations. This was the first thing we had to name explicitly — the difference between **test coverage** (
-exercising your code paths) and **data coverage** (exercising every possible input value). Confusing the two is what
-leads to shotgun testing. Accepting that data coverage is unachievable is what frees you to focus on what actually
-matters.
+Two problems, one root: the team has no shared philosophy on either front.
 
 ## The Shift
 
-The project started with exploratory testing to validate *some* operations. Initially it was
-really fast and effective. But soon we discovered some problems with the approach — in the form
-of random breakage of the tests. We were able to quickly fix the breakages but more and more
-started to pop up. Then we started to ask what was worth keeping and what was not. It was clear that we needed
-to focus on coordinating our efforts better, but also that testing some data was good (at the time we defined
-"basic" tests and "special cases").
-
-Then I proposed to look at the [Testing Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html). 
-The reframe was this: instead of testing every *data* point, test every *type of mapping*.
-The mappings themselves come in a handful of distinct forms:
+I propose looking at the [Testing Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html).
+The reframe is this: instead of testing every *data* point, test every *type of mapping*. The mappings come in a handful of
+distinct forms:
 
 - **Simple mapping**: `a = b` — direct field assignment, no logic
 - **Mapping with fallback**: `a = b ?: c` — use `b`, fall back to `c` if null
@@ -73,118 +60,103 @@ Each of these is a distinct type of transformation with its own failure modes. T
 far more coverage than testing a hundred random data points that all happen to exercise the same simple mapping.
 
 Our data pipeline has a compiler-like structure — data flows through distinct transformation stages, each implemented as
-a dedicated mapper. Rather than asserting that field X of instrument Y equals Z against a live system, we started
-testing each mapper in isolation:
+a dedicated mapper. Rather than asserting that field X of instrument Y equals Z against a live system, we start
+testing each mapper in isolation: does it handle a missing optional field? Does it apply the right fallback? Does it
+preserve precision?
 
-- does this mapper handle a missing optional field correctly?
-- does it apply the right fallback when the upstream value is null?
-- does it preserve precision through this transformation?
+For integration confidence we keep a small set of tests based on **fixed snapshots** — a curated, frozen slice of real
+data checked into the repository. A known input with a known expected output, version-controlled alongside the code.
 
-These are unit tests against the mapping logic itself. They are fast, deterministic, and entirely independent of live
-data. They test *behavior*, not *data*.
+The combination gives us something we did not have before: a test suite that is stable by construction. But the
+technical shift is only half the work. The other half is agreement — and agreement needs to be written down. Not as a
+procedure, but as a set of principles with their reasons:
 
-For integration confidence we kept a small set of tests based on **fixed snapshots** — a curated, frozen slice of real
-data checked into the repository. Not a live system. Not a moving target. A known input with a known expected output,
-version-controlled alongside the code.
-
-The combination gave us something we had not had before: a test suite that was stable by construction.
-That week, we documented the following:
-
-> **Tests should break for the right reasons.** A test that fails because the world changed underneath it — shotgun testing — is worse than no test: it erodes trust. A test should fail only when the code it tests is wrong.
+> **Tests should break for the right reasons.** A test that fails because the world changed underneath it — shotgun
+> testing — is worse than no test: it erodes trust. A test should fail only when the code it tests is wrong.
 >
 > **Test behavior, not implementation**. Assert what a function does, not how it does it. If you refactor internals
-> and tests break, the tests were testing the wrong thing.
-> This is the core insight behind mapper-type testing: test the contract of each transformation, not the
-> specific data flowing through production.
+> and tests break, the tests are testing the wrong thing. This is the core insight behind mapper-type testing: test
+> the contract of each transformation, not the specific data flowing through production.
 >
-> **Determinism is non-negotiable**. A test that passes 99% of the time is not a passing test — it's a flaky test you haven't caught yet. No network calls, no clock dependencies, no shared mutable state between tests.
-> If you need external systems, use fixed snapshots (as we do) or in-memory fakes.
+> **Determinism is non-negotiable**. A test that passes 99% of the time is not a passing test — it's a flaky test
+> you haven't caught yet. No network calls, no clock dependencies, no shared mutable state between tests. If you need
+> external systems, use fixed snapshots (as we do) or in-memory fakes.
 >
 > **Tests should be fast**. Especially unit tests, they should take a few milliseconds each.
-> 
-> **Bug-ticket-test-fix cycle**. Bug is reported → open a ticket → write a failing test that reproduces it → fix. 
+>
+> **Bug-ticket-test-fix cycle**. Bug is reported → open a ticket → write a failing test that reproduces it → fix.
 > This guarantees every bug becomes a regression test. It also forces you to understand the bug before fixing it.
 
-Then we linked the aforementioned Testing Pyramid and some best practices/guidance, like using Junit4/Mockito/AssertJ,
-and keeping test code to the same standard as production code.
-The point about determinism was really important so we started to use [Gateway pattern](https://martinfowler.com/articles/gateway-pattern.html)
-systematically for every new upstream source. 
+Notice that each principle carries a *because*. Not "use fixed snapshots" but "use fixed snapshots *because* a test
+that fails for external reasons erodes trust." That is what makes it guidance rather than a checklist. A new engineer
+reading this does not just know *what* to do — they know *why*, which means they can reason about cases the document
+never anticipated.
+
+We also link the Testing Pyramid, recommend Junit4/Mockito/AssertJ, adopt the
+[Gateway pattern](https://martinfowler.com/articles/gateway-pattern.html) for every upstream source to enforce the
+determinism principle, and keep test code to the same standard as production code. But those are the *how*. The
+document above is the *why*.
 
 ## Branching strategy
 
-Around the same time, the team was converging on a branching strategy. The proposal on the table was [git flow](https://nvie.com/posts/a-successful-git-branching-model):
-long-lived feature branches, deployed in isolated OpenShift environments, merge when the feature is complete. The appeal was
-obvious — isolation, reviewability, nothing half-finished in the main branch. But I kept coming back to
-the same observation: this is not continuous integration. You can call this **continuous branching** or 
-**continuous delay**, and it felt wrong for our team's mission. 
-Branches would diverge. Merges would become events, with lots of conflicts to resolve. The fragile test suite would
-break in unpredictable ways when two long-lived branches finally met.
+If merging hurts, do it more often: *multiple times per day*. The idea is essentially
+[trunk-based development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
+weeks. A handful of commits, rebased and squashed before merge. **Feature flags** to decouple deployment from release —
+a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work.
 
-I made a counter-proposal: if merging hurts, do it more often. Multiple times per day. 
-The idea was essentially [trunk-based development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than weeks. 
-A  handful of commits, rebased and squashed before merge to keep the history clean. **Feature flags** to decouple deployment from release — a
-half-finished feature could live in trunk behind a flag, invisible to users, without blocking anyone else's work.
+I am not the only one who feels this way. Another engineer on the team has worked with trunk-based dev before and
+understands the tradeoffs. Having an internal ally matters — not to win an argument, but to demonstrate that this is
+not a personal preference. It is a known, practiced approach with a track record.
 
-I was not the only one who felt this way. Another engineer on the team had worked with trunk-based dev before and
-understood the tradeoffs. Having an internal ally mattered — not to win an argument, but to demonstrate that this was
-not a personal preference. It was a known, practiced approach with a track record.
+The team adopts it. Not in a single decision, but gradually — as people try the workflow, find the feedback loops
+faster, and stop dreading merge day. There is no single moment where it clicks. It becomes the default because it
+works.
 
-The team adopted it. Not in a single decision, but gradually — as people tried the workflow, found the feedback loops
-faster, and stopped dreading merge day. There was no single moment where it clicked. It became the default because it
-worked.
+And again, the agreement needs to be written down:
 
-Extract for the wiki:
-> **Principles**
-> 
-> **commit often**, **publish once** Why? we don't want to see on develop tens of commits like "wip", "fix unit test", "review items", "merge from master"
-> since they are noise. We just want to see what is inside each feature or bugfix.
-> 
-> **small pull-requests** Why? Because it is easier to understand and to review.
-> 
-> *First make the change easy, then make the easy change* -- Kent Beck
+> **commit often, publish once** — we don't want to see on develop tens of commits like "wip", "fix unit test",
+> "review items", "merge from master". They are noise. We want to see what is inside each feature or bugfix.
+>
+> **small pull-requests** — easier to understand and to review.
+>
+> *First make the change easy, then make the easy change* — Kent Beck
+>
+> We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.
+>
+> Bugfixes must be atomic — small and focused, ideally touching one production class and its tests. Why? They need to
+> be cherry-picked to the release branch, and merge conflicts are expensive to solve.
+>
+> Invest time in writing meaningful commit messages: JIRA reference, brief summary, then the *why* — what is the
+> problem, what is the solution, what trade-offs were made. Future readers of the history (including yourself) will
+> thank you. Avoid commits like "Fix" or "Updates...".
+>
+> Break big changes into multiple PRs.
+> [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html)
 
-And then some guidance and ideal best practices:
+The same pattern: every rule has a reason. "Bugfixes must be atomic" is a procedure; "bugfixes must be atomic *because*
+they need to be cherry-picked and merge conflicts are expensive" is guidance. One you follow blindly, the other you can
+adapt when the situation is slightly different.
 
-> we decided to use squash, rebase and fast-forward only
-> - sometimes merging 2 "green" PRs produces a build error/test error
-> 
-> bugfixes must be atomic 
->  - small and very focused, ideally touching 1 production class + test cases
->  - why? need to be cherry-picked to the release branch, merge conflicts are expensive to solve
-> 
-> invest time in writing meaningful commit messages, please include:
-> - JIRA reference in square brackets
-> - brief summary in the first line
-> - second line empty
-> - some nice description of what is the problem, what is the solutions, document trade-offs, trade-off, etc.
-> - commit message should link the story and tell the "why" a particular solution has been used
-> - be descriptive... future readers of the history (including yourself) will thank you
-> - Avoid commits like "Fix" or "Updates..."
-> 
-> we encourage breaking big changes into multiple PRs
->   [An example of preparatory refactoring](https://martinfowler.com/articles/preparatory-refactoring-example.html)
-
-Finally, we included some documentation on *how* (which git commands to use, how to do it in IntelliJ) and even 
-some common error. 
-
-## Codifying the decisions
-
-Both shifts — the testing approach and the branching model — emerged from working practice. But practice alone does not
-transfer. We put the reasoning, the constraints and some guiding principles in the internal wiki.
-
-The page was not a procedural checklist. It focused on *why*: why testing the mapper is better than testing the data,
-why data coverage is the wrong goal in this domain, why short-lived branches and feature flags make integration cheaper.
-It included concrete examples: a good unit test next to a bad one, with an explanation of what made the difference.
-Actual code, actual trade-offs, not abstract principles. We had even screenshots of bad git history from other projects
-to show why we want this way as we are a small team (I remember one particulary bad with like 40 parallel lines with a lot of merges 
-from master branch in both directions).
+We include documentation on *how* as well — which git commands to use, how to do it in IntelliJ, common errors. But
+that part is short. The principles above are the part that actually shapes how people work.
 
 ## What We Learned
 
-Neither the testing philosophy nor the branching model was adopted because someone mandated it. Both spread because they
-were demonstrably better, and because the reasoning was written down in a form that others could inspect, question, and
-build on. Teams don’t align because someone enforces rules.
-They align when they share a philosophy — a way of seeing the system.
+Both shifts — testing and branching — emerge from the same pattern: name the problem, reach agreement, write down the
+reasoning.
+
+The page in the wiki is not a procedural checklist. It focuses on *why*: why testing the mapper is better than testing
+the data, why data coverage is the wrong goal in this domain, why short-lived branches and feature flags make
+integration cheaper. It includes concrete examples — a good unit test next to a bad one, with an explanation of what
+makes the difference. We even include screenshots of bad git history from other projects: one particularly bad one with
+about 40 parallel lines and merges from master in both directions.
+
+That page becomes our onboarding document. Every new engineer joining the team reads it. It is still in use today.
+
+Neither the testing philosophy nor the branching model is adopted because someone mandates it. Both spread because they
+are demonstrably better, and because the reasoning is written down in a form that others can inspect, question, and
+build on. Teams don't align because someone enforces rules. They align when they share a philosophy — a way of seeing
+the system.
 
 An explicit document that captures *why* outlasts any individual on the team; it shapes the culture of the team.
 
