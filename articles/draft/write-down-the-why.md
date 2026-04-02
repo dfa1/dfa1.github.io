@@ -151,16 +151,9 @@ integration cheaper. It includes concrete examples — a good unit test next to 
 makes the difference. We even include screenshots of bad git history from other projects: one particularly bad one with
 about 40 parallel lines and merges from master in both directions.
 
-That page becomes our onboarding document. Every new engineer joining the team reads it. It is still in use today.
-
-Neither the testing philosophy nor the branching model is adopted because someone mandates it. Both spread because they
-are demonstrably better, and because the reasoning is written down in a form that others can inspect, question, and
-build on. Teams don't align because someone enforces rules. They align when they share a philosophy — a way of seeing
-the system.
-
 An explicit document that captures *why* outlasts any individual on the team; it shapes the culture of the team.
 
-**Write down the why. Make it visible. The alignment follows.**
+**Write down the why and make it visible.**
 
 ---
 
