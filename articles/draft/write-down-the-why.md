@@ -112,14 +112,14 @@ The team adopts it. Not in a single decision, but gradually — as people try th
 faster, and stop dreading merge day. There is no single moment where it clicks. It becomes the default because it
 works.
 
-And again, the agreement needs to be written down:
+And again, the why needs be written down:
 
 > **commit often, publish once** — we don't want to see on develop tens of commits like "wip", "fix unit test",
 > "review items", "merge from master". They are noise. We want to see what is inside each feature or bugfix.
 >
 > **small pull-requests** — easier to understand and to review.
->
-> *First make the change easy, then make the easy change* — Kent Beck
+
+Then a bit of guidance on the how is always welcome:
 >
 > We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.
 >
@@ -130,15 +130,14 @@ And again, the agreement needs to be written down:
 > problem, what is the solution, what trade-offs were made. Future readers of the history (including yourself) will
 > thank you. Avoid commits like "Fix" or "Updates...".
 >
-> Break big changes into multiple PRs.
+> Break big changes into multiple PRs. — *First make the change easy, then make the easy change* — Kent Beck
 > [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html)
 
 The same pattern: every rule has a reason. "Bugfixes must be atomic" is a procedure; "bugfixes must be atomic *because*
 they need to be cherry-picked and merge conflicts are expensive" is guidance. One you follow blindly, the other you can
 adapt when the situation is slightly different.
 
-We include documentation on *how* as well — which git commands to use, how to do it in IntelliJ, common errors. But
-that part is short. The principles above are the part that actually shapes how people work.
+We include documentation on *how* as well — which git commands to use, how to do it in IntelliJ, common errors. The principles above are the part that actually shapes how people work.
 
 ## What We Learned
 
