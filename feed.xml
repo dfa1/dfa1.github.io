@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Davide Angelocola</title>
+  <link href="https://dfa1.github.io/feed.xml" rel="self"/>
+  <link href="https://dfa1.github.io/"/>
+  <updated>2026-03-29T00:00:00Z</updated>
+  <author>
+    <name>Davide Angelocola</name>
+  </author>
+  <id>urn:uuid:dfa1.github.io</id>
+
+  <entry>
+    <title>Coding with Claude Code: A Week on hosh</title>
+    <link href="https://dfa1.github.io/articles/coding-with-claude-code"/>
+    <id>urn:uuid:coding-with-claude-code</id>
+    <updated>2026-03-29T00:00:00Z</updated>
+    <published>2026-03-29T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Coding with Claude Code: A Week on hosh</summary>
+  </entry>
+  <entry>
+    <title>The Joy of Proper Encapsulation</title>
+    <link href="https://dfa1.github.io/articles/the-joy-of-proper-encapsulation"/>
+    <id>urn:uuid:the-joy-of-proper-encapsulation</id>
+    <updated>2026-03-27T00:00:00Z</updated>
+    <published>2026-03-27T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>The Joy of Proper Encapsulation</summary>
+  </entry>
+
+</feed>
