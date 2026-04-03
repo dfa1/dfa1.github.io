@@ -30,7 +30,7 @@ leads to shotgun testing; naming the distinction is what frees the team to focus
 
 Around the same time, the team has not agreed on a branching strategy either. The proposal on the table is
 [git flow](https://nvie.com/posts/a-successful-git-branching-model): long-lived feature branches, deployed in isolated
-OpenShift environments, merge when the feature is complete. The appeal is obvious — isolation, reviewability, nothing
+containerized environments, merge when the feature is complete. The appeal is obvious — isolation, reviewability, nothing
 half-finished in the main branch. But the appeal hides a cost: branches diverge, merges become events, and the fragile
 test suite breaks in unpredictable ways when two long-lived branches finally meet.
 
@@ -102,7 +102,7 @@ document above is the *why*.
 If merging hurts, do it more often: *multiple times per day*. The idea is essentially
 [Trunk Based Development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
 weeks. A handful of commits, rebased and squashed before merge. **Feature flags** to decouple deployment from release —
-a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. In the end, we opted to use a variation of it called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) since our regulated environments requires staging for several days before release to final users.
+a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. In the end, we opted to use a variation of it called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) since a regulated environment typical of financial institutions requires staging for several days before release to final users.
 
 I am not the only one who feels this way. Another engineer on the team has worked with trunk-based dev before and
 understands the tradeoffs. Having an internal ally matters — not to win an argument, but to demonstrate that this is
