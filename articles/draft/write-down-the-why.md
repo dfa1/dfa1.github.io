@@ -2,7 +2,7 @@
 
 1 October 2020
 
-*Late 2019, early 2020. A newly formed team at SIX Group, building the next generation of a financial market data
+*Late 2019, early 2020. A newly formed team, building the next generation of a financial reference data
 platform from scratch. Several developers that never worked together, a greenfield project, a deadline, and two problems
 we had not yet named: a testing approach that would take us a while to outgrow, and a branching model we had not agreed on yet.
 Every team has a moment where brute force stops working. Ours came on two fronts at once.
@@ -23,7 +23,7 @@ The suite breaks often. Not from bugs we introduce, but from the world moving un
 fails for external reasons is not a safety net. It is noise. And noise trains people to ignore failures.
 
 The root cause is a confusion between two things that look the same but are not: **test coverage** (exercising your
-code paths) and **data coverage** (exercising every possible input value). Our model has around **4000 fields** for
+code paths) and **data coverage** (exercising every possible input value). Our model has several thousands of fields for
 reference data alone, each with its own mapping logic, conditional branches, and chains of relationships. The
 permutations are effectively infinite. No test suite can achieve data coverage at this scale. Confusing the two goals
 leads to shotgun testing; naming the distinction is what frees the team to focus on what actually matters.
@@ -92,7 +92,7 @@ that fails for external reasons erodes trust." That is what makes it guidance ra
 reading this does not just know *what* to do — they know *why*, which means they can reason about cases the document
 never anticipated.
 
-We also link the Testing Pyramid, recommend Junit4/Mockito/AssertJ, adopt the
+We also link the Testing Pyramid, recommend JUnit/Mockito/AssertJ, adopt the
 [Gateway pattern](https://martinfowler.com/articles/gateway-pattern.html) for every upstream source to enforce the
 determinism principle, and keep test code to the same standard as production code. But those are the *how*. The
 document above is the *why*.
@@ -112,9 +112,9 @@ The team adopts it and as people try the workflow, find the feedback loops
 faster, and stop dreading merge day. There is no single moment where it clicks. It becomes the default because it
 works.
 
-And again, the why needs be written down:
+And again, the why needs to be written down:
 
-> **commit often, publish once** — we don't want to see on develop tens of commits like "wip", "fix unit test",
+> **commit often, publish once** — we don't want to see on develop dozens of commits like "WIP", "fix", "fix unit test",
 > "review items", "merge from master". They are noise. We want to see what is inside each feature or bugfix.
 >
 > **small pull-requests** — easier to understand and to review.
@@ -131,7 +131,7 @@ Then a bit of guidance on the how is always welcome, especially to make principl
 > thank you. Avoid commits like "Fix" or "Updates...".
 >
 > Break big changes into multiple PRs. — *First make the change easy, then make the easy change* — Kent Beck
-> [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html)
+> [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html).
 
 The same pattern: every rule has a reason. "Bugfixes must be atomic" is a procedure; "bugfixes must be atomic *because*
 they need to be cherry-picked and merge conflicts are expensive" is guidance. One you follow blindly, the other you can
@@ -147,8 +147,7 @@ reasoning.
 The page in the wiki is not a procedural checklist. It focuses on *why*: why testing the mapper is better than testing
 the data, why data coverage is the wrong goal in this domain, why short-lived branches and feature flags make
 integration cheaper. It includes concrete examples — a good unit test next to a bad one, with an explanation of what
-makes the difference. We even include screenshots of bad git history from other projects: one particularly bad one with
-about 40 parallel lines and merges from master in both directions.
+makes the difference. We even include screenshots of complex git histories: one particularly complex with about 40 parallel lines and merges from master in both directions.
 
 An explicit document that captures *why* outlasts any individual on the team; it shapes the culture of the team.
 
@@ -158,7 +157,7 @@ An explicit document that captures *why* outlasts any individual on the team; it
 
 ### Update on 2 April 2026
 
-This was 2020. Six years later, the same principle applies with even greater urgency. Today we routinely delegate coding
+This was 2020. Six years later, the same principle applies with even greater urgency. Today we are routinely delegate coding
 tasks to AI agents — and an agent without context will produce the same kind of misaligned output that a new team member
 without onboarding would. It will write shotgun tests. It will pick the wrong abstraction. It will optimize for the
 metric you gave it, not the one you meant. The document that captures your testing philosophy, your branching model,
