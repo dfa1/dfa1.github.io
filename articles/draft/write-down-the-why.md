@@ -100,15 +100,15 @@ document above is the *why*.
 ## Branching strategy
 
 If merging hurts, do it more often: *multiple times per day*. The idea is essentially
-[trunk-based development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
+[Trunk Based Development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
 weeks. A handful of commits, rebased and squashed before merge. **Feature flags** to decouple deployment from release —
-a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work.
+a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. In the end, we opted to use a variation of it called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) since our regulated environments requires staging for several days before release to final users.
 
 I am not the only one who feels this way. Another engineer on the team has worked with trunk-based dev before and
 understands the tradeoffs. Having an internal ally matters — not to win an argument, but to demonstrate that this is
 not a personal preference. It is a known, practiced approach with a track record.
 
-The team adopts it. Not in a single decision, but gradually — as people try the workflow, find the feedback loops
+The team adopts it and as people try the workflow, find the feedback loops
 faster, and stop dreading merge day. There is no single moment where it clicks. It becomes the default because it
 works.
 
@@ -119,7 +119,7 @@ And again, the why needs be written down:
 >
 > **small pull-requests** — easier to understand and to review.
 
-Then a bit of guidance on the how is always welcome:
+Then a bit of guidance on the how is always welcome, especially to make principles more concrete for new joiners:
 >
 > We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.
 >
