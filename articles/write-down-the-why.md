@@ -155,7 +155,7 @@ An explicit document that captures *why* outlasts any individual on the team; it
 
 ---
 
-### Update on 2 April 2026
+### Update on 3 April 2026
 
 This was 2020. Six years later, the same principle applies with even greater urgency. Today we are routinely delegate coding
 tasks to AI agents — and an agent without context will produce the same kind of misaligned output that a new team member
