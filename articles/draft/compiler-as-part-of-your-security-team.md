@@ -282,8 +282,8 @@ structs — the design is sound today, and it will get cheaper.)
 fully distinct type:
 
 ```haskell
-newtype InstrumentId = InstrumentId Text
-newtype MarketId     = MarketId     Text
+newtype InstrumentId = InstrumentId Int
+newtype MarketId     = MarketId     Int
 
 publish :: MarketId -> InstrumentId -> Price -> IO ()
 ```
@@ -291,15 +291,15 @@ publish :: MarketId -> InstrumentId -> Price -> IO ()
 Swapping the arguments is a compile error. There is no runtime cost. This is the ideal
 the other languages approximate.
 
-The type distinction — which prevents argument swapping — comes for free. Validation
-still requires a smart constructor: a function that checks the value before wrapping it,
-returning `Maybe InstrumentId` or throwing on invalid input.
+The type distinction — which prevents argument swapping — comes for free. With a numeric
+inner type, validation is typically a range check in a smart constructor returning
+`Maybe InstrumentId`.
 
 **Rust** uses the same *newtype pattern* via tuple structs:
 
 ```rust
-struct InstrumentId(String);
-struct MarketId(String);
+struct InstrumentId(i32);
+struct MarketId(i32);
 
 fn publish(market: MarketId, instrument: InstrumentId, price: Price) { ... }
 ```
@@ -311,14 +311,14 @@ exposing only a validated constructor.
 **C++** requires a hand-written wrapper, but even a simple struct does the job:
 
 ```cpp
-struct InstrumentId { std::string value; };
-struct MarketId     { std::string value; };
+struct InstrumentId { int value; };
+struct MarketId     { int value; };
 
 void publish(MarketId market, InstrumentId instrument, Price price);
 ```
 
 Argument swapping is a compile error. For stronger guarantees — preventing implicit
-construction from raw strings, enforcing validation — libraries like
+construction from raw ints, enforcing validation — libraries like
 [`type_safe`](https://github.com/foonathan/type_safe) or
 [`strong_type`](https://github.com/rollbear/strong_type) provide newtype semantics
 without additional boilerplate. The underlying principle is the same: one named type per
@@ -335,8 +335,7 @@ This isn't just good design. It directly eliminates whole vulnerability categori
 
 - **ReDoS**: length-bounded inputs defang backtracking regex
 - **Injection**: a `SqlIdentifier` type that only accepts safe identifiers cannot carry `'; DROP TABLE users; --`
-- **Privilege escalation**: `AdminToken` and `UserToken` as incompatible types prevent accidental privilege bypass
-- **Business logic flaws**: `NonNegativeMoney` eliminates negative transfer exploits; sealed `DataQuality` makes it impossible to treat delayed data as real-time
+- **Business logic flaws**: sealed `DataQuality` makes it impossible to treat delayed data as real-time
 
 Security stops being a checklist applied at the end. It becomes a **property of the
 design**.
