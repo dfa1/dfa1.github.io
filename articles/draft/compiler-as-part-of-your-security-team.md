@@ -23,54 +23,71 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 ## Make Illegal State Unrepresentable
 
-This is the starting point: encode in your types what is the domain of the values. `MarketId` could be
-just 3 digits number whereas an `InstrumentId` could be much bigger, let's say 16 digits.
+This is the starting point: encode in your type what is the domain of the value. `MarketId` could be
+just 3 digits non-negative number, an `InstrumentId` could be much bigger.
 
-Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
-them on the way in." Cannot exist at all — construction throws.
+Design types such that invalid or dangerous values **cannot be constructed**.
 
 The shift in framing matters. Validation is a check you add to code that already runs.
 It can be forgotten, skipped under a time-pressed refactor, or called in the wrong order.
 A type whose constructor rejects bad input cannot be bypassed — it is structural, not
-procedural. You stop asking *did we remember to validate this?* and start asking *can this
+procedural. You stop asking *"did we remember to validate this"?* xand start asking *"can this
 type even hold that value?* — a question the compiler answers for you at every call site.
 
 ---
 
 ## Validate at the boundary — once
 
-Every value entering your system from the outside world is untrusted. Wrap it into a
-domain primitive at the boundary. Once. Never pass raw ints or strings into your domain.
+Every value entering your system from the outside world is **untrusted**.
+Wrap it into a domain primitive at the boundary *once*. Then, make sure the value cannot change
+after contruction. A domain primitive is not just a validation wrapper. It is a value — and values do not
+change. Mutability opens a gap: an object passes validation on construction, then a setter
+quietly puts it into an invalid or dangerous state.
 
-But validation itself has a pitfall people miss: **regex on unbounded input is a
-vulnerability**.
+In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
+a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
+In modern Java a `record` could be used to lower the effort writing systematically domain primitives.
 
-A crafted input of a few thousand characters can cause a backtracking regex to run for
+But validation itself has a pitfall people miss if a regex is used: **regex on unbounded input is a
+vulnerability**. A crafted input of a few thousand characters can cause a backtracking regex to run for
 seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). The fix is
 simple: **always check length before applying regex**. It's one of those rules that once
 you see it you can't unsee it.
 
-This is an example wrapper in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
-one of most of popular identifiers for financial instruments, but the same logic applies cleanly to other domains:
+This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
+one of the most popular identifiers for financial instruments (same logic applies cleanly to other domains):
 
 ```java
 public final class Isin {
-    private static final int MAX_LENGTH = 12;
+
+    // 2 letters for country code
+    // 9 digits for national number
+    // 1 checksum digit
+    private static final int LENGTH = 12;
     private static final Pattern FORMAT = Pattern.compile("^[A-Z]{2}[A-Z0-9]{9}[0-9]$");
 
     private final String value;
 
     public Isin(String value) {
-        if (value == null || value.length() > MAX_LENGTH) {
+        if (value == null || value.length() != MAX_LENGTH) {
             throw new IllegalArgumentException("Invalid ISIN");
         }
         if (!FORMAT.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid ISIN");
         }
-        this.value = value;
+        this.value = value.toUpperCase(Locale.ROOT);
     }
 
+    // the value as string is always valid
     public String value() { return value; }
+
+    // get Country domain primitive using the first 2 characters of the isin
+    public Country country() {
+       return Country.from(this);
+    }
+
+    // ...
+    // add toString(), compareTo(), equals(), hashCode()
 }
 ```
 
@@ -163,18 +180,20 @@ publish(marketId + 1, instrument - 1, ...); <-- compile time error
 
 ---
 
-## Make domain primitives immutable
+## Security is built-in
 
-A domain primitive is not just a validation wrapper. It is a value — and values do not
-change. Mutability opens a gap: an object passes validation on construction, then a setter
-quietly puts it into an invalid or dangerous state. Immutability closes that gap for good.
+So the first line of defense is the domain primitives: they prevent bad inputs to leak deep
+into the business logic and they help to better document how the data is flowing.
 
-In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
-a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
-Seal the type so the invariants you wrote are the invariants that hold.
+Another underused practice: treat the CI build as a second line of defense by writing
+`@ParameterizedTest` suites for every domain primitive and feed them adversarial inputs —
+ask your security officer for their favorites. A crafted ReDoS string, a Unicode homoglyph,
+a negative value disguised as a large long. If your type rejects them all at construction
+time, you've shifted those checks left to where they cost nothing to run and can never be
+skipped by a tired reviewer.
 
-Sensitive values require one extra step: **control what the type exposes**. An `ApiToken`
-that cheerfully prints itself is a secret waiting to leak into a log file.
+But sensitive values require one extra step: **control what the type exposes**. An `ApiToken`
+that cheerfully prints itself is a secret waiting to leak into a log file or exception stacktrace.
 
 ```java
 public final class ApiToken {
@@ -231,12 +250,65 @@ A few deliberate choices here:
   an attacker with control over a serialized stream could reconstruct an `ApiToken`
   without passing any validation. This one method closes that path entirely.
 
-The compiler and the type system cannot read your mind. But they will enforce whatever
-invariants you encode. Encode the right ones.
+A better design is to use the `read-once` pattern described in the **Secure by Design** book:
+
+```java
+public final class Password {
+
+    private char[] value;
+
+    public Password(char[] value) {
+        this.value = Arrays.copyOf(value, value.length);
+    }
+
+    public char[] readOnce() {
+        if (value == null) throw new IllegalStateException("Password already consumed");
+        char[] result = value;
+        value = null; // consumed
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "Password[REDACTED]";
+    }
+}
+```
+
+After the password is used to authenticate the user, it cannot be used again... even accidentally.
+
+This isn't just good design. It directly contribute to eliminate whole vulnerability categories:
+- the attacker cannot use `Isin` as way to exploit a SQL injection as it cannot hold something like `'; DROP TABLE users; --`;
+- the auditor won't find `ApiToken` leaks in the logs as the token can be read only once;
+- in general, it will be much harder for the attacker that control an input to use it.
+
+Security stops being a checklist applied at the end. It becomes a **property of the
+design**, the security is **built-in**.
+
+---
+
+## Domain primitives make codebases explorable
+
+This is a benefit that rarely gets mentioned alongside security, but it's just as real.
+
+Press **Ctrl+Click** on `Integer` or `String` in your IDE. You will see thousands of usages across the
+entire codebase — every method parameter, every field, every local variable. It tells you
+nothing.
+
+Press **Ctrl+Click** on `InstrumentId`. You see exactly the methods that accept it, the
+services that produce it, the repositories that store it. You have, in one gesture, a
+precise map of where instrument identity flows through your system.
+
+For a new joiner, this is the difference between orientation taking days and orientation
+taking hours. For a security review, this is the difference between tracing a data flow
+manually and having the type system draw it for you. **Domain primitives are
+documentation that the compiler keeps accurate.**
 
 ---
 
 ## You already depend on domain primitives
+
+Is this new ideas? Not at all.
 
 The JDK has shipped domain primitives for decades. `Path` wraps a raw file-system string
 and validates it — you don't pass `String` to `Files.readAllBytes`. `URI` parses and
@@ -247,8 +319,8 @@ HTTP client. `UUID` enforces its format. `Instant`, `Duration`, and `Period` rep
 The people who built the platform you run on decided a raw `String` or `long` was not good
 enough for these values. The same logic applies to your domain..
 
-Smaller libraries make the same choice. In [Hosh](https://github.com/dfa1/hosh), a JVM
-shell, `ExitStatus` wraps an `int` exit code:
+In [Hosh](https://github.com/dfa1/hosh), an experimental JVM shell I'm writing, `ExitStatus`
+wraps an `int` exit code:
 
 ```java
 public class ExitStatus {
@@ -281,9 +353,9 @@ appears in every well-designed primitive because the problems it solves are univ
 ## The same idea in other languages
 
 Java wraps a class around the value. Other languages reach the same place with less
-ceremony and even zero runtime cost (Project Valhalla will
+ceremony and even zero runtime cost. Project Valhalla will
 eventually close this gap: value classes will give Java zero-overhead domain primitives
-that the JIT can flatten in memory.).
+that the JIT can flatten in memory.
 
 **Haskell** has `newtype` — a zero-overhead wrapper erased at runtime that gives you a
 fully distinct type:
@@ -336,55 +408,15 @@ enforce your domain boundaries.
 
 ---
 
-## The security angle
-
-This isn't just good design. It directly eliminates whole vulnerability categories.
-Security stops being a checklist applied at the end. It becomes a **property of the
-design**.
-
-One underused practice: treat the build as a second line of defense. Write
-`@ParameterizedTest` suites for every domain primitive and feed them adversarial inputs —
-ask your security officer for their favorites. A crafted ReDoS string, a Unicode homoglyph,
-a negative value disguised as a large long. If your type rejects them all at construction
-time, you've shifted those checks left to where they cost nothing to run and can never be
-skipped by a tired reviewer.
-
----
-
-## Domain primitives make codebases explorable
-
-This is a benefit that rarely gets mentioned alongside security, but it's just as real.
-
-Press **Ctrl+Click** on `Integer` or `String` in your IDE. You will see thousands of usages across the
-entire codebase — every method parameter, every field, every local variable. It tells you
-nothing.
-
-Press **Ctrl+Click** on `InstrumentId`. You see exactly the methods that accept it, the
-services that produce it, the repositories that store it. You have, in one gesture, a
-precise map of where instrument identity flows through your system.
-
-For a new joiner, this is the difference between orientation taking days and orientation
-taking hours. For a security review, this is the difference between tracing a data flow
-manually and having the type system draw it for you. **Domain primitives are
-documentation that the compiler keeps accurate.**
-
----
-
 ## Closing
 
-**Your compiler is already on the security team. It's been waiting for you to give it the
+**Your compiler is already part of your security team. It's been waiting for you to give it the
 right types to work with.**
 
-The most resilient systems make the dangerous path the hard one to write and the safe
-path the path of least resistance. Domain primitives, sealed hierarchies, and
-disciplined boundary validation make the type system your first line of defense — one
-that never sleeps, never forgets, and never skips a step under deadline pressure.
-
-Of course, this is not the only security layer. TLS with current cipher suites, proper
+Of course, this is not enough alone. Use TLS with current cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
-every layer does its job. What type-driven design does is harden the layer you own
-completely: your own code.
+every layer does its job. Why not starting from the most basic pieces of the business logic?
 
 ---
 
