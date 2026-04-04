@@ -404,6 +404,6 @@ The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
 [*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
 It is the clearest statement of the boundary-parsing idea I know of.
 
-If you want to go deeper, read **"Secure by Design"** (Bergh Johnsson, Deogun, Sawano —
+If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
 Manning, 2019). It is one of the few books that treats security as a design discipline
 rather than a bolt-on concern. Highly recommended.
