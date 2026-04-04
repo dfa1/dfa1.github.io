@@ -374,23 +374,6 @@ documentation that the compiler keeps accurate.**
 
 ---
 
-## The objections
-
-*"This is expensive."*
-
-Compared to what? Compared to a 3am incident, a data breach disclosure, or scattering
-validation logic across every layer of the stack and hoping every caller remembered to call
-it? The cost of a domain primitive is one constructor and one test suite, written once.
-
-*"This is verbose."*
-
-Yes. About 10–20 extra lines per domain primitive. Weighed against: one injection bug,
-one ReDoS incident, one privilege bypass, one new joiner spending a week
-reverse-engineering data flows. The verbosity is the point — it is explicit, auditable,
-and self-documenting. The compiler reviews it for free, forever.
-
----
-
 ## Closing
 
 The most resilient systems make the dangerous path the hard one to write and the safe
