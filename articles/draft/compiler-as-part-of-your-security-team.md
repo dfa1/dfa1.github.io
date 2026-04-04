@@ -21,7 +21,7 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 ---
 
-## The Principle: Make Illegal State Unrepresentable
+## Make Illegal State Unrepresentable
 
 This is the starting point: encode in your types what is the domain of the values. `MarketId` could be
 just 3 digits number whereas an `InstrumentId` could be much bigger, let's say 16 digits.
@@ -37,7 +37,7 @@ type even hold that value?* — a question the compiler answers for you at every
 
 ---
 
-## Validate at the boundary — once, correctly, in order
+## Validate at the boundary — once
 
 Every value entering your system from the outside world is untrusted. Wrap it into a
 domain primitive at the boundary. Once. Never pass raw ints or strings into your domain.
@@ -92,24 +92,24 @@ transform it into a type that is its own proof of validity.
 
 ---
 
-## For small state spaces, use types that make invalid combinations impossible
+## Make invalid combinations impossible
 
 Two booleans on a method:
 
 ```java
-void registerInstrument(String isin, boolean isActive, boolean isEquity) { ... }
+void registerInstrument(String isin, boolean isActive, boolean isEquity, boolean isIndex) { ... }
 ```
 
-Four possible combinations. How many are actually valid for your domain? Probably not all
+8 possible combinations. How many are actually valid for your domain? Probably not all
 of them — and "active equity" versus "inactive bond" are very different things. A silent
 flag swap here is a business-logic flaw waiting to be exploited.
 
-Modern Java gives you several tools here.
+Java gives you several tools here.
 
 **Enums** for simple cases:
 
 ```java
-public enum InstrumentStatus { ACTIVE, INACTIVE }
+public enum InstrumentStatus { ACTIVE, INACTIVE, IN_DISSOLUTION }
 public enum InstrumentType   { BOND, EQUITY, INDEX, FIXED_INCOME }
 
 void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status) { ... }
@@ -117,7 +117,7 @@ void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status)
 
 **Records + sealed interfaces** for richer cases where variants carry different data.
 Consider data quality in a financial feed — real-time, delayed by some minutes, or end of
-day. These are not just labels; they carry different information:
+day. These are not just labels; they carry different information.
 
 ```java
 public sealed interface DataQuality
@@ -138,38 +138,32 @@ dangerous path is the hard one to write.
 
 ---
 
-## Name your domain, don't describe it with strings
+## Invalid operations at caught at compile time
 
 In the financial domain, a codebase that hasn't embraced domain primitives
 typically looks like this:
 
 ```java
-void publish(int marketId, int instrumentId, String isin, double volume, double price) { ... }
+int marketId = Integer.parseInt(request.getParam("marketId"));
+int instrumentId = Integer.parseInt(request.getParam("instrumentId"));
+publish(marketId + 1, instrument - 1, ...);
 ```
-
-Five untyped primitives. The two ints are interchangeable with each other; the two strings are interchangeable with each other.The compiler cannot help you.
-The reviewer cannot easily help you — every usage requires reading surrounding context to
-understand what is flowing where.
-
-With domain primitives:
-
-```java
-void publish(MarketId market, InstrumentId instrument, Isin isin, Volume volume, Price price) { ... }
-```
-
-Each type encodes its own validation rules. `Volume` knows it must not be negative.
-`Isin` knows its format. `MarketId` knows its format. `Price` knows it cannot be
-negative. None of this knowledge leaks out or gets duplicated.
 
 There is a subtler point too. An `int` is a number — the compiler will happily let you
 write `instrumentId + 1` or `marketId * instrumentId`. These expressions compile cleanly.
 They are also semantically meaningless: instrument identifiers are not quantities; you cannot add, subtract,
 or scale them. A domain primitive exposes no arithmetic operators. The meaningless
-operations are not just discouraged — they do not exist.
+operations are not just discouraged — they do not exist:
+
+```java
+MarketId marketId = new MarkedId(request.getParam("marketId"));
+InstrumentId instrumentId = new InstrumentId(request.getParam("instrumentId"));
+publish(marketId + 1, instrument - 1, ...); <-- compile time error
+```
 
 ---
 
-## Make domain primitives immutable — and control what they reveal
+## Make domain primitives immutable
 
 A domain primitive is not just a validation wrapper. It is a value — and values do not
 change. Mutability opens a gap: an object passes validation on construction, then a setter
@@ -344,12 +338,7 @@ enforce your domain boundaries.
 
 ## The security angle
 
-This isn't just good design. It directly eliminates whole vulnerability categories:
-
-- **ReDoS**: length-bounded inputs defang backtracking regex
-- **Injection**: a `SqlIdentifier` type that only accepts safe identifiers cannot carry `'; DROP TABLE users; --`
-- **Business logic flaws**: sealed `DataQuality` makes it impossible to treat delayed data as real-time
-
+This isn't just good design. It directly eliminates whole vulnerability categories.
 Security stops being a checklist applied at the end. It becomes a **property of the
 design**.
 
