@@ -24,14 +24,14 @@ one int from the other. Your safety net was discipline only... but that scales p
 ## Make Illegal State Unrepresentable
 
 This is the starting point: encode in your type what is the domain of the value. `MarketId` could be
-just 3 digits non-negative number, an `InstrumentId` could be much bigger.
+just a 3-digit non-negative number, an `InstrumentId` could be much bigger.
 
 Design types such that invalid or dangerous values **cannot be constructed**.
 
 The shift in framing matters. Validation is a check you add to code that already runs.
 It can be forgotten, skipped under a time-pressed refactor, or called in the wrong order.
 A type whose constructor rejects bad input cannot be bypassed — it is structural, not
-procedural. You stop asking *"did we remember to validate this"?* xand start asking *"can this
+procedural. You stop asking *"did we remember to validate this"?* and start asking *"can this
 type even hold that value?* — a question the compiler answers for you at every call site.
 
 ---
@@ -40,7 +40,7 @@ type even hold that value?* — a question the compiler answers for you at every
 
 Every value entering your system from the outside world is **untrusted**.
 Wrap it into a domain primitive at the boundary *once*. Then, make sure the value cannot change
-after contruction. A domain primitive is not just a validation wrapper. It is a value — and values do not
+after construction. A domain primitive is not just a validation wrapper. It is a value — and values do not
 change. Mutability opens a gap: an object passes validation on construction, then a setter
 quietly puts it into an invalid or dangerous state.
 
@@ -63,7 +63,7 @@ public final class Isin {
     // 2 letters for country code
     // 9 digits for national number
     // 1 checksum digit
-    private static final int LENGTH = 12;
+    private static final int MAX_LENGTH = 12;
     private static final Pattern FORMAT = Pattern.compile("^[A-Z]{2}[A-Z0-9]{9}[0-9]$");
 
     private final String value;
@@ -75,7 +75,7 @@ public final class Isin {
         if (!FORMAT.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid ISIN");
         }
-        this.value = value.toUpperCase(Locale.ROOT);
+        this.value = value;
     }
 
     // the value as string is always valid
@@ -155,7 +155,7 @@ dangerous path is the hard one to write.
 
 ---
 
-## Invalid operations at caught at compile time
+## Invalid operations caught at compile time
 
 In the financial domain, a codebase that hasn't embraced domain primitives
 typically looks like this:
@@ -163,7 +163,7 @@ typically looks like this:
 ```java
 int marketId = Integer.parseInt(request.getParam("marketId"));
 int instrumentId = Integer.parseInt(request.getParam("instrumentId"));
-publish(marketId + 1, instrument - 1, ...);
+publish(marketId + 1, instrumentId - 1, ...);
 ```
 
 There is a subtler point too. An `int` is a number — the compiler will happily let you
@@ -173,9 +173,9 @@ or scale them. A domain primitive exposes no arithmetic operators. The meaningle
 operations are not just discouraged — they do not exist:
 
 ```java
-MarketId marketId = new MarkedId(request.getParam("marketId"));
+MarketId marketId = new MarketId(request.getParam("marketId"));
 InstrumentId instrumentId = new InstrumentId(request.getParam("instrumentId"));
-publish(marketId + 1, instrument - 1, ...); <-- compile time error
+publish(marketId + 1, instrumentId - 1, ...); <-- compile time error
 ```
 
 ---
@@ -197,14 +197,13 @@ that cheerfully prints itself is a secret waiting to leak into a log file or exc
 
 ```java
 public final class ApiToken {
-    private static final int MIN_LENGTH = 128;
-    private static final int MAX_LENGTH = 128;
+    private static final int LENGTH = 128;
     private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]+$");
 
     private final String value;
 
     public ApiToken(String value) {
-        if (value == null || value.length() < MIN_LENGTH || value.length() > MAX_LENGTH) {
+        if (value == null || value.length() != LENGTH) {
             throw new IllegalArgumentException("Invalid API token");
         }
         if (!FORMAT.matcher(value).matches()) {
@@ -250,7 +249,7 @@ A few deliberate choices here:
   an attacker with control over a serialized stream could reconstruct an `ApiToken`
   without passing any validation. This one method closes that path entirely.
 
-A better design is to use the `read-once` pattern described in the **Secure by Design** book:
+Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly after authentication. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design** closes that gap:
 
 ```java
 public final class Password {
@@ -277,10 +276,10 @@ public final class Password {
 
 After the password is used to authenticate the user, it cannot be used again... even accidentally.
 
-This isn't just good design. It directly contribute to eliminate whole vulnerability categories:
-- the attacker cannot use `Isin` as way to exploit a SQL injection as it cannot hold something like `'; DROP TABLE users; --`;
-- the auditor won't find `ApiToken` leaks in the logs as the token can be read only once;
-- in general, it will be much harder for the attacker that control an input to use it.
+This isn't just good design. It directly contributes to eliminating whole vulnerability categories:
+- the attacker cannot use `Isin` as a way to exploit a SQL injection as it cannot hold something like `'; DROP TABLE users; --`;
+- the auditor won't find `ApiToken` leaks in the logs: `toString()` returns `"ApiToken[REDACTED]"`, so the secret cannot reach a log file or exception message;
+- in general, it will be much harder for the attacker who controls an input to use it.
 
 Security stops being a checklist applied at the end. It becomes a **property of the
 design**, the security is **built-in**.
@@ -317,13 +316,13 @@ HTTP client. `UUID` enforces its format. `Instant`, `Duration`, and `Period` rep
 `long millisSinceEpoch` antipattern with types that carry their own semantics.
 
 The people who built the platform you run on decided a raw `String` or `long` was not good
-enough for these values. The same logic applies to your domain..
+enough for these values. The same logic applies to your domain.
 
 In [Hosh](https://github.com/dfa1/hosh), an experimental JVM shell I'm writing, `ExitStatus`
 wraps an `int` exit code:
 
 ```java
-public class ExitStatus {
+public final class ExitStatus {
     private final int value;
 
     private ExitStatus(int value) { this.value = value; }
@@ -353,9 +352,7 @@ appears in every well-designed primitive because the problems it solves are univ
 ## The same idea in other languages
 
 Java wraps a class around the value. Other languages reach the same place with less
-ceremony and even zero runtime cost. Project Valhalla will
-eventually close this gap: value classes will give Java zero-overhead domain primitives
-that the JIT can flatten in memory.
+ceremony and even zero runtime cost.
 
 **Haskell** has `newtype` — a zero-overhead wrapper erased at runtime that gives you a
 fully distinct type:
@@ -416,7 +413,7 @@ right types to work with.**
 Of course, this is not enough alone. Use TLS with current cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
-every layer does its job. Why not starting from the most basic pieces of the business logic?
+every layer does its job. Why not start from the most basic pieces of the business logic?
 
 ---
 
