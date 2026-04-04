@@ -1,33 +1,31 @@
 ---
-title: "Your Compiler Is Already on the Security Team"
-date: 2026-04-04
+title: "Your compiler as part of your Security Team"
+date: 2021-01-04
 tags: [secure-by-design, java, domain-primitives, security]
 ---
 
-It's 3am. Your phone is ringing.
+*It's 3am. Your phone is ringing.
 A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry,
-went out clean. Now market data is publishing under the wrong market. Instruments from
+went out clean. Now some important data is publishing under the wrong market. Instruments from
 exchange A showing up under exchange B. Clients are seeing it. Someone is already asking
 if it's a breach.
 It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
 `marketId` and an `instrumentId`, both ints, and the caller got them the wrong way
 round. The compiler saw two ints. Both positive. Both in range. Code compiled, tests
-passed, CI was green.
+passed, CI was green.*
 
 ```java
 void publish(int marketId, int instrumentId, double price) { ... }
 ```
 
-Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
-one int from the other. Your safety net was discipline — and discipline frays at 5pm on
-a Friday when there's a production incident and a hotfix that needs to go out.
-
-This is **primitive obsession**, and it is a vulnerability class, not just a code smell.
-What follows are the principles I discuss with every team I work with — and that usually do the persuading on their own.
+*Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
+one int from the other. Your safety net was discipline only... but that scales poorly.*
 
 ---
 
 ## The Principle: Make Illegal State Unrepresentable
+
+This is the starting point: encode in your types what is the domain of the values. `MarketId` could be just 3 digits number whereas an `InstrumentId` could be much bigger, let's say 12 digits.
 
 Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
 them on the way in." Cannot exist at all — construction throws.
@@ -35,15 +33,15 @@ them on the way in." Cannot exist at all — construction throws.
 The shift in framing matters. Validation is a check you add to code that already runs.
 It can be forgotten, skipped under a time-pressed refactor, or called in the wrong order.
 A type whose constructor rejects bad input cannot be bypassed — it is structural, not
-procedural. You stop asking "did we remember to validate this?" and start asking "can this
-type even hold that value?" — a question the compiler answers for you at every call site.
+procedural. You stop asking *did we remember to validate this?* and start asking *can this
+type even hold that value?* — a question the compiler answers for you at every call site.
 
 ---
 
 ## Validate at the boundary — once, correctly, in order
 
 Every value entering your system from the outside world is untrusted. Wrap it into a
-domain primitive at the boundary. Once. Never pass raw strings into your domain.
+domain primitive at the boundary. Once. Never pass raw ints or strings into your domain.
 
 But validation itself has a pitfall people miss: **regex on unbounded input is a
 vulnerability**.
@@ -52,6 +50,10 @@ A crafted input of a few thousand characters can cause a backtracking regex to r
 seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). The fix is
 simple: **always check length before applying regex**. It's one of those rules that once
 you see it you can't unsee it.
+
+This is an example wrapper in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
+one of most of popular identifiers for financial instruments, but the same logic is
+transferable to other domains.
 
 ```java
 public final class Isin {
@@ -123,9 +125,9 @@ day. These are not just labels; they carry different information:
 public sealed interface DataQuality
         permits DataQuality.RealTime, DataQuality.Delayed, DataQuality.EndOfDay {
 
-    record RealTime()                        implements DataQuality {}
-    record Delayed(Duration lag)             implements DataQuality {}
-    record EndOfDay() implements DataQuality {}
+    record RealTime()            implements DataQuality {}
+    record Delayed(Duration lag) implements DataQuality {}
+    record EndOfDay()            implements DataQuality {}
 }
 ```
 
@@ -140,25 +142,25 @@ dangerous path is the hard one to write.
 
 ## Name your domain, don't describe it with strings
 
-In financial market infrastructure, a codebase that hasn't embraced domain primitives
+In financial domain, a codebase that hasn't embraced domain primitives
 typically looks like this:
 
 ```java
-void publish(int marketId, int instrumentId, String isin, String lei, double price) { ... }
+void publish(int marketId, int instrumentId, String isin, double quantity, double price) { ... }
 ```
 
-Five untyped primitives. The two ints are interchangeable with each other; the two strings are interchangeable with each other. The compiler cannot help you.
+Five untyped primitives. The two ints are interchangeable with each other; the two strings are interchangeable with each other.The compiler cannot help you.
 The reviewer cannot easily help you — every usage requires reading surrounding context to
 understand what is flowing where.
 
 With domain primitives:
 
 ```java
-void publish(MarketId market, InstrumentId instrument, Isin isin, Lei lei, Price price) { ... }
+void publish(MarketId market, InstrumentId instrument, Isin isin, Volume volume, Price price) { ... }
 ```
 
-Each type encodes its own validation rules. `Lei` knows it must match a specific 20-character
-format. `Isin` knows its format. `MarketId` knows its format. `Price` knows it cannot be
+Each type encodes its own validation rules. `Volume` knows it must not be negative.
+`Isin` knows its format. `MarketId` knows its format. `Price` knows it cannot be
 negative. None of this knowledge leaks out or gets duplicated.
 
 There is a subtler point too. An `int` is a number — the compiler will happily let you
@@ -175,7 +177,7 @@ A domain primitive is not just a validation wrapper. It is a value — and value
 change. Mutability opens a gap: an object passes validation on construction, then a setter
 quietly puts it into an invalid or dangerous state. Immutability closes that gap for good.
 
-In Java this means `final` fields, no setters, and a `final` class. That last point matters:
+In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
 a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
 Seal the type so the invariants you wrote are the invariants that hold.
 
@@ -185,7 +187,7 @@ that cheerfully prints itself is a secret waiting to leak into a log file.
 ```java
 public final class ApiToken {
     private static final int MAX_LENGTH = 128;
-    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]{16,128}$");
+    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]$");
 
     private final String value;
 
@@ -250,7 +252,7 @@ HTTP client. `UUID` enforces its format. `Instant`, `Duration`, and `Period` rep
 `long millisSinceEpoch` antipattern with types that carry their own semantics.
 
 The people who built the platform you run on decided a raw `String` or `long` was not good
-enough for these values. The same logic applies to your domain.
+enough for these values. The same logic applies to your domain..
 
 Smaller libraries make the same choice. In [Hosh](https://github.com/dfa1/hosh), a JVM
 shell, `ExitStatus` wraps an `int` exit code:
@@ -286,10 +288,9 @@ appears in every well-designed primitive because the problems it solves are univ
 ## The same idea in other languages
 
 Java wraps a class around the value. Other languages reach the same place with less
-ceremony, which means there is even less excuse not to do it. (Project Valhalla will
+ceremony and even zero runtime cost (Project Valhalla will
 eventually close this gap: value classes will give Java zero-overhead domain primitives
-that the JIT can flatten into registers just like Haskell's `newtype` or Rust's tuple
-structs — the design is sound today, and it will get cheaper.)
+that the JIT can flatten in memory.).
 
 **Haskell** has `newtype` — a zero-overhead wrapper erased at runtime that gives you a
 fully distinct type:
@@ -366,7 +367,7 @@ skipped by a tired reviewer.
 
 This is a benefit that rarely gets mentioned alongside security, but it's just as real.
 
-Press **Ctrl+Click** on `String` in your IDE. You will see thousands of usages across the
+Press **Ctrl+Click** on `Integer` or `String` in your IDE. You will see thousands of usages across the
 entire codebase — every method parameter, every field, every local variable. It tells you
 nothing.
 
