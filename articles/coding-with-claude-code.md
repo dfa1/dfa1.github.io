@@ -33,7 +33,7 @@ but stylistically wrong — the kind of code that passes CI but fails code revie
 
 ## The need for guardrails
 
-The turning point was recognising that an AI agent without context is like *an
+The turning point was recognizing that an AI agent without context is like *an
 engineer without onboarding*. It will produce *something*, but not necessarily
 what you want. And every wrong turn costs tokens.
 

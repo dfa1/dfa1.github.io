@@ -52,7 +52,7 @@ All presentations made with [reveal.js](https://revealjs.com)
 - [sushi](http://sushi.sourceforge.net/), pen&paper games across the internet, in C (2001)
 - [spar](http://spar.sourceforge.net/), math application framework, in C (2000)
 
-## Favourite Quotes
+## Favorite Quotes
 
 > *Design depends largely on constraints.* — [Charles and Ray Eames](https://en.wikipedia.org/wiki/Charles_and_Ray_Eames)
 

@@ -4,19 +4,25 @@ date: 2026-04-04
 tags: [secure-by-design, java, domain-primitives, security]
 ---
 
-There's a class of bug that no amount of runtime validation catches reliably — not because
-the validation is wrong, but because it was optional to begin with.
+It's 3am. Your phone is ringing.
 
-Consider this signature:
+A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry,
+went out clean. Now market data is publishing under the wrong market. Instruments from
+exchange A showing up under exchange B. Clients are seeing it. Someone is already asking
+if it's a breach.
+
+It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
+`marketId` and an `instrumentId`, both strings, and the caller got them the wrong way
+round. The compiler saw two strings. Both non-null. Both non-empty. Code compiled, tests
+passed, CI was green.
 
 ```java
-void transfer(String fromAccount, String toAccount, long amount) { ... }
+void publish(String marketId, String instrumentId, double price) { ... }
 ```
 
-Nothing stops a caller from passing a negative amount. Nothing prevents `fromAccount` and
-`toAccount` from being swapped. Nothing ensures the string is even a valid account
-identifier. The compiler is completely indifferent. Your security posture now depends
-entirely on discipline — the most fragile thing in engineering.
+Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
+one string from the other. Your safety net was discipline — and discipline frays at 5pm on
+a Friday when there's a production incident and a hotfix that needs to go out.
 
 This is **primitive obsession**, and it is a vulnerability class, not just a code smell.
 If you want to go deep on this idea, the book that articulates it best is
@@ -28,8 +34,8 @@ from that foundation.
 
 ## The Principle: Make Illegal State Unrepresentable
 
-Design types such that invalid or dangerous values **cannot be constructed**. Not "we
-validate them on the way in." Cannot exist.
+Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
+them on the way in." Cannot exist.
 
 ---
 
@@ -188,16 +194,22 @@ This isn't just good design. It directly eliminates whole vulnerability categori
 Security stops being a checklist applied at the end. It becomes a **property of the
 design**.
 
-In case of strings coming from the outside, be super strict with parsing. Use of @ParametrizedTest
-is good and you can ask your local security officer to provide some not so nice examples.
-Threat the build as second line of defence => validate a lot of bad examples quickly and shift left the security posture of your software.
+One underused practice: treat the build as a second line of defense. Write
+`@ParameterizedTest` suites for every domain primitive and feed them adversarial inputs —
+ask your security officer for their favorites. A crafted ReDoS string, a Unicode homoglyph,
+a negative value disguised as a large long. If your type rejects them all at construction
+time, you've shifted those checks left to where they cost nothing to run and can never be
+skipped by a tired reviewer.
 
 ---
 
 ## The objections
 
-*"This is expensive*"
-Well, I think a data breach or handling validations at the every layer is even more expensive.
+*"This is expensive."*
+
+Compared to what? Compared to a 3am incident, a data breach disclosure, or scattering
+validation logic across every layer of the stack and hoping every caller remembered to call
+it? The cost of a domain primitive is one constructor and one test suite, written once.
 
 *"This is verbose."*
 
@@ -212,7 +224,7 @@ and self-documenting. The compiler reviews it for free, forever.
 
 The most secure code is code where the dangerous thing is hard to write and the safe
 thing is the path of least resistance. Domain primitives, sealed hierarchies, and
-disciplined boundary validation make the type system your first line of defence — one
+disciplined boundary validation make the type system your first line of defense — one
 that never sleeps, never forgets, and never skips a step under deadline pressure.
 
 Your compiler is already on the security team. It's been waiting for you to give it the

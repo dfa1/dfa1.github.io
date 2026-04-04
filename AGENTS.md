@@ -15,10 +15,11 @@ Sereval projects, one of them is
 ## Writing style
 
 - **Tone**: informal but neutral — conversational, not casual slang; direct, not stiff
-- **Claims must be supported by facts**: technical assertions should reference commits, JEPs, specs, or other verifiable sources; avoid vague generalisations
+- **Claims must be supported by facts**: technical assertions should reference commits, JEPs, specs, or other verifiable sources; avoid vague generalizations
 - **Structure**: narrative first (what happened, what went wrong, why), then analysis, then lesson — not lecture-first
 - **Length**: concise; no padding, no summaries of what was just said
 - **Code examples**: include only what is necessary to illustrate the point; prefer real code from the project over toy examples
+- **Use American english** consistently, never mix up British English
 
 ## Editorial standards
 
