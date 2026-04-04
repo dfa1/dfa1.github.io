@@ -10,16 +10,16 @@ went out clean. Now market data is publishing under the wrong market. Instrument
 exchange A showing up under exchange B. Clients are seeing it. Someone is already asking
 if it's a breach.
 It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
-`marketId` and an `instrumentId`, both strings, and the caller got them the wrong way
-round. The compiler saw two strings. Both non-null. Both non-empty. Code compiled, tests
+`marketId` and an `instrumentId`, both ints, and the caller got them the wrong way
+round. The compiler saw two ints. Both positive. Both in range. Code compiled, tests
 passed, CI was green.
 
 ```java
-void publish(String marketId, String instrumentId, double price) { ... }
+void publish(int marketId, int instrumentId, double price) { ... }
 ```
 
 Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
-one string from the other. Your safety net was discipline — and discipline frays at 5pm on
+one int from the other. Your safety net was discipline — and discipline frays at 5pm on
 a Friday when there's a production incident and a hotfix that needs to go out.
 
 This is **primitive obsession**, and it is a vulnerability class, not just a code smell.
@@ -144,7 +144,7 @@ In financial market infrastructure, a codebase that hasn't embraced domain primi
 typically looks like this:
 
 ```java
-void publish(String marketId, String instrumentId, String isin, String lei, double price) { ... }
+void publish(int marketId, int instrumentId, String isin, String lei, double price) { ... }
 ```
 
 Five strings. Any of them can be passed in any position. The compiler cannot help you.
