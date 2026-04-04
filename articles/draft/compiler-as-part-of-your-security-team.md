@@ -23,14 +23,20 @@ one string from the other. Your safety net was discipline — and discipline fra
 a Friday when there's a production incident and a hotfix that needs to go out.
 
 This is **primitive obsession**, and it is a vulnerability class, not just a code smell.
-What follows are the questions I ask every team I work with — and that usually do the persuading on their own.
+What follows are the principles I discuss with every team I work with — and that usually do the persuading on their own.
 
 ---
 
 ## The Principle: Make Illegal State Unrepresentable
 
 Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
-them on the way in." Cannot exist: constructor throws error.
+them on the way in." Cannot exist at all — construction throws.
+
+The shift in framing matters. Validation is a check you add to code that already runs.
+It can be forgotten, skipped under a time-pressed refactor, or called in the wrong order.
+A type whose constructor rejects bad input cannot be bypassed — it is structural, not
+procedural. You stop asking "did we remember to validate this?" and start asking "can this
+type even hold that value?" — a question the compiler answers for you at every call site.
 
 ---
 
@@ -81,32 +87,32 @@ Isin isin = new Isin(request.getParam("isin"));
 instrumentService.lookup(isin);
 ```
 
-This is **parse, don't validate**. You don't pass a string and check it repeatedly; you
+This is **[parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-dont-validate/)**. You don't pass a string and check it repeatedly; you
 transform it into a type that is its own proof of validity.
 
 ---
 
 ## For small state spaces, use types that make invalid combinations impossible
 
-Three booleans on a method:
+Two booleans on a method:
 
 ```java
-void createUser(String name, boolean isAdmin, boolean isActive, boolean isVerified) { ... }
+void registerInstrument(String isin, boolean isActive, boolean isEquity) { ... }
 ```
 
-Eight possible combinations. How many are actually valid? Probably two or three. The rest
-are illegal states — and they're all representable. A silent flag swap is a privilege
-escalation waiting to happen.
+Four possible combinations. How many are actually valid for your domain? Probably not all
+of them — and "active equity" versus "inactive bond" are very different things. A silent
+flag swap here is a business-logic flaw waiting to be exploited.
 
 Modern Java gives you several tools here.
 
 **Enums** for simple cases:
 
 ```java
-public enum UserStatus { PENDING_VERIFICATION, ACTIVE, SUSPENDED }
-public enum UserRole   { STANDARD, ADMIN }
+public enum InstrumentStatus { ACTIVE, INACTIVE }
+public enum InstrumentType   { BOND, EQUITY, INDEX, FIXED_INCOME }
 
-void createUser(Username name, UserRole role, UserStatus status) { ... }
+void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status) { ... }
 ```
 
 **Records + sealed interfaces** for richer cases where variants carry different data.
@@ -119,12 +125,11 @@ public sealed interface DataQuality
 
     record RealTime()                        implements DataQuality {}
     record Delayed(Duration lag)             implements DataQuality {}
-    record EndOfDay(LocalDate referenceDate) implements DataQuality {}
+    record EndOfDay() implements DataQuality {}
 }
 ```
 
-A `Delayed` value without its `lag` makes no sense. An `EndOfDay` value without its
-`referenceDate` is meaningless. The type system enforces that the data travels with its
+A `Delayed` value without its `lag` makes no sense. The type system enforces that the data travels with its
 context — always.
 
 Every `switch` on `DataQuality` is exhaustive — the compiler tells you when you've missed
@@ -152,9 +157,9 @@ With domain primitives:
 void publish(MarketId market, InstrumentId instrument, Isin isin, Lei lei, Price price) { ... }
 ```
 
-Each type encodes its own validation rules. `Lei` knows it must be exactly 20
-alphanumeric characters. `Isin` knows its checksum. `MarketId` knows its format. `Price`
-knows it cannot be negative. None of this knowledge leaks out or gets duplicated.
+Each type encodes its own validation rules. `Lei` knows it must match a specific 20-character
+format. `Isin` knows its format. `MarketId` knows its format. `Price` knows it cannot be
+negative. None of this knowledge leaks out or gets duplicated.
 
 ---
 
@@ -179,7 +184,7 @@ public final class ApiToken {
     private final String value;
 
     public ApiToken(String value) {
-        if (value == null || value.length() > MAX_LENGTH) {
+        if (value == null || value.length() < 16 || value.length() > MAX_LENGTH) {
             throw new IllegalArgumentException("Invalid API token");
         }
         if (!FORMAT.matcher(value).matches()) {
@@ -188,7 +193,7 @@ public final class ApiToken {
         this.value = value;
     }
 
-    /** Use only when passing the token to the remote endpoint — nowhere else. */
+    /** Use only when passing the token to the remote endpoint; nowhere else. */
     public String value() { return value; }
 
     @Override public String toString() { return "ApiToken[REDACTED]"; }
@@ -202,7 +207,7 @@ public final class ApiToken {
         );
     }
 
-    @Override public int hashCode() { return 0; } // intentionally constant — see note
+    @Override public int hashCode() { return 0; } // intentionally constant — see prose below
 }
 ```
 
@@ -265,22 +270,59 @@ appears in every well-designed primitive because the problems it solves are univ
 
 ---
 
-## Domain primitives make codebases explorable
+## The same idea in other languages
 
-This is a benefit that rarely gets mentioned alongside security, but it's just as real.
+Java wraps a class around the value. Other languages reach the same place with less
+ceremony, which means there is even less excuse not to do it.
 
-Press **Ctrl+Click** on `String` in your IDE. You will see thousands of usages across the
-entire codebase — every method parameter, every field, every local variable. It tells you
-nothing.
+**Haskell** has `newtype` — a zero-overhead wrapper erased at runtime that gives you a
+fully distinct type:
 
-Press **Ctrl+Click** on `InstrumentId`. You see exactly the methods that accept it, the
-services that produce it, the repositories that store it. You have, in one gesture, a
-precise map of where instrument identity flows through your system.
+```haskell
+newtype InstrumentId = InstrumentId Text
+newtype MarketId     = MarketId     Text
 
-For a new joiner, this is the difference between orientation taking days and orientation
-taking hours. For a security review, this is the difference between tracing a data flow
-manually and having the type system draw it for you. **Domain primitives are
-documentation that the compiler keeps accurate.**
+publish :: MarketId -> InstrumentId -> Price -> IO ()
+```
+
+Swapping the arguments is a compile error. There is no runtime cost. This is the ideal
+the other languages approximate.
+
+The type distinction — which prevents argument swapping — comes for free. Validation
+still requires a smart constructor: a function that checks the value before wrapping it,
+returning `Maybe InstrumentId` or throwing on invalid input.
+
+**Rust** uses the same *newtype pattern* via tuple structs:
+
+```rust
+struct InstrumentId(String);
+struct MarketId(String);
+
+fn publish(market: MarketId, instrument: InstrumentId, price: Price) { ... }
+```
+
+Again, zero runtime overhead. Rust's ownership model adds a further benefit: you can
+control whether the inner value is ever exposed at all by keeping the field private and
+exposing only a validated constructor.
+
+**C++** requires a hand-written wrapper, but even a simple struct does the job:
+
+```cpp
+struct InstrumentId { std::string value; };
+struct MarketId     { std::string value; };
+
+void publish(MarketId market, InstrumentId instrument, Price price);
+```
+
+Argument swapping is a compile error. For stronger guarantees — preventing implicit
+construction from raw strings, enforcing validation — libraries like
+[`type_safe`](https://github.com/foonathan/type_safe) or
+[`strong_type`](https://github.com/rollbear/strong_type) provide newtype semantics
+without additional boilerplate. The underlying principle is the same: one named type per
+concept, incompatible by default, conversions only where you explicitly write them.
+
+The vocabulary differs; the insight does not. If your language has a type system, it can
+enforce your domain boundaries.
 
 ---
 
@@ -305,6 +347,25 @@ skipped by a tired reviewer.
 
 ---
 
+## Domain primitives make codebases explorable
+
+This is a benefit that rarely gets mentioned alongside security, but it's just as real.
+
+Press **Ctrl+Click** on `String` in your IDE. You will see thousands of usages across the
+entire codebase — every method parameter, every field, every local variable. It tells you
+nothing.
+
+Press **Ctrl+Click** on `InstrumentId`. You see exactly the methods that accept it, the
+services that produce it, the repositories that store it. You have, in one gesture, a
+precise map of where instrument identity flows through your system.
+
+For a new joiner, this is the difference between orientation taking days and orientation
+taking hours. For a security review, this is the difference between tracing a data flow
+manually and having the type system draw it for you. **Domain primitives are
+documentation that the compiler keeps accurate.**
+
+---
+
 ## The objections
 
 *"This is expensive."*
@@ -324,8 +385,8 @@ and self-documenting. The compiler reviews it for free, forever.
 
 ## Closing
 
-The most secure code is code where the dangerous thing is hard to write and the safe
-thing is the path of least resistance. Domain primitives, sealed hierarchies, and
+The most resilient systems make the dangerous path the hard one to write and the safe
+path the path of least resistance. Domain primitives, sealed hierarchies, and
 disciplined boundary validation make the type system your first line of defense — one
 that never sleeps, never forgets, and never skips a step under deadline pressure.
 
@@ -346,6 +407,10 @@ The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** 
 context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
 — is worth reading even if you never write a line of OCaml. The insight transfers cleanly
 to any language with a decent type system.
+
+The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
+[*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
+It is the clearest statement of the boundary-parsing idea I know of.
 
 If you want to go deeper, read **"Secure by Design"** (Bergh Johnsson, Deogun, Sawano —
 Manning, 2019). It is one of the few books that treats security as a design discipline
