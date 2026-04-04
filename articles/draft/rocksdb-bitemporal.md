@@ -1,8 +1,6 @@
----
-title: "RocksDB: bitemporal design"
-author: Davide Angelocola
-date: 2020-06-01
----
+# RocksDB: Bitemporal Design
+
+*1 June 2020*
 
 DRAFT: tell the story of how to build bitemporal database in SIX
 

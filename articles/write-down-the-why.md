@@ -1,6 +1,6 @@
 # Write Down the Why
 
-1 October 2020
+*1 October 2020*
 
 *Late 2019, early 2020. A newly formed team, building the next generation of a financial reference data
 platform from scratch. Several developers that never worked together, a greenfield project, a deadline, and two problems
@@ -157,7 +157,7 @@ An explicit document that captures *why* outlasts any individual on the team; it
 
 ### Update on 3 April 2026
 
-This was 2020. Six years later, the same principle applies with even greater urgency. Today we are routinely delegate coding
+This was 2020. Six years later, the same principle applies with even greater urgency. Today we are routinely delegating coding
 tasks to AI agents — and an agent without context will produce the same kind of misaligned output that a new team member
 without onboarding would. It will write shotgun tests. It will pick the wrong abstraction. It will optimize for the
 metric you gave it, not the one you meant. The document that captures your testing philosophy, your branching model,

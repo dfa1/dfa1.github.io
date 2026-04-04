@@ -1,18 +1,12 @@
----
-title: "Coding with Claude Code: A Week on hosh"
-author: Davide Angelocola
-date: 2026-03-29
----
-
 # Coding with Claude Code: A Week on hosh
 
 *29 March 2026*
 
-I've been experimenting with [Claude Code](https://code.claude.com) on my side
+*I've been experimenting with [Claude Code](https://code.claude.com) on my side
 project [hosh](https://github.com/hosh-shell/hosh), an experimental shell
 written in Java. After a few days of pairing with an AI agent on real tasks —
 adding features, fixing bugs, resolving SonarQube warnings — here's what I
-found.
+found.*
 
 ## The experiment
 
@@ -22,7 +16,7 @@ AI coding agent. Not on a greenfield toy project, but on something with real
 constraints — a module system, a [SPI](https://en.wikipedia.org/wiki/Service_provider_interface) and some opinions about code style.
 
 I started by throwing tasks at Claude Code the way you'd throw them at a new
-team member: 
+team member:
 - "add a new small feature";
 - "consolidate the usage of this helper class"
 - "fix this SonarQube warning about thread-safety";
@@ -136,8 +130,8 @@ and knowing when to trust your tools and when to override them.
 
 ### Update on 31 March 2026
 
-[Rahul Garg's Encoding Team Standards](https://martinfowler.com/articles/reduce-friction-ai/encoding-team-standards.html)  
-makes the case for treating these instructions as team infrastructure — versioned, reviewed, and shared. 
+[Rahul Garg's Encoding Team Standards](https://martinfowler.com/articles/reduce-friction-ai/encoding-team-standards.html)
+makes the case for treating these instructions as team infrastructure — versioned, reviewed, and shared.
 The `CLAUDE.md` approach fits exactly into that pattern.
 
 

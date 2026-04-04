@@ -1,8 +1,6 @@
----
-title: "Your compiler as part of your Security Team"
-date: 2021-01-04
-author: Davide Angelocola
----
+# Your Compiler as Part of Your Security Team
+
+*4 January 2021*
 
 *It's 3am. Your phone is ringing.
 A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry,
@@ -142,7 +140,7 @@ dangerous path is the hard one to write.
 
 ## Name your domain, don't describe it with strings
 
-In financial domain, a codebase that hasn't embraced domain primitives
+In the financial domain, a codebase that hasn't embraced domain primitives
 typically looks like this:
 
 ```java

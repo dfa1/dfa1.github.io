@@ -1,8 +1,6 @@
----
-title: "RocksDB: blobstore design"
-author: Davide Angelocola
-date: 2023-06-01
----
+# RocksDB: Blobstore Design
+
+*1 June 2023*
 
 DRAFT: tell the story of how to build blobstore database in SIX
 

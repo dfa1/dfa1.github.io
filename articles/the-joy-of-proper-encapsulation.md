@@ -1,12 +1,6 @@
----
-title: "The Joy of Proper Encapsulation"
-author: Davide Angelocola
-date: 2026-03-27
----
+# The Joy of Proper Encapsulation
 
 *27 March 2026*
-
-# The Joy of Proper Encapsulation
 
 Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
 [commit](https://github.com/hosh-shell/hosh/commit/7d51c4838faeb3ce42486e374c1eb45f395a5a49)

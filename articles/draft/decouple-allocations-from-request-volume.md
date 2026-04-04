@@ -1,8 +1,6 @@
----
-title: "Decouple allocations from request volume"
-author: Davide Angelocola
-date: 2023-01-06
----
+# Decouple Allocations from Request Volume
+
+*6 January 2023*
 
 *A few thousand requests per day. [RocksDB](https://rocksdb.org/)
 as the storage engine, returning variable-size values. Nothing about this load profile suggests

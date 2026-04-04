@@ -23,11 +23,16 @@ Sereval projects, one of them is
 
 ## Editorial standards
 
+- Every article is formatted as markdown, has .md extension and the following a common structure
+    - title
+    - date as *italic*
+    - small intro in *italic* as well
 - Fix grammar and prose issues directly; do not add docstrings or comments to code that wasn't changed
 - Prefer precise word choice over hedging language
 - Avoid redundant paragraphs that restate what was already explained
 - Hyphenate compound modifiers (e.g. "zero-warnings policy", "FFM-based terminal")
 - Code fences must always be properly closed
+- Warns about dogmatic positions and lecture style
 
 ## Repository layout
 
