@@ -1,4 +1,4 @@
-# Your Compiler as Part of Your Security Team
+# Your Compiler is already part of your Security Team
 
 *4 January 2021*
 
