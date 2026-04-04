@@ -372,29 +372,26 @@ documentation that the compiler keeps accurate.**
 
 ## Closing
 
+**Your compiler is already on the security team. It's been waiting for you to give it the
+right types to work with.**
+
 The most resilient systems make the dangerous path the hard one to write and the safe
 path the path of least resistance. Domain primitives, sealed hierarchies, and
 disciplined boundary validation make the type system your first line of defense — one
 that never sleeps, never forgets, and never skips a step under deadline pressure.
 
-None of this replaces the rest of the stack. TLS with current cipher suites, proper
+Of course, this is not the only security layer. TLS with current cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
 every layer does its job. What type-driven design does is harden the layer you own
-completely: your own code. A secret that never reaches a log file does not need the log
-pipeline to be secured. An injection payload that cannot be constructed does not need the
-WAF to catch it. The fewer things that need to go right downstream, the more resilient
-your whole system becomes.
-
-Your compiler is already on the security team. It's been waiting for you to give it the
-right types to work with.
+completely: your own code.
 
 ---
 
 The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
 context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
 — is worth reading even if you never write a line of OCaml. The insight transfers cleanly
-to any language with a decent type system.
+to any language with a strong type system.
 
 The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
 [*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).

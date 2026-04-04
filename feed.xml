@@ -21,6 +21,17 @@
     <summary>Coding with Claude Code: A Week on hosh</summary>
   </entry>
   <entry>
+    <title>Write Down the Why</title>
+    <link href="https://dfa1.github.io/articles/write-down-the-why"/>
+    <id>urn:uuid:write-down-the-why</id>
+    <updated>2020-10-01T00:00:00Z</updated>
+    <published>2020-10-01T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Write Down the Why</summary>
+  </entry>
+  <entry>
     <title>The Joy of Proper Encapsulation</title>
     <link href="https://dfa1.github.io/articles/the-joy-of-proper-encapsulation"/>
     <id>urn:uuid:the-joy-of-proper-encapsulation</id>
