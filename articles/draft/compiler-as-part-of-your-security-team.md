@@ -87,7 +87,7 @@ Isin isin = new Isin(request.getParam("isin"));
 instrumentService.lookup(isin);
 ```
 
-This is **[parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-dont-validate/)**. You don't pass a string and check it repeatedly; you
+This is **[parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)**. You don't pass a string and check it repeatedly; you
 transform it into a type that is its own proof of validity.
 
 ---
@@ -147,7 +147,7 @@ typically looks like this:
 void publish(int marketId, int instrumentId, String isin, String lei, double price) { ... }
 ```
 
-Five strings. Any of them can be passed in any position. The compiler cannot help you.
+Five untyped primitives. The two ints are interchangeable with each other; the two strings are interchangeable with each other. The compiler cannot help you.
 The reviewer cannot easily help you — every usage requires reading surrounding context to
 understand what is flowing where.
 
@@ -273,7 +273,10 @@ appears in every well-designed primitive because the problems it solves are univ
 ## The same idea in other languages
 
 Java wraps a class around the value. Other languages reach the same place with less
-ceremony, which means there is even less excuse not to do it.
+ceremony, which means there is even less excuse not to do it. (Project Valhalla will
+eventually close this gap: value classes will give Java zero-overhead domain primitives
+that the JIT can flatten into registers just like Haskell's `newtype` or Rust's tuple
+structs — the design is sound today, and it will get cheaper.)
 
 **Haskell** has `newtype` — a zero-overhead wrapper erased at runtime that gives you a
 fully distinct type:
@@ -403,6 +406,7 @@ Your compiler is already on the security team. It's been waiting for you to give
 right types to work with.
 
 ---
+
 The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
 context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
 — is worth reading even if you never write a line of OCaml. The insight transfers cleanly
