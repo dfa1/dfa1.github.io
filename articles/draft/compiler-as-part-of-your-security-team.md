@@ -5,12 +5,10 @@ tags: [secure-by-design, java, domain-primitives, security]
 ---
 
 It's 3am. Your phone is ringing.
-
 A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry,
 went out clean. Now market data is publishing under the wrong market. Instruments from
 exchange A showing up under exchange B. Clients are seeing it. Someone is already asking
 if it's a breach.
-
 It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
 `marketId` and an `instrumentId`, both strings, and the caller got them the wrong way
 round. The compiler saw two strings. Both non-null. Both non-empty. Code compiled, tests
@@ -32,7 +30,7 @@ What follows are the questions I ask every team I work with — and that usually
 ## The Principle: Make Illegal State Unrepresentable
 
 Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
-them on the way in." Cannot exist.
+them on the way in." Cannot exist: constructor throws error.
 
 ---
 
@@ -225,6 +223,48 @@ invariants you encode. Encode the right ones.
 
 ---
 
+## You already depend on domain primitives
+
+The JDK has shipped domain primitives for decades. `Path` wraps a raw file-system string
+and validates it — you don't pass `String` to `Files.readAllBytes`. `URI` parses and
+validates on construction; a malformed URI throws at the boundary, not deep inside your
+HTTP client. `UUID` enforces its format. `Instant`, `Duration`, and `Period` replaced the
+`long millisSinceEpoch` antipattern with types that carry their own semantics.
+
+The people who built the platform you run on decided a raw `String` or `long` was not good
+enough for these values. The same logic applies to your domain.
+
+Smaller libraries make the same choice. In [Hosh](https://github.com/dfa1/hosh), a JVM
+shell, `ExitStatus` wraps an `int` exit code:
+
+```java
+public class ExitStatus {
+    private final int value;
+
+    private ExitStatus(int value) { this.value = value; }
+
+    public static ExitStatus success() { return new ExitStatus(0); }
+    public static ExitStatus error()   { return new ExitStatus(1); }
+    public static ExitStatus of(int value) { return new ExitStatus(value); }
+
+    public static Optional<ExitStatus> parse(String str) { ... }
+
+    public boolean isSuccess() { return value == 0; }
+}
+```
+
+`ExitStatus.success()` is unambiguous. `0` is not. There is no risk of a caller passing
+`1` when they meant `0`, or forgetting what the magic number means. The factory methods
+name the common values; `parse` returns `Optional<ExitStatus>` rather than throwing,
+because values arriving from user input are not guaranteed to be valid. The private
+constructor means nobody constructs an `ExitStatus` in an unanticipated way.
+
+`VariableName` in the same codebase goes further: it enforces a regex pattern *and* a
+maximum length of 256 characters — the same ReDoS defence discussed above. The pattern
+appears in every well-designed primitive because the problems it solves are universal.
+
+---
+
 ## Domain primitives make codebases explorable
 
 This is a benefit that rarely gets mentioned alongside security, but it's just as real.
@@ -302,6 +342,11 @@ Your compiler is already on the security team. It's been waiting for you to give
 right types to work with.
 
 ---
+The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
+context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
+— is worth reading even if you never write a line of OCaml. The insight transfers cleanly
+to any language with a decent type system.
+
 If you want to go deeper, read **"Secure by Design"** (Bergh Johnsson, Deogun, Sawano —
 Manning, 2019). It is one of the few books that treats security as a design discipline
 rather than a bolt-on concern. Highly recommended.
