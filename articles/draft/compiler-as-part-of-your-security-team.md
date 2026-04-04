@@ -25,10 +25,7 @@ one string from the other. Your safety net was discipline — and discipline fra
 a Friday when there's a production incident and a hotfix that needs to go out.
 
 This is **primitive obsession**, and it is a vulnerability class, not just a code smell.
-If you want to go deep on this idea, the book that articulates it best is
-**"Secure by Design"** by Dan Bergh Johnsson, Daniel Deogun, and Daniel Sawano
-(Manning, 2019). What follows are the rules I push to every team I work with, distilled
-from that foundation.
+What follows are the questions I ask every team I work with — and that usually do the persuading on their own.
 
 ---
 
@@ -39,7 +36,7 @@ them on the way in." Cannot exist.
 
 ---
 
-## Rule 1: Validate at the boundary — once, correctly, in order
+## Validate at the boundary — once, correctly, in order
 
 Every value entering your system from the outside world is untrusted. Wrap it into a
 domain primitive at the boundary. Once. Never pass raw strings into your domain.
@@ -49,8 +46,8 @@ vulnerability**.
 
 A crafted input of a few thousand characters can cause a backtracking regex to run for
 seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). The fix is
-simple: **always check length before applying regex**. *Secure by Design* is explicit
-about this ordering, and it's one of those rules that once you see it you can't unsee it.
+simple: **always check length before applying regex**. It's one of those rules that once
+you see it you can't unsee it.
 
 ```java
 public final class Isin {
@@ -91,7 +88,7 @@ transform it into a type that is its own proof of validity.
 
 ---
 
-## Rule 2: For small state spaces, use types that make invalid combinations impossible
+## For small state spaces, use types that make invalid combinations impossible
 
 Three booleans on a method:
 
@@ -138,7 +135,7 @@ dangerous path is the hard one to write.
 
 ---
 
-## Rule 3: Name your domain, don't describe it with strings
+## Name your domain, don't describe it with strings
 
 In financial market infrastructure, a codebase that hasn't embraced domain primitives
 typically looks like this:
@@ -160,6 +157,71 @@ void publish(MarketId market, InstrumentId instrument, Isin isin, Lei lei, Price
 Each type encodes its own validation rules. `Lei` knows it must be exactly 20
 alphanumeric characters. `Isin` knows its checksum. `MarketId` knows its format. `Price`
 knows it cannot be negative. None of this knowledge leaks out or gets duplicated.
+
+---
+
+## Make domain primitives immutable — and control what they reveal
+
+A domain primitive is not just a validation wrapper. It is a value — and values do not
+change. Mutability opens a gap: an object passes validation on construction, then a setter
+quietly puts it into an invalid or dangerous state. Immutability closes that gap for good.
+
+In Java this means `final` fields, no setters, and a `final` class. That last point matters:
+a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
+Seal the type so the invariants you wrote are the invariants that hold.
+
+Sensitive values require one extra step: **control what the type exposes**. An `ApiToken`
+that cheerfully prints itself is a secret waiting to leak into a log file.
+
+```java
+public final class ApiToken {
+    private static final int MAX_LENGTH = 128;
+    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]{16,128}$");
+
+    private final String value;
+
+    public ApiToken(String value) {
+        if (value == null || value.length() > MAX_LENGTH) {
+            throw new IllegalArgumentException("Invalid API token");
+        }
+        if (!FORMAT.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid API token");
+        }
+        this.value = value;
+    }
+
+    /** Use only when passing the token to the remote endpoint — nowhere else. */
+    public String value() { return value; }
+
+    @Override public String toString() { return "ApiToken[REDACTED]"; }
+
+    @Override public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ApiToken other)) return false;
+        return MessageDigest.isEqual(
+            value.getBytes(StandardCharsets.UTF_8),
+            other.value.getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    @Override public int hashCode() { return 0; } // intentionally constant — see note
+}
+```
+
+A few deliberate choices here:
+
+- `toString()` returns `"ApiToken[REDACTED]"`. If this object reaches a logger, a stack
+  trace, or an exception message, the secret does not travel with it.
+- `equals()` uses `MessageDigest.isEqual` — a constant-time comparison — instead of
+  `String.equals`. A timing-sensitive caller cannot use equality checks to oracle the
+  token value one character at a time.
+- `hashCode()` returns a constant. Returning a hash of the value would leak information
+  about the secret through HashMap bucket distribution. A constant means the type cannot
+  be used as a map key efficiently — a small, intentional friction that discourages using
+  tokens as lookup keys in the first place.
+
+The compiler and the type system cannot read your mind. But they will enforce whatever
+invariants you encode. Encode the right ones.
 
 ---
 
@@ -226,6 +288,15 @@ The most secure code is code where the dangerous thing is hard to write and the 
 thing is the path of least resistance. Domain primitives, sealed hierarchies, and
 disciplined boundary validation make the type system your first line of defense — one
 that never sleeps, never forgets, and never skips a step under deadline pressure.
+
+None of this replaces the rest of the stack. TLS with current cipher suites, proper
+network segmentation, secrets management that keeps credentials out of source control,
+dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
+every layer does its job. What type-driven design does is harden the layer you own
+completely: your own code. A secret that never reaches a log file does not need the log
+pipeline to be secured. An injection payload that cannot be constructed does not need the
+WAF to catch it. The fewer things that need to go right downstream, the more resilient
+your whole system becomes.
 
 Your compiler is already on the security team. It's been waiting for you to give it the
 right types to work with.
