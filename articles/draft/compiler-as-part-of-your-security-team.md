@@ -214,6 +214,10 @@ public final class ApiToken {
     }
 
     @Override public int hashCode() { return 0; } // intentionally constant — see prose below
+
+    private void readObject(ObjectInputStream in) throws IOException {
+        throw new NotSerializableException("ApiToken");
+    }
 }
 ```
 
@@ -228,6 +232,9 @@ A few deliberate choices here:
   about the secret through HashMap bucket distribution. A constant means the type cannot
   be used as a map key efficiently — a small, intentional friction that discourages using
   tokens as lookup keys in the first place.
+- `readObject()` throws unconditionally. Java deserialization bypasses constructors —
+  an attacker with control over a serialized stream could reconstruct an `ApiToken`
+  without passing any validation. This one method closes that path entirely.
 
 The compiler and the type system cannot read your mind. But they will enforce whatever
 invariants you encode. Encode the right ones.
