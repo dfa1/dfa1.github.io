@@ -161,6 +161,12 @@ Each type encodes its own validation rules. `Lei` knows it must match a specific
 format. `Isin` knows its format. `MarketId` knows its format. `Price` knows it cannot be
 negative. None of this knowledge leaks out or gets duplicated.
 
+There is a subtler point too. An `int` is a number — the compiler will happily let you
+write `instrumentId + 1` or `marketId * instrumentId`. These expressions compile cleanly.
+They are also nonsense: instrument identifiers are not quantities; you cannot add, subtract,
+or scale them. A domain primitive exposes no arithmetic operators. The meaningless
+operations are not just discouraged — they do not exist.
+
 ---
 
 ## Make domain primitives immutable — and control what they reveal
