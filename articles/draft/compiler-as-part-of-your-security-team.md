@@ -1,7 +1,7 @@
 ---
 title: "Your compiler as part of your Security Team"
 date: 2021-01-04
-tags: [secure-by-design, java, domain-primitives, security]
+author: Davide Angelocola
 ---
 
 *It's 3am. Your phone is ringing.
@@ -25,7 +25,8 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 ## The Principle: Make Illegal State Unrepresentable
 
-This is the starting point: encode in your types what is the domain of the values. `MarketId` could be just 3 digits number whereas an `InstrumentId` could be much bigger, let's say 12 digits.
+This is the starting point: encode in your types what is the domain of the values. `MarketId` could be
+just 3 digits number whereas an `InstrumentId` could be much bigger, let's say 16 digits.
 
 Design types such that invalid or dangerous values **cannot be constructed**. Not "validate
 them on the way in." Cannot exist at all — construction throws.
@@ -52,8 +53,7 @@ simple: **always check length before applying regex**. It's one of those rules t
 you see it you can't unsee it.
 
 This is an example wrapper in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
-one of most of popular identifiers for financial instruments, but the same logic is
-transferable to other domains.
+one of most of popular identifiers for financial instruments, but the same logic applies cleanly to other domains:
 
 ```java
 public final class Isin {
@@ -146,7 +146,7 @@ In financial domain, a codebase that hasn't embraced domain primitives
 typically looks like this:
 
 ```java
-void publish(int marketId, int instrumentId, String isin, double quantity, double price) { ... }
+void publish(int marketId, int instrumentId, String isin, double volume, double price) { ... }
 ```
 
 Five untyped primitives. The two ints are interchangeable with each other; the two strings are interchangeable with each other.The compiler cannot help you.
@@ -165,7 +165,7 @@ negative. None of this knowledge leaks out or gets duplicated.
 
 There is a subtler point too. An `int` is a number — the compiler will happily let you
 write `instrumentId + 1` or `marketId * instrumentId`. These expressions compile cleanly.
-They are also nonsense: instrument identifiers are not quantities; you cannot add, subtract,
+They are also semantically meaningless: instrument identifiers are not quantities; you cannot add, subtract,
 or scale them. A domain primitive exposes no arithmetic operators. The meaningless
 operations are not just discouraged — they do not exist.
 
@@ -186,13 +186,14 @@ that cheerfully prints itself is a secret waiting to leak into a log file.
 
 ```java
 public final class ApiToken {
+    private static final int MIN_LENGTH = 128;
     private static final int MAX_LENGTH = 128;
-    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]$");
+    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]+$");
 
     private final String value;
 
     public ApiToken(String value) {
-        if (value == null || value.length() < 16 || value.length() > MAX_LENGTH) {
+        if (value == null || value.length() < MIN_LENGTH || value.length() > MAX_LENGTH) {
             throw new IllegalArgumentException("Invalid API token");
         }
         if (!FORMAT.matcher(value).matches()) {
