@@ -384,7 +384,8 @@ Again, zero runtime overhead. Rust's ownership model adds a further benefit: you
 control whether the inner value is ever exposed at all by keeping the field private and
 exposing only a validated constructor.
 
-**C++** requires a hand-written wrapper, but even a simple struct does the job:
+**C++** requires a hand-written wrapper + `explicit` constructors, but even a simple
+struct does the job:
 
 ```cpp
 struct InstrumentId { int value; };
