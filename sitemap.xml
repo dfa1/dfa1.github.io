@@ -2,17 +2,22 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://dfa1.github.io/index.html</loc>
+    <lastmod>2026-04-05</lastmod>
   </url>
   <url>
     <loc>https://dfa1.github.io/articles/coding-with-claude-code</loc>
+    <lastmod>2026-04-05</lastmod>
   </url>
   <url>
     <loc>https://dfa1.github.io/articles/the-joy-of-proper-encapsulation</loc>
+    <lastmod>2026-04-05</lastmod>
   </url>
   <url>
     <loc>https://dfa1.github.io/articles/write-down-the-why</loc>
+    <lastmod>2026-04-05</lastmod>
   </url>
   <url>
     <loc>https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team</loc>
+    <lastmod>2026-04-05</lastmod>
   </url>
 </urlset>
