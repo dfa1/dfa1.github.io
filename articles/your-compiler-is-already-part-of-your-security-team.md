@@ -428,24 +428,7 @@ network segmentation, secrets management that keeps credentials out of source co
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
 every layer does its job. Why not start from the most basic pieces of the business logic?
 
----
-
-If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
-Manning, 2019). It is one of the few books that treats security as a design discipline
-rather than a bolt-on concern. Highly recommended.
-
-The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
-context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
-— is worth reading even if you never write a line of OCaml. The insight transfers cleanly
-to any language with a strong type system.
-
-The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
-[*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
-It is the clearest statement of the boundary-parsing idea I know of.
-
----
-
-**April 2026**: when you add AI to this picture, the conclusion is not “AI replaces this”
+**Update April 2026**: when you add AI to this picture, the conclusion is not “AI replaces this”
 — it is the opposite: AI makes these design principles more necessary, not less.
 
 Why? Because AI is procedural whereas domain primitives are structural:
@@ -462,4 +445,18 @@ In other words: the more AI you use, the more your compiler matters to quickly i
 the software. Domain primitives are not just a design technique — they are the foundation
 that lets both humans and AI write secure, correct software at scale.
 
+---
+
+If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
+Manning, 2019). It is one of the few books that treats security as a design discipline
+rather than a bolt-on concern. Highly recommended.
+
+The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
+context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
+— is worth reading even if you never write a line of OCaml. The insight transfers cleanly
+to any language with a strong type system.
+
+The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
+[*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
+It is the clearest statement of the boundary-parsing idea I know of.
 
