@@ -274,11 +274,6 @@ public final class Password {
         this.value = Arrays.copyOf(value, value.length);
     }
 
-    /**
-     * Returns the password as a char array and marks it consumed.
-     * The caller must zero the returned array after use:
-     * {@code Arrays.fill(pwd, '\0')}.
-     */
     public char[] readOnce() {
         if (value == null) {
             throw new IllegalStateException("Password already consumed");
