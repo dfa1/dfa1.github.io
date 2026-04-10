@@ -427,7 +427,7 @@ it can enforce your domain boundaries.
 **Your compiler is already part of your security team. It's been waiting for you to give it the
 right types to work with.**
 
-Of course, this is not enough alone. Use TLS with current cipher suites, proper
+Of course, this is not enough alone. Use TLS 1.3 with strong cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
 every layer does its job. Why not start from the most basic pieces of the business logic?
@@ -454,6 +454,8 @@ that lets both humans and AI write secure, correct software at scale.
 If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
 Manning, 2019). It is one of the few books that treats security as a design discipline
 rather than a bolt-on concern. Highly recommended.
+
+Another great resource is [Secure Coding Guidelines for Java SE](https://www.oracle.com/java/technologies/javase/seccodeguide.html).
 
 The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
 context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
