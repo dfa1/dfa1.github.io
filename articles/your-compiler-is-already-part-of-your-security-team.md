@@ -49,7 +49,7 @@ quietly puts it into an invalid or dangerous state.
 
 In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
 a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
-In modern Java a `record` could be used to lower the effort writing systematically domain primitives.
+In modern Java a `record` could be used to lower the effort of writing domain primitives systematically.
 
 But validation itself has a pitfall people miss if a regex is used: **regex on unbounded input is a
 vulnerability**. A crafted input of a few thousand characters can cause a backtracking regex to run for
@@ -253,10 +253,9 @@ A few deliberate choices here:
 - `equals()` uses `MessageDigest.isEqual` — a constant-time comparison — instead of
   `String.equals`. A timing-sensitive caller cannot use equality checks to oracle the
   token value one character at a time.
-- `hashCode()` returns a constant. Returning a hash of the value would leak information
-  about the secret through HashMap bucket distribution. A constant means the type cannot
-  be used as a map key efficiently — a small, intentional friction that discourages using
-  tokens as lookup keys in the first place.
+- `hashCode()` returns a constant. A constant means the type cannot be used as a map key
+  efficiently — a small, intentional friction that discourages using tokens as lookup keys
+  in the first place.
 - `readObject()` throws unconditionally. Java deserialization bypasses constructors —
   an attacker with control over a serialized stream could reconstruct an `ApiToken`
   without passing any validation. This one method closes that path entirely.
@@ -275,13 +274,18 @@ public final class Password {
         this.value = Arrays.copyOf(value, value.length);
     }
 
+    /**
+     * Returns the password as a char array and marks it consumed.
+     * The caller must zero the returned array after use:
+     * {@code Arrays.fill(pwd, '\0')}.
+     */
     public char[] readOnce() {
         if (value == null) {
             throw new IllegalStateException("Password already consumed");
         }
         char[] result = value;
-        value = null; // consumed
-        return result; // caller should anyway handle this with care
+        value = null;
+        return result;
     }
 
     @Override
@@ -294,12 +298,12 @@ public final class Password {
 After the password is used to authenticate the user, it cannot be used again... even accidentally.
 
 This isn't just good design. It directly contributes to eliminating whole vulnerability categories:
-- the attacker cannot use `Isin` as a way to exploit a SQL injection as it cannot hold something like `'; DROP TABLE users; --`;
+- an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterised queries still matter for every other value);
 - the auditor won't find `ApiToken` leaks in the logs: `toString()` returns `"ApiToken[REDACTED]"`, so the secret cannot reach a log file or exception message;
 - in general, it will be much harder for the attacker who controls an input to use it.
 
 Security stops being a checklist applied at the end. It becomes a **property of the
-design**, the security is **built-in**.
+design**.
 
 ---
 
