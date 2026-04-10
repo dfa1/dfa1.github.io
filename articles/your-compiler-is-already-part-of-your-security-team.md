@@ -14,7 +14,7 @@ passed, CI was green.*
 
 ```java
 void publishClosePrice(int marketId, int instrumentId, double closePrice) {
-  ...
+    ...
 }
 ```
 
@@ -118,7 +118,7 @@ Three booleans on a method:
 
 ```java
 void registerInstrument(String isin, boolean isActive, boolean isEquity, boolean isIndex) {
-...
+    ...
 }
 ```
 
@@ -135,7 +135,7 @@ public enum InstrumentStatus { ACTIVE, INACTIVE, IN_DISSOLUTION }
 public enum InstrumentType   { BOND, EQUITY, INDEX, FIXED_INCOME }
 
 void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status) {
-  ...
+    ...
 }
 ```
 
@@ -266,6 +266,8 @@ Even so, `value()` can be called multiple times — nothing stops the secret fro
 ```java
 public final class Password {
 
+    // Why not String? because String is immutable and it could be interned.
+    // char[] is better here because it is mutable reference that
     private char[] value;
 
     public Password(char[] value) {
@@ -273,7 +275,9 @@ public final class Password {
     }
 
     public char[] readOnce() {
-        if (value == null) throw new IllegalStateException("Password already consumed");
+        if (value == null) {
+            throw new IllegalStateException("Password already consumed");
+        }
         char[] result = value;
         value = null; // consumed
         return result;
