@@ -9,11 +9,13 @@ exchange A showing up under exchange B. Clients are seeing it. Someone is alread
 if it's a breach.
 It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
 `marketId` and an `instrumentId`, both ints, and the caller got them the wrong way
-round. The compiler saw two ints. Both positive. Both in range. Code compiled, tests
+round. The compiler saw two ints, both positive, both in range. Code compiled, tests
 passed, CI was green.*
 
 ```java
-void publish(int marketId, int instrumentId, double price) { ... }
+void publishClosePrice(int marketId, int instrumentId, double closePrice) {
+  ...
+}
 ```
 
 *Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
@@ -23,8 +25,9 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 ## Make Illegal State Unrepresentable
 
-This is the starting point: encode in your type what is the domain of the value. `MarketId` could be
-just a 3-digit non-negative number, an `InstrumentId` could be much bigger.
+This is the starting point: encode in your type what is the domain of the value.
+`MarketId` could be just a 3-digit non-negative number (representable with `short`),
+an `InstrumentId` could be representable with 32 bits int with non-negative constraint.
 
 Design types such that invalid or dangerous values **cannot be constructed**.
 
@@ -111,10 +114,12 @@ transform it into a type that is its own proof of validity.
 
 ## Make invalid combinations impossible
 
-Two booleans on a method:
+Three booleans on a method:
 
 ```java
-void registerInstrument(String isin, boolean isActive, boolean isEquity, boolean isIndex) { ... }
+void registerInstrument(String isin, boolean isActive, boolean isEquity, boolean isIndex) {
+...
+}
 ```
 
 8 possible combinations. How many are actually valid for your domain? Probably not all
@@ -129,7 +134,9 @@ Java gives you several tools here.
 public enum InstrumentStatus { ACTIVE, INACTIVE, IN_DISSOLUTION }
 public enum InstrumentType   { BOND, EQUITY, INDEX, FIXED_INCOME }
 
-void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status) { ... }
+void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status) {
+  ...
+}
 ```
 
 **Records + sealed interfaces** for richer cases where variants carry different data.
@@ -163,7 +170,9 @@ typically looks like this:
 ```java
 int marketId = Integer.parseInt(request.getParam("marketId"));
 int instrumentId = Integer.parseInt(request.getParam("instrumentId"));
-publish(marketId + 1, instrumentId - 1, ...);
+double closePrice = fetchOpenPrice(instrumentId, marketId);
+
+publishClosePrice(marketId, instrumentId, closePrice);
 ```
 
 There is a subtler point too. An `int` is a number — the compiler will happily let you
@@ -175,7 +184,10 @@ operations are not just discouraged — they do not exist:
 ```java
 MarketId marketId = new MarketId(request.getParam("marketId"));
 InstrumentId instrumentId = new InstrumentId(request.getParam("instrumentId"));
-publish(marketId + 1, instrumentId - 1, ...); <-- compile time error
+Price closePrice = fetchOpenPrice(instrumentId, marketId);
+
+publish(marketId + 1, instrumentId - 1, closePrice);
+        ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^ <-- compile time errors
 ```
 
 ---
@@ -401,8 +413,8 @@ construction from raw ints, enforcing validation — libraries like
 without additional boilerplate. The underlying principle is the same: one named type per
 concept, incompatible by default, conversions only where you explicitly write them.
 
-The vocabulary differs; the insight does not. If your language has a type system, it can
-enforce your domain boundaries.
+The vocabulary differs; the insight does not. If your language has a strong type system,
+it can enforce your domain boundaries.
 
 ---
 
@@ -418,6 +430,10 @@ every layer does its job. Why not start from the most basic pieces of the busine
 
 ---
 
+If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
+Manning, 2019). It is one of the few books that treats security as a design discipline
+rather than a bolt-on concern. Highly recommended.
+
 The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
 context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
 — is worth reading even if you never write a line of OCaml. The insight transfers cleanly
@@ -427,6 +443,14 @@ The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
 [*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
 It is the clearest statement of the boundary-parsing idea I know of.
 
-If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
-Manning, 2019). It is one of the few books that treats security as a design discipline
-rather than a bolt-on concern. Highly recommended.
+---
+
+April 2026: when you add AI to this picture, the conclusion is not “AI replaces this”
+— it is the opposite: AI makes these design principles more necessary, not less.
+
+Why? Because AI is procedural whereas domain primitives are structural. Like already discussed
+in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
+thrives in codebases that are explorable: a codebase full of raw `String`, `int`, `long`
+is ambiguous to humans and to AI.
+
+
