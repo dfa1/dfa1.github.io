@@ -445,7 +445,7 @@ And, like already discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
-In other words: the more AI you use, the more your compiler matters to quickly iterat
+In other words: the more AI you use, the more your compiler matters to quickly iterate
 the software. Domain primitives are not just a design technique — they are the foundation
 that lets both humans and AI write secure, correct software at scale.
 
