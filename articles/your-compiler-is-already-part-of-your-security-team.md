@@ -27,7 +27,7 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 This is the starting point: encode in your type what is the domain of the value.
 `MarketId` could be just a 3-digit non-negative number (representable with `short`),
-an `InstrumentId` could be representable with 32 bits int with non-negative constraint.
+an `InstrumentId` could be representable with `int` with non-negative constraint.
 
 Design types such that invalid or dangerous values **cannot be constructed**.
 
@@ -418,7 +418,7 @@ it can enforce your domain boundaries.
 
 ---
 
-## Closing
+## Conclusion
 
 **Your compiler is already part of your security team. It's been waiting for you to give it the
 right types to work with.**
