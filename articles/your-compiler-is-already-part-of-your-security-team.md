@@ -266,8 +266,9 @@ Even so, `value()` can be called multiple times — nothing stops the secret fro
 ```java
 public final class Password {
 
-    // Why not String? because String is immutable and it could be interned.
-    // char[] is better here because it is mutable reference that
+    // char[] is preferred over String because it is a mutable type that
+    // can be explicitly zeroed after use; String is immutable and may be
+    // interned, making it impossible to clear from memory on demand.
     private char[] value;
 
     public Password(char[] value) {
@@ -280,7 +281,7 @@ public final class Password {
         }
         char[] result = value;
         value = null; // consumed
-        return result;
+        return result; // caller should anyway handle this with care
     }
 
     @Override
