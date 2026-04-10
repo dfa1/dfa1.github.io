@@ -445,12 +445,21 @@ It is the clearest statement of the boundary-parsing idea I know of.
 
 ---
 
-April 2026: when you add AI to this picture, the conclusion is not “AI replaces this”
+**April 2026**: when you add AI to this picture, the conclusion is not “AI replaces this”
 — it is the opposite: AI makes these design principles more necessary, not less.
 
-Why? Because AI is procedural whereas domain primitives are structural. Like already discussed
+Why? Because AI is procedural whereas domain primitives are structural:
+AI tools generate code procedurally: they produce sequences of steps, validations, and checks.
+But domain primitives are structural: they encode the rules of your domain in the type system
+itself. When humans and AI both write code, the compiler becomes the only actor that sees
+everything and enforces the invariants consistently.
+
+And, like already discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, `long`
-is ambiguous to humans and to AI.
+is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
+In other words: the more AI you use, the more your compiler matters to quickly iterat
+the software. Domain primitives are not just a design technique — they are the foundation
+that lets both humans and AI write secure, correct software at scale.
 
 
