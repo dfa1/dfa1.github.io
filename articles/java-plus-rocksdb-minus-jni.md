@@ -1,0 +1,214 @@
+# Java + RocksDB - JNI
+
+11 April 2026
+
+*The best way I know to learn something is to build something real with it.
+I wanted to understand Java's Foreign Function & Memory (FFM) API properly — not just read
+the Javadoc, but actually use it. RocksDB was the obvious vehicle: I'm a long time user
+of RocksDB and it has a well-defined C API and a problem space I already understood.*
+
+*The result is [rocksdbffm](https://github.com/dfa1/rocksdbffm): an
+experimental RocksDB wrapper for Java using FFM instead of JNI.*
+
+*The project is inspired by two prior pieces of community work that I recommend reading
+alongside this post:
+[Expanding RocksDB's Java FFI](https://rocksdb.org/blog/2024/02/20/foreign-function-interface.html)
+and Adam Retter's
+[RocksJava: Present and Future](https://evolvedbinary.slides.com/adamretter/rocksjava-present-and-future#/1)
+presentation.*
+
+---
+
+## FFM Concepts
+
+The FFM API (part of `java.lang.foreign`, finalised in JDK 22) has a few central concepts
+worth understanding before you touch RocksDB.
+
+### MemorySegment and Arena
+
+`MemorySegment` is FFM's handle to off-heap memory. It knows its size and its
+confinement — which thread can access it, and for how long. An `Arena` controls the
+lifecycle: when the arena closes, all segments allocated within it become invalid.
+
+```java
+try (Arena arena = Arena.ofConfined()) {
+    MemorySegment key = arena.allocateFrom("hello");
+    MemorySegment value = arena.allocateFrom("world");
+    db.put(key, value);
+} // memory freed here
+```
+
+### Linker and MethodHandle
+
+To call a native function, you obtain a `MethodHandle` for it via the `Linker`:
+
+```java
+Linker linker = Linker.nativeLinker();
+SymbolLookup lookup = SymbolLookup.libraryLookup("librocksdb.so", arena); // Linux; use librocksdb.dylib on macOS
+
+MethodHandle rocksdbOpen = linker.downcallHandle(
+    lookup.find("rocksdb_open").orElseThrow(),
+    FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS)
+);
+```
+
+`FunctionDescriptor` describes the C signature in Java terms: `ADDRESS` for pointers,
+`ValueLayout.JAVA_INT` for `int`, and so on. The handle is then called like any other
+`MethodHandle`.
+
+### The Generated Layer
+
+The low-level binding — `MethodHandle` declarations, `FunctionDescriptor` definitions,
+pointer layouts — is generated from RocksDB's `rocksdb/c.h` by an LLM. The generated code is
+plain Java: it's in the repository, you can read it, grep it, and understand what's
+happening. No magic `.so` build step for the glue layer itself.
+
+On top of that generated layer sits an idiomatic Java API: `RocksDB`, `WriteBatch`,
+`Transaction`, `Iterator`. The generated code is internal; the public API hides the
+`MemorySegment` plumbing behind familiar abstractions.
+
+---
+
+## Design Choices Worth Explaining
+
+### The C API as the binding surface
+
+RocksDB is a C++ library, but it ships an official stable C API (`rocksdb/c.h`). This is
+the right layer to bind against — not the C++ classes directly. The C++ ABI is unstable
+and compiler-specific; the C API is a deliberate, stable public contract.
+
+This is not a novel choice. Every language ecosystem that wraps RocksDB does the same:
+
+- [rust-rocksdb](https://github.com/rust-rocksdb/rust-rocksdb) binds against `rocksdb/c.h` via Rust's FFI
+- [python-rocksdb](https://github.com/twmht/python-rocksdb) uses Cython against the same C API
+
+`rocksdbffm` eliminates that C++ glue layer entirely. FFM can call C functions from Java
+without writing any C glue code. The C header is the contract; there is nothing in between.
+
+### A typical binding function
+
+Here is what a bound function looks like at the generated layer, and how the public API
+wraps it. Take `rocksdb_put` as an example. In `rocksdb/c.h`:
+
+```c
+extern ROCKSDB_LIBRARY_API void rocksdb_put(
+    rocksdb_t* db,
+    const rocksdb_writeoptions_t* options,
+    const char* key, size_t keylen,
+    const char* val, size_t vallen,
+    char** errptr);
+```
+
+The generated Java binding:
+
+```java
+static final MethodHandle rocksdb_put = Linker.nativeLinker().downcallHandle(
+    SYMBOL_LOOKUP.find("rocksdb_put").orElseThrow(),
+    FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS)
+);
+```
+
+`JAVA_LONG` is used for `size_t` — correct on any 64-bit JVM, which is the only target platform.
+
+And the public API method that calls it:
+
+```java
+public void put(byte[] key, byte[] value) {
+    try (Arena arena = Arena.ofConfined()) {
+        MemorySegment errPtr = arena.allocate(ADDRESS);
+        RocksDbBindings.rocksdb_put.invokeExact(
+            handle, writeOptions,
+            arena.allocateFrom(ValueLayout.JAVA_BYTE, key), (long) key.length,
+            arena.allocateFrom(ValueLayout.JAVA_BYTE, value), (long) value.length,
+            errPtr
+        );
+        throwIfError(errPtr);
+    }
+}
+```
+
+The pattern repeats across the whole API: allocate a confined arena for the call, copy
+Java data into native segments, invoke the handle, check the error pointer, free
+everything when the arena closes. Mechanical, auditable, boring... perfect for an LLM.
+
+### Modern Java throughout
+
+The project requires JDK 25+. There is no legacy compatibility shim. The API uses records
+for value types, sealed interfaces for closed hierarchies, and pattern matching where it
+reduces boilerplate. A `SequenceNumber` is a record, not a `long`. A `MemorySize` is a
+record, not an undocumented byte count passed silently.
+
+```java
+// rocksdbjni style
+options.setBlockSize(67108864L); // what unit? what range?
+
+// rocksdbffm style
+options.setBlockSize(MemorySize.ofMB(64));
+```
+
+The same principle [I wrote about in the domain primitives post](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) applies here: illegal
+values should be unrepresentable. `MemorySize.ofMB(-1)` throws at construction.
+
+### Path, not String
+
+Every method that accepts a filesystem location takes `java.nio.file.Path`. This prevents
+the classic confusion between absolute and relative paths and integrates with the NIO API
+naturally.
+
+### Unchecked exceptions
+
+Every operation that can fail throws `RocksDBException` (unchecked). `rocksdbjni`
+historically returned `null` or `-1` in failure cases that callers could silently ignore.
+Failures here are always loud. You can still catch them if you need to; you cannot
+accidentally swallow them.
+
+---
+
+## The Build: Zig as a C Compiler
+
+Building RocksDB from source is the part that surprised me most. The project uses
+[Zig](https://ziglang.org/) as a drop-in C/C++ compiler (`zig cc` / `zig c++`) instead of
+the system toolchain. Zig bundles clang and libc++ for every target, which means the build
+is hermetic: no sysroot, no separate `apt install` for build dependencies.
+
+```bash
+PORTABLE=1 CC="zig cc" CXX="zig c++" make shared_lib
+```
+
+This was not obvious to me before starting. It is the right call for a project that needs
+to build reliably on macOS and Linux without assuming a particular system toolchain. If
+you clone the repository, the Maven `native-build` profile runs this for you.
+
+---
+
+## Current State
+
+The library covers most of the core RocksDB API:
+
+- Open/Create, Put/Get/Delete (with `byte[]`, `ByteBuffer`, `MemorySegment`)
+- `WriteBatch`, `Transactions` (pessimistic and optimistic)
+- `Iterators`, `Snapshots`, `Flush`, `Compaction`
+- TTL DB, Secondary DB, Statistics, `Compression`
+- SST File Ingest, Checkpoints
+
+Not yet covered: Column Families, Backup Engine, MultiGet, custom MergeOperator,
+CompactionFilter, WAL Iterator, Rate Limiter.
+
+The project is experimental. It is not yet on Maven Central. It is not a drop-in
+replacement for `rocksdbjni`. The long-term goal, stated in the README, is to contribute
+it back upstream into the RocksDB project itself — or run it as a separate library if the
+community wants that instead.
+
+---
+
+Building this answered the question I started with: FFM is genuinely usable for real
+libraries, the mental model is clean once you have `Arena` and `MemorySegment` straight,
+and the absence of a JNI layer makes the whole stack easier to reason about. The hardest
+part was not FFM — it was building RocksDB itself.
+
+## Contribute
+
+If you work with RocksDB in Java, or you want a concrete project to learn FFM with,
+[take a look](https://github.com/dfa1/rocksdbffm). The missing features in the roadmap
+are well-scoped contributions. Column Families in particular is the right next step —
+it is important for production use and the C API is straightforward.
