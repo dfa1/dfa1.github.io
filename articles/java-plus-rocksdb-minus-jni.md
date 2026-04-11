@@ -128,6 +128,14 @@ The pattern repeats across the whole API: allocate a confined arena for the call
 Java data into native segments, invoke the handle, check the error pointer, free
 everything when the arena closes. Mechanical, auditable, boring... perfect for an LLM.
 
+### Type safe API
+
+Every operation in `RocksDB` exposes only methods that actually are possible. Example:
+in RocksDB it is possible to open a readonly instance, call `put` and the program
+compiles correctly but fails at runtime.
+
+In this project, there is the wish to make those compile-time errors instead.
+
 ### Embracing modern Java
 
 The project requires JDK 25+. There is no legacy compatibility shim. The API uses FFM
