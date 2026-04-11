@@ -3,12 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-03-29T00:00:00Z</updated>
+  <updated>2026-04-11T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>urn:uuid:dfa1.github.io</id>
 
+  <entry>
+    <title>Java + RocksDB - JNI</title>
+    <link href="https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni"/>
+    <id>urn:uuid:java-plus-rocksdb-minus-jni</id>
+    <updated>2026-04-11T00:00:00Z</updated>
+    <published>2026-04-11T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Java + RocksDB - JNI</summary>
+  </entry>
   <entry>
     <title>Coding with Claude Code: A Week on hosh</title>
     <link href="https://dfa1.github.io/articles/coding-with-claude-code"/>
