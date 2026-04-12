@@ -21,7 +21,7 @@ The first version was a POC. Simple by design: call `RocksDB.get()`, get a
 ```java
 byte[] keyBytes = serializeKey(key);
 byte[] valueBytes = db.get(keyBytes);
-Value value = dederialize(valueBytes);
+Value value = deserialize(valueBytes);
 ```
 
 One allocation per request. Reasonable for a prototype. The problem is that
@@ -196,8 +196,8 @@ is encoded directly into a borrowed buffer:
 ByteBuffer keyBuffer = pool.borrow();
 ByteBuffer valueBuffer = pool.borrow();
 try {
-    serializeKeyy(key, keyBuffer);
-    db.get(keyfBuffer, valueBuffer);
+    serializeKey(key, keyBuffer);
+    db.get(keyBuffer, valueBuffer);
     valueBuffer.flip();
     return deserialize(valueBuffer);
 } finally {

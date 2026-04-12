@@ -1,6 +1,6 @@
 # Java + RocksDB - JNI
 
-11 April 2026
+*11 April 2026*
 
 *The best way I know to learn something is to build something real with it.
 I wanted to understand Java's Foreign Function & Memory (FFM) API properly — not just read
