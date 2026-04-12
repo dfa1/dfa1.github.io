@@ -317,3 +317,10 @@ Every integration follows the same composition stack: logging → retry → cach
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
 integrate with anything external.
+
+---
+
+The ETag cache cut entitlement calls by ~99% on high-volume deliveries — almost every call was a cache hit. The
+point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API calls
+now complete with a single coherent authorization state. Several teams ship on independent schedules, with no
+coordinated rollbacks.
