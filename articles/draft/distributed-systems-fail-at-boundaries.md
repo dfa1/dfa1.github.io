@@ -1,8 +1,8 @@
 # Distributed systems fail at the boundaries
 
-*12 April 2026*
+*12 April 2021*
 
-*A GraphQL API that needed per-field authorization. Each fix exposed the next boundary. Here's what we built, and what it cost us.*
+*A GraphQL API that needed per-field authorization. What started as a straightforward integration turned into a sequence of architectural decisions — versioned contracts, point-in-time consistency, decorator-based composition — each one forced by a failure at the previous boundary. But the hardest boundaries weren't technical. They were organizational: two teams, misaligned release cycles, and a shared endpoint nobody fully owned. The patterns that emerged — a narrow interface, layered decorators, an in-memory stub for testing — became the blueprint for other integrations: product-data lookups, on-the-fly calculations, Elasticsearch-backed search. The lesson wasn't specific to entitlements. It was about finding solutions general enough to reuse. Here's what we built, why we built it, and what it cost us.*
 
 ## The starting point
 
@@ -189,6 +189,38 @@ When boundaries are explicit, predictable, and owned, the system becomes easier 
 The job is not to eliminate failure. It's to make failure survivable, observable, and boring. The retry decorator handles transient network errors. The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
 
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather than something to paper over.
+
+## The full picture
+
+The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it became the standard approach for every external dependency the data API grew. Product-data lookups, on-the-fly field calculations, Elasticsearch-backed search — each one got the same treatment: a narrow interface, an HTTP implementation, a caching layer, a retry wrapper, and an in-memory stub for testing.
+
+```
+                          ┌──────────────────────────────────────────┐
+                          │              Data API (GraphQL)           │
+                          │                                           │
+                          │  EntitlementApi  ProductApi  SearchApi    │
+                          │  CalcApi         ...                      │
+                          └──────────┬──────────┬──────────┬─────────┘
+                                     │          │          │
+                         ┌───────────┘          │          └──────────────┐
+                         │                      │                         │
+                         ▼                      ▼                         ▼
+               ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
+               │   API Gateway    │   │  Calculation     │   │    Elasticsearch     │
+               │   (mTLS, rate    │   │  Service         │   │    (search)          │
+               │    limiting)     │   └──────────────────┘   └──────────────────────┘
+               └────────┬─────────┘
+                        │
+           ┌────────────┴─────────────┐
+           │                          │
+           ▼                          ▼
+┌─────────────────────┐    ┌─────────────────────┐
+│   Entitlement API   │    │    Product Data API  │
+│   /v1     /v2       │    │    /v1     /v2       │
+└─────────────────────┘    └─────────────────────┘
+```
+
+Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a response to a specific problem with the entitlement service turned out to be a general answer to the question of how to integrate with anything external.
 
 ## The boundary you can't wrap in a decorator
 
