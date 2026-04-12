@@ -224,23 +224,24 @@ without standing up the entitlement service.
 The pattern works because the interface boundary is narrow and consistent. Each decorator does one thing. The
 composition is explicit and visible at the wiring point, not scattered across the codebase.
 
-## The boundary you can't wrap in a decorator
+## Entropy between teams
 
-The technical boundary is the easy one. The decisions that caused the most pain — no versioning, synchronized rollbacks,
-a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in
-isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized
+rollbacks, a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system
+in isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
 
 Software breaks at boundaries because that's where assumptions are done. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside: a downstream client changes a field
 in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
-nobody tracked it. That's entropy. Not bugs, not negligence — just the natural drift between systems that don't share a
-feedback loop.
+nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
+share a feedback loop.
 
 How do you design systems that survive this? I don't have a full answer yet, and I'm skeptical of people who claim they
-do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry policies — but they address the symptoms.
-What seems to matter more is a mixture of clear expectations at each boundary (ownership, versioning guarantees, SLA
-commitments that someone is actually accountable for), communication that doesn't require scheduling a meeting to
-happen, and the willingness to push back on solutions that work for one team only.
+do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
+policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
+boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
+**communication that doesn't require scheduling a meeting to happen**, and the willingness to push back on solutions
+that work for one team only.
 
 ## Architecture is the art of shaping boundaries
 
