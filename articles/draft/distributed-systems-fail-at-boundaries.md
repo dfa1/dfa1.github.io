@@ -15,9 +15,9 @@ The first problem was release cadence. The entitlement API and the data API evol
 The boundary existed. It just wasn't owned.
 
 ```
-┌──────────────────┐          HTTP/REST          ┌─────────────────────┐
+┌──────────────────┐          HTTP               ┌─────────────────────┐
 │    Data API      │ ──────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │                             │   (no versioning)   │
+│   (GraphQL)      │                             │                     │
 └──────────────────┘                             └─────────────────────┘
 ```
 
@@ -32,7 +32,7 @@ We added ETag caching on top. If the entitlement snapshot hadn't changed since t
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but it's much simpler to reason about when something goes wrong.
 
 ```
-┌──────────────────┐  GET /entitlements/{user}?asOf={T}  ┌─────────────────────┐
+┌──────────────────┐  GET /entitlements/{user}?asOf={T}   ┌─────────────────────┐
 │    Data API      │ ───────────────────────────────────► │   Entitlement API   │
 │   (GraphQL)      │ ◄─────────────────────────────────── │                     │
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
@@ -51,8 +51,17 @@ Isolated DTOs are the concrete implementation of an independent release cycle. T
 ```
 ┌──────────────────┐   HTTPS GET /v1/entitlements/...   ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │                                    │    /v1     /v2       │
+│   (GraphQL)      │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
+
+
+and on the staging environment
+
+┌──────────────────┐   HTTPS GET /v2/entitlements/...   ┌─────────────────────┐
+│    Data API      │ ─────────────────────────────────► │   Entitlement API   │
+│   (GraphQL)      │                                    │                     │
+└──────────────────┘                                    └─────────────────────┘
+
 ```
 
 ## The API gateway
@@ -64,9 +73,9 @@ Every caller now needed a client certificate. Certificate rotation, expiry, and 
 We had to define separate timeout budgets for the gateway hop and the service hop, and implement retries explicitly with exponential backoff and jitter. The boundary didn't disappear — it multiplied.
 
 ```
-┌──────────────────┐  mTLS  ┌─────────────────┐  HTTPS  ┌─────────────────────┐
+┌──────────────────┐  mTLS   ┌─────────────────┐  HTTPS   ┌─────────────────────┐
 │    Data API      │ ──────► │   API Gateway   │ ───────► │   Entitlement API   │
-│   (GraphQL)      │         │  (rate limiting │          │    /v1     /v2       │
+│   (GraphQL)      │         │  (rate limiting │          │    /v1     /v2      │
 └──────────────────┘         │   routing)      │          └─────────────────────┘
                              └─────────────────┘
 ```
@@ -199,12 +208,12 @@ None of these are heroic. They're the result of treating each boundary as someth
 The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it became the standard approach for every external dependency the data API grew. Product-data lookups, on-the-fly field calculations, Elasticsearch-backed search — each one got the same treatment: a narrow interface, an HTTP implementation, a caching layer, a retry wrapper, and an in-memory stub for testing.
 
 ```
-                          ┌──────────────────────────────────────────┐
-                          │              Data API (GraphQL)           │
-                          │                                           │
-                          │  EntitlementApi  ProductApi  SearchApi    │
-                          │  CalcApi         ...                      │
-                          └──────────┬──────────┬──────────┬─────────┘
+                          ┌──────────────────────────────────────── ... ─┐
+                          │              Data API (GraphQL)              │
+                          │                                              │
+                          │  EntitlementApi  ProductApi  SearchApi  ...  │
+                          │                                              │
+                          └──────────┬──────────┬──────────┬─────── ...  ┘
                                      │          │          │
                          ┌───────────┘          │          └──────────────┐
                          │                      │                         │
@@ -219,8 +228,8 @@ The entitlement integration didn't stay unique for long. Once the interface-plus
            │                          │
            ▼                          ▼
 ┌─────────────────────┐    ┌─────────────────────┐
-│   Entitlement API   │    │    Product Data API  │
-│   /v1     /v2       │    │    /v1     /v2       │
+│   Entitlement API   │    │    Entitlement API  │
+│   /v1               │    │        /v2          │
 └─────────────────────┘    └─────────────────────┘
 ```
 
