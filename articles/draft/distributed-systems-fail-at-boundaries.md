@@ -22,10 +22,10 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 └──────────────────┘                             └─────────────────────┘
 ```
 
-# Versioned endpoints
+## Versioned endpoints
 
 That worked until the
-entitlement team renamed a response field on a rainy Tuesday. The data API's deserializer mapper was throwing error, everything downstream call was failing for the same reason.
+entitlement team renamed a response field on a rainy Tuesday. The data API's deserializer was throwing errors; every downstream call was failing for the same reason.
 
 The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
 setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a
@@ -35,10 +35,9 @@ The problem was also release cadence. The entitlement API and the data API evolv
 *deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team —
 and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
-Solution was to add the path-based versioning to the EntitlementApi: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
+The solution was to add path-based versioning to the EntitlementApi: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
 route at the gateway level. We also started publishing an [OpenAPI](https://www.openapis.org/) spec per version — a
-machine-readable contract that made the boundary explicit to any new consumer and start to use contract testing with [pact contract testing](https://pact.io).
-wwww
+machine-readable contract that made the boundary explicit to any new consumer — and adopted contract testing with [Pact](https://pact.io).
 The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance
 between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly
 identical. But it meant the data API team could migrate to v2 on their own schedule: test it in parallel, roll back to
@@ -63,7 +62,7 @@ and on the staging environment
 
 ```
 
-After migration to v2 was done, v1 was removed as was not needed anymore.
+Once the migration to v2 was complete, v1 was removed.
 
 Please note that [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -85,7 +84,7 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent
 view.
 
-We added `ETag` caching on top to make this solution scalabe. If the entitlement snapshot hadn't changed since the last call, the service returned
+We added `ETag` caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
 `304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed thousands of
 entitlement round-trips down to a handful.
 
@@ -107,7 +106,7 @@ weeks before anyone noticed. No enforced authentication at the transport layer, 
 accidental consumer from adding load. That was the event that made a gateway non-negotiable.
 
 As more services needed entitlements, an API gateway appeared to handle routing, rate limiting, and — eventually —
-mutual TLS. mTLS was the right security choice. It was also kind of a new boundary.
+mutual TLS. mTLS was the right security choice, but it introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
 operational surface. The gateway introduced failure modes distinct from the entitlement service itself: gateway
@@ -224,10 +223,9 @@ composition is explicit and visible at the wiring point, not scattered across th
 
 ## Entropy between teams
 
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized
-releases and rollbacks, — were downstream of organizational ones. A team that designed their system
-in isolation. And every release was an event needed multiple meetings to be understood by everyone. Sometimes intra-team dependencies need to be handled but it is much better to remove them.
-Software breaks at boundaries because that's where assumptions are done. A team building in isolation always makes their
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational ones: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+
+Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
 in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
 nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
@@ -238,8 +236,7 @@ do. The technical tools help — explicit interfaces, versioned contracts, [cont
 policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
 boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
 **communication that doesn't require scheduling a meeting to happen**, and the willingness to push back on solutions
-that work for one team only. It is important to let people understand the context in which they operate, to see beyond their team and services. Every team must be able to accept
-changes to make the *overall* system better in some way. It is part of the socio-technical landscape of every distributed system I guess?
+that work for one team only. Teams need to see beyond their own service boundary — to understand the context they operate in and accept changes that make the *overall* system better, even when those changes add friction locally. That's not an engineering problem; it's a socio-technical one.
 
 ## Architecture is the art of shaping boundaries
 
@@ -253,7 +250,7 @@ consistency problems surface as explicit errors rather than silent data drift. *
 where it was invisible — into the code, where it can be read, tested, and reasoned about.*
 
 That trade-off is worth being deliberate about. The job is not to eliminate failure — it's to make failure *transient*,
-*observable*, and *auditable*. The retry decorator `FailsafeEntitlementApi` handles transient network errors (that *will* be happen). The cache absorbs repeated calls. The
+*observable*, and *auditable*. The retry decorator `FailsafeEntitlementApi` handles transient network errors (that *will* happen). The cache absorbs repeated calls. The
 in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
 
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
@@ -317,5 +314,5 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory fake replaces the
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
-integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html).
+integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
