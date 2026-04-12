@@ -86,11 +86,7 @@ We had to define separate timeout budgets for the gateway hop and the service ho
                              └─────────────────┘
 ```
 
-## What the layers reveal
-
-Each simplification in this system eventually ran into a boundary it wasn't designed for. The unversioned REST endpoint was simple until synchronized rollbacks became the tax. Point-in-time snapshots added complexity, but turned an invisible consistency problem into an explicit contract parameter. Isolated DTOs looked like duplication until they decoupled two teams' deployment schedules. The gateway solved security and routing, then introduced its own failure surface.
-
-None of these problems were obvious at the start. But each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit contract. The cost of leaving it implicit shows up later, at 2am, during a rollback.
+Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit contract. The cost of leaving it implicit shows up later, at 2am, during a rollback.
 
 ## Taming the boundary in code
 
@@ -199,7 +195,7 @@ The pattern works because the interface boundary is narrow and consistent. Each 
 
 ## The boundary you can't wrap in a decorator
 
-Every example above is a technical story. But the decisions that caused the most pain — no versioning, synchronized rollbacks, a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
+The technical boundary is the easy one. The decisions that caused the most pain — no versioning, synchronized rollbacks, a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
 
 Software breaks at boundaries because that's where assumptions meet. A team building in isolation always makes their system work — they control the inputs. The interesting failures happen just outside: a downstream client changes a field in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because nobody tracked it. That's entropy. Not bugs, not negligence — just the natural drift between systems that don't share a feedback loop.
 
@@ -207,17 +203,13 @@ How do you design systems that survive this? I don't have a full answer yet, and
 
 The architectural patterns in this article are tools for making technical boundaries survivable. The harder problem is the socio-technical boundary — the gap between what one team assumes about another. That one doesn't have an interface you can define, and no decorator absorbs its failures.
 
-## Good boundaries simplify the system
+## Architecture is the art of shaping boundaries
 
 The first version was operationally simple: one HTTP call, no versioning, no decorators. It was also the hardest to operate — a response shape change meant a coordinated rollback across two teams, and a consistency bug mid-delivery was nearly invisible until it surfaced as wrong data in production.
 
 The last version is the opposite. More moving parts in code: versioned endpoints, isolated DTOs, a decorator stack, a timestamp parameter. But operationally it's predictable: each team ships independently, failures are isolated, consistency problems surface as explicit errors rather than silent data drift. The complexity moved from the runtime — where it was invisible — into the code, where it can be read, tested, and reasoned about.
 
-That trade-off is worth being deliberate about.
-
-## Architecture is the art of shaping boundaries
-
-Deliberate means knowing what you're trading. The job is not to eliminate failure — it's to make failure survivable, observable, and boring. The retry decorator handles transient network errors. The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
+That trade-off is worth being deliberate about. The job is not to eliminate failure — it's to make failure survivable, observable, and boring. The retry decorator handles transient network errors. The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
 
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather than something to paper over.
 
