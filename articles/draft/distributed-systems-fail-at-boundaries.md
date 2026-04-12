@@ -46,7 +46,7 @@ The entitlement team needed to restructure the response format to support a new 
 
 HTTPS came next — not a design decision so much as a forced one, once the entitlement API started carrying PII. Transport integrity was non-negotiable.
 
-With HTTPS in place, we added path-based versioning: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to route at the gateway level.
+With HTTPS in place, we added path-based versioning: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to route at the gateway level. We also started publishing an [OpenAPI](https://www.openapis.org/) spec per version — a machine-readable contract that made the boundary explicit to any new consumer.
 
 The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly identical. But it meant the data API team could migrate to v2 on their own schedule: test it in parallel, roll back to v1 without touching the entitlement service, and ship independently.
 
@@ -92,15 +92,20 @@ Each time you cross a boundary — between services, between teams, between rele
 
 The operational complexity outside the process is only half the story. Inside the data API, the entitlement service integration also needed to be isolated and composable.
 
-The starting point was a plain interface — Fowler's [Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
+The starting point was a plain interface — Fowler's Gateway pattern:
 
 ```java
+/**
+ * Fetches the entitlements for a user as of a given point in time.
+ *
+ * @see <a href="https://martinfowler.com/eaaCatalog/gateway.html">Gateway (EAA)</a>
+ */
 interface EntitlementApi {
     Entitlements fetch(UserId user, Instant asOf);
 }
 ```
 
-Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible.
+Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The javadoc is also where the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later ([write down the why](https://dfa1.github.io/articles/write-down-the-why)).
 
 From there, each concern became a Decorator layered on top:
 
