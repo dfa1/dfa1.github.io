@@ -161,22 +161,19 @@ class HttpEntitlementApi implements EntitlementApi {
 	HttpEntitlementApi(URI baseUri) { ...}
 }
 
-// Caffeine-backed cache keyed on (user, asOf) — avoids redundant calls within a delivery
+// cache keyed on (user, asOf) — avoids redundant calls within a delivery
+// (see https://github.com/ben-manes/caffeine)
 class CachingEntitlementApi implements EntitlementApi {
-	private record Key(UserId user, Instant asOf) {
-	}
-
-	private final Cache<Key, Entitlements> cache = Caffeine.newBuilder().build();
 
 	CachingEntitlementApi(EntitlementApi delegate) { ...}
 }
 
-// Resilience4j (or Failsafe) retry policy with backoff
+// Failsafe retry policy with backoff (see https://failsafe.dev)
 class FailsafeEntitlementApi implements EntitlementApi {
 	FailsafeEntitlementApi(EntitlementApi delegate, RetryPolicy policy) { ...}
 }
 
-// Extra logging for specific environments or debugging
+// Extra logging for specific environments
 class LoggingEntitlementApi implements EntitlementApi {
 	LoggingEntitlementApi(EntitlementApi delegate) { ...}
 }
