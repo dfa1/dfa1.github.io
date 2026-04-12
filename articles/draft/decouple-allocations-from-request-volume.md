@@ -48,8 +48,7 @@ oos.writeObject(path);
 byte[] key = baos.toByteArray();
 ```
 
-Again: one allocation — actually several — per encode. Reasonable for a POC.
-Wrong for production.
+Again: several allocations per encode. Reasonable for a POC. Wrong for production.
 
 For some time, neither was a problem.
 
@@ -83,7 +82,7 @@ public class RocksDbReadBenchmark {
 
     @Benchmark
     public byte[] naiveGet(Blackhole bh) throws RocksDBException {
-        return db.get(encodedKey());
+        return db.get(encodedKey()); // encodes a path key into a new byte[]
     }
 }
 ```
@@ -91,14 +90,13 @@ public class RocksDbReadBenchmark {
 The output was unambiguous:
 
 ```
-Benchmark                              Mode  Cnt       Score   Error   Units
-RocksDbReadBenchmark.naiveGet         thrpt   10    [TBD]    ±[TBD]  ops/s
-·gc.alloc.rate                                         ~4096          MB/sec
-·gc.alloc.rate.norm                                    [TBD]           B/op
-·gc.churn.G1_Eden_Space                               ~4096          MB/sec
+Benchmark                              Mode  Cnt    Units
+RocksDbReadBenchmark.naiveGet         thrpt   10   ops/s
+·gc.alloc.rate                               ~4096  MB/sec
+·gc.churn.G1_Eden_Space                      ~4096  MB/sec
 ```
 
-**~4 GB/s of heap allocations.** For a service handling a few thousand requests
+~4 GB/s of heap allocations. For a service handling a few thousand requests
 per day. The allocation rate was driven not by request count but by value size —
 and value size was outside our control. That is the O(n) problem made visible.
 
@@ -231,16 +229,14 @@ is a correctness requirement.
 After the pool was in place, the same JMH benchmark:
 
 ```
-Benchmark                              Mode  Cnt       Score   Error   Units
-RocksDbReadBenchmark.pooledGet        thrpt   10    [TBD]    ±[TBD]  ops/s
-·gc.alloc.rate                                            ~0          MB/sec
-·gc.alloc.rate.norm                                        0           B/op
-·gc.churn.G1_Eden_Space                                   ~0          MB/sec
+Benchmark                              Mode  Cnt    Units
+RocksDbReadBenchmark.pooledGet        thrpt   10   ops/s
+·gc.alloc.rate                                  ~0  MB/sec
+·gc.churn.G1_Eden_Space                         ~0  MB/sec
 ```
 
-**~0 GB/s of heap allocations.** The GC has nothing to do on the read path.
-Throughput is stable. Latency variance drops. The service now handles the same
-load on [TBD: fewer nodes / smaller instances].
+~0 GB/s of heap allocations. The GC has nothing to do on the read path.
+Throughput is stable. Latency variance drops.
 
 ## The Tradeoff
 
@@ -262,11 +258,6 @@ Horizontal scaling remains available, but is no longer forced by allocation
 pressure alone. You scale because you need throughput, not because you are
 fighting the GC.
 
-The principle generalizes beyond RocksDB. Any system where per-request
-allocation scales with data volume — not request count — has this structural
-flaw. Name it early. The fix is always the same shape: decouple the allocation
-from the data flow, pay the cost once, reuse indefinitely.
-
 ---
 
-See also https://rocksdb.org/blog/2023/11/06/java-jni-benchmarks.html
+See also [RocksDB Java JNI benchmarks](https://rocksdb.org/blog/2023/11/06/java-jni-benchmarks.html)
