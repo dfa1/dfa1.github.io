@@ -231,3 +231,17 @@ Software breaks at boundaries because that's where assumptions meet. A team buil
 How do you design systems that survive this? I don't have a full answer yet, and I'm skeptical of people who claim they do. The technical tools help — explicit interfaces, versioned contracts, retry policies — but they address the symptoms. What seems to matter more is a mixture of clear expectations at each boundary (ownership, versioning guarantees, SLA commitments that someone is actually accountable for), communication that doesn't require scheduling a meeting to happen, and the willingness to push back on solutions that work for one team only. The temporary integration without versioning is always somebody's production dependency six months later.
 
 The architectural patterns in this article are tools for making technical boundaries survivable. The harder problem is the socio-technical boundary — the gap between what one team assumes about another. That one doesn't have an interface you can define, and no decorator absorbs its failures.
+
+## Conclusions
+
+Looking back, the decisions that had the most leverage weren't the technical ones. They were the ones that changed how teams related to each other through the system.
+
+A few things stand out as worth naming explicitly:
+
+**Recognize when a local solution is actually a general one.** The decorator stack for the entitlement service wasn't invented as a company-wide pattern. It emerged from a specific problem. The move that mattered was noticing it could apply everywhere and making that explicit — not just using it again quietly, but establishing it as the standard so other teams didn't solve the same problem five different ways.
+
+**Own the boundary end-to-end, not just your side of it.** The early pain — synchronized rollbacks, no versioning — came from two teams each owning their own service but nobody owning the contract between them. Versioned endpoints and isolated DTOs only became possible once someone accepted responsibility for the seam itself. That's not a technical decision; it's an organizational one that someone has to push for.
+
+**Design for independent deployment from day one.** Isolated DTOs felt like over-engineering at first. In practice, they were what made it possible for two teams to ship on different schedules. The cost of duplication is much lower than the cost of coordinated releases. This is the kind of trade-off that's obvious in hindsight and contested in the moment — and worth being explicit about early.
+
+**Push back on the unversioned integration.** Every unversioned, informally agreed-upon endpoint is a future incident waiting to be scheduled. The temporary integration without a contract is always somebody else's production dependency six months later. The time to establish versioning and ownership is before the first consumer, not after the third.
