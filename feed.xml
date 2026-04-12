@@ -18,7 +18,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Java + RocksDB - JNI</summary>
+    <summary>Building an experimental RocksDB wrapper for Java using the FFM API instead of JNI: how MemorySegment and Arena work, design choices behind the type-safe API, and lessons from building native bindings without a JNI glue layer.</summary>
   </entry>
   <entry>
     <title>Coding with Claude Code: A Week on hosh</title>
@@ -29,7 +29,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Coding with Claude Code: A Week on hosh</summary>
+    <summary>A week of pairing with Claude Code on a real Java project: what worked, what didn't, and why writing a CLAUDE.md is the highest-leverage first step before delegating anything to an AI agent.</summary>
   </entry>
   <entry>
     <title>Your Compiler is already part of your Security Team</title>
@@ -40,7 +40,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Your Compiler is already part of your Security Team</summary>
+    <summary>Domain primitives — types that encode validation into construction — eliminate entire vulnerability categories, make codebases explorable, and turn security from a checklist into a property of the design.</summary>
   </entry>
   <entry>
     <title>Write Down the Why</title>
@@ -51,7 +51,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Write Down the Why</summary>
+    <summary>How writing down the reasoning behind team decisions — testing philosophy, branching model — creates guidance that survives team turnover, scales better than procedures alone, and now serves as the prompt for AI agents too.</summary>
   </entry>
   <entry>
     <title>The Joy of Proper Encapsulation</title>
@@ -62,7 +62,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>The Joy of Proper Encapsulation</summary>
+    <summary>A wrong fix for a JPMS encapsulation warning reveals what the module system is actually telling you: the story of signal handling in hosh and why visible technical debt beats hidden dependencies.</summary>
   </entry>
 
 </feed>
