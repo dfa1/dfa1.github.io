@@ -2,13 +2,13 @@
 
 *12 April 2021*
 
-*A GraphQL API that needed per-field authorization. What started as a straightforward integration grew into a series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each one triggered by a failure at the previous boundary. The hardest boundaries turned out to be organizational, not technical. And the patterns that emerged became the blueprint for every external integration that followed.*
+*A GraphQL API that needed per-field authorization. A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each triggered by a failure at the previous boundary. The hardest boundaries turned out to be organizational, not technical. The patterns that emerged became the blueprint for every external integration that followed.*
 
 ## The starting point
 
 The setup was straightforward: a GraphQL data API with per-field authorization. Every resolver, before returning data, had to check whether the caller was entitled to see that field. A dedicated entitlement service held that information, exposed over HTTP/REST.
 
-No versioning. No formal contract. Two teams, one endpoint, and a shared understanding that worked until it didn't.
+No versioning. No formal contract. Two teams, one endpoint, and a shared understanding. That worked until the entitlement team renamed a response field on a Tuesday. The data API's deserializer mapped the missing field to null — no error, just silent denial. Every field in every delivery was quietly blocked. By the time the data team traced blank-page client reports back to a response-shape change, both teams were mid-rollback.
 
 The first problem was release cadence. The entitlement API and the data API evolved independently, but they couldn't be *deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team — and if either side needed to roll back, the other was dragged along. Every release became a negotiation. Every rollback a fire drill.
 
@@ -23,7 +23,9 @@ The boundary existed. It just wasn't owned.
 
 ## Point-in-time queries
 
-Things got harder when we added point-in-time queries. Delivering a package to a client wasn't a single GraphQL call — it was hundreds, sometimes thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could shift mid-delivery: a field authorized on request 1 might be denied by request 800.
+A delivery arrived with half its fields missing. No errors in the logs — the entitlement service had responded correctly every time. The problem was that two calls in the middle of a thousand-request delivery had landed after an entitlement update was applied. The client received a package that reflected two different authorization states.
+
+The root cause was the delivery model. A package delivery wasn't a single GraphQL call — it was hundreds, sometimes thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could shift mid-delivery: a field authorized on request 1 might be denied by request 800.
 
 The fix was to treat the entitlement snapshot as part of the request contract. The client sends a timestamp; the entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent view.
 
@@ -39,6 +41,8 @@ The timestamp made consistency *explicit*. That's harder to implement than prete
 ```
 
 ## Versioning the contract
+
+The entitlement team needed to restructure the response format to support a new authorization model. Under the existing setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a coordinated deployment. The data API team had a release freeze in place. The entitlement change waited three weeks.
 
 HTTPS came next — not a design decision so much as a forced one, once the entitlement API started carrying PII. Transport integrity was non-negotiable.
 
@@ -65,6 +69,8 @@ and on the staging environment
 ```
 
 ## The API gateway
+
+A third team integrated with the entitlement API directly — and called production from their staging environment for two weeks before anyone noticed. No enforced authentication at the transport layer, no rate limiting, nothing to prevent an accidental consumer from adding load. That was the event that made a gateway non-negotiable.
 
 As more services needed entitlements, an API gateway appeared to handle routing, rate limiting, and — eventually — mutual TLS. mTLS was the right security choice. It was also a new boundary.
 
@@ -136,8 +142,10 @@ class HttpEntitlementApi implements EntitlementApi {
     }
 }
 
-// Caffeine-backed cache — avoids redundant calls within a delivery
+// Caffeine-backed cache keyed on (user, asOf) — avoids redundant calls within a delivery
 class CachingEntitlementApi implements EntitlementApi {
+    private record Key(UserId user, Instant asOf) {}
+    private final Cache<Key, Entitlements> cache = Caffeine.newBuilder().build();
     CachingEntitlementApi(EntitlementApi delegate) { ... }
 }
 
@@ -181,13 +189,23 @@ EntitlementApi api =
     new LoggingEntitlementApi(
         new FailsafeEntitlementApi(
             new CachingEntitlementApi(
-                new HttpEntitlementApi(config)),
+                new HttpEntitlementApi(baseUri)),
             retryPolicy));
 ```
 
 In local development or system tests, `InMemoryEntitlementApi` replaces the whole stack. It can be programmed dynamically per test case — return this set of entitlements for this user, revoke them after a timestamp — without any HTTP involved. This is what makes testing the point-in-time behavior tractable: you can inject precise state changes without standing up the entitlement service.
 
 The pattern works because the interface boundary is narrow and consistent. Each decorator does one thing. The composition is explicit and visible at the wiring point, not scattered across the codebase.
+
+## The boundary you can't wrap in a decorator
+
+Every example above is a technical story. But the decisions that caused the most pain — no versioning, synchronized rollbacks, a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
+
+Software breaks at boundaries because that's where assumptions meet. A team building in isolation always makes their system work — they control the inputs. The interesting failures happen just outside: a downstream client changes a field in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because nobody tracked it. That's entropy. Not bugs, not negligence — just the natural drift between systems that don't share a feedback loop.
+
+How do you design systems that survive this? I don't have a full answer yet, and I'm skeptical of people who claim they do. The technical tools help — explicit interfaces, versioned contracts, retry policies — but they address the symptoms. What seems to matter more is a mixture of clear expectations at each boundary (ownership, versioning guarantees, SLA commitments that someone is actually accountable for), communication that doesn't require scheduling a meeting to happen, and the willingness to push back on solutions that work for one team only. The temporary integration without versioning is always somebody's production dependency six months later.
+
+The architectural patterns in this article are tools for making technical boundaries survivable. The harder problem is the socio-technical boundary — the gap between what one team assumes about another. That one doesn't have an interface you can define, and no decorator absorbs its failures.
 
 ## Good boundaries simplify the system
 
@@ -199,9 +217,19 @@ That trade-off is worth being deliberate about.
 
 ## Architecture is the art of shaping boundaries
 
-The job is not to eliminate failure. It's to make failure survivable, observable, and boring. The retry decorator handles transient network errors. The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
+Deliberate means knowing what you're trading. The job is not to eliminate failure — it's to make failure survivable, observable, and boring. The retry decorator handles transient network errors. The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
 
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather than something to paper over.
+
+**Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not after the third.
+
+**The contract needs an owner, not just the services on each side.** The early pain — synchronized rollbacks, no versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
+
+**Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
+
+**The unversioned endpoint is a deferred incident.** The informal agreement works fine until it doesn't, and by then there are three consumers and no clear owner. The time to establish versioning and ownership is before the first consumer, not after the third.
+
+---
 
 ## The full picture
 
@@ -234,23 +262,3 @@ The entitlement integration didn't stay unique for long. Once the interface-plus
 ```
 
 Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a response to a specific problem with the entitlement service turned out to be a general answer to the question of how to integrate with anything external.
-
-## The boundary you can't wrap in a decorator
-
-Every example above is a technical story. But the decisions that caused the most pain — no versioning, synchronized rollbacks, a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
-
-Software breaks at boundaries because that's where assumptions meet. A team building in isolation always makes their system work — they control the inputs. The interesting failures happen just outside: a downstream client changes a field in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because nobody tracked it. That's entropy. Not bugs, not negligence — just the natural drift between systems that don't share a feedback loop.
-
-How do you design systems that survive this? I don't have a full answer yet, and I'm skeptical of people who claim they do. The technical tools help — explicit interfaces, versioned contracts, retry policies — but they address the symptoms. What seems to matter more is a mixture of clear expectations at each boundary (ownership, versioning guarantees, SLA commitments that someone is actually accountable for), communication that doesn't require scheduling a meeting to happen, and the willingness to push back on solutions that work for one team only. The temporary integration without versioning is always somebody's production dependency six months later.
-
-The architectural patterns in this article are tools for making technical boundaries survivable. The harder problem is the socio-technical boundary — the gap between what one team assumes about another. That one doesn't have an interface you can define, and no decorator absorbs its failures.
-
-## Conclusions
-
-**Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind of generalization doesn't happen automatically.
-
-**The contract needs an owner, not just the services on each side.** The early pain — synchronized rollbacks, no versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
-
-**Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
-
-**The unversioned endpoint is a deferred incident.** The informal agreement works fine until it doesn't, and by then there are three consumers and no clear owner. The time to establish versioning and ownership is before the first consumer, not after the third.
