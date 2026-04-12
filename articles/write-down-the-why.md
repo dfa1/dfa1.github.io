@@ -3,7 +3,7 @@
 *1 October 2020*
 
 *Late 2019, early 2020. A newly formed team, building the next generation of a financial reference data
-platform from scratch. Several developers that never worked together, a greenfield project, a deadline, and two problems
+platform from scratch. Several developers who never worked together, a greenfield project, a deadline, and two problems
 we had not yet named: a testing approach that would take us a while to outgrow, and a branching model we had not agreed on yet.
 Every team has a moment where brute force stops working. Ours came on two fronts at once.
 Without a shared “why” every engineer filled in the gaps differently.*
@@ -28,7 +28,7 @@ reference data alone, each with its own mapping logic, conditional branches, and
 permutations are effectively infinite. No test suite can achieve data coverage at this scale. Confusing the two goals
 leads to shotgun testing; naming the distinction is what frees the team to focus on what actually matters.
 
-Around the same time, the team has not agreed on a branching strategy either. The proposal on the table is
+Around the same time, the team has no agreed branching strategy either. The proposal on the table is
 [git flow](https://nvie.com/posts/a-successful-git-branching-model): long-lived feature branches, deployed in isolated
 containerized environments, merge when the feature is complete. The appeal is obvious — isolation, reviewability, nothing
 half-finished in the main branch. But the appeal hides a cost: branches diverge, merges become events, and the fragile
@@ -82,7 +82,7 @@ procedure, but as a set of principles with their reasons:
 > you haven't caught yet. No network calls, no clock dependencies, no shared mutable state between tests. If you need
 > external systems, use fixed snapshots (as we do) or in-memory fakes.
 >
-> **Tests should be fast**. Especially unit tests, they should take a few milliseconds each.
+> **Tests should be fast**. Unit tests especially should run in a few milliseconds.
 >
 > **Bug-ticket-test-fix cycle**. Bug is reported → open a ticket → write a failing test that reproduces it → fix.
 > This guarantees every bug becomes a regression test. It also forces you to understand the bug before fixing it.
@@ -102,7 +102,7 @@ document above is the *why*.
 If merging hurts, do it more often: *multiple times per day*. The idea is essentially
 [Trunk Based Development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
 weeks. A handful of commits, rebased and squashed before merge. **Feature flags** to decouple deployment from release —
-a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. In the end, we opted to use a variation of it called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) since a regulated environment typical of financial institutions requires staging for several days before release to final users.
+a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. We adopt a variation called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) — suited to regulated environments where changes must stage for several days before reaching end users.
 
 I am not the only one who feels this way. Another engineer on the team has worked with trunk-based dev before and
 understands the tradeoffs. Having an internal ally matters — not to win an argument, but to demonstrate that this is
@@ -119,7 +119,7 @@ And again, the why needs to be written down:
 >
 > **small pull-requests** — easier to understand and to review.
 
-Then a bit of guidance on the how is always welcome, especially to make principles more concrete for new joiners:
+Some concrete guidance on the *how* helps new joiners apply the principles:
 >
 > We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.
 >
@@ -130,14 +130,11 @@ Then a bit of guidance on the how is always welcome, especially to make principl
 > problem, what is the solution, what trade-offs were made. Future readers of the history (including yourself) will
 > thank you. Avoid commits like "Fix" or "Updates...".
 >
-> Break big changes into multiple PRs. — *First make the change easy, then make the easy change* — Kent Beck
-> [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html).
+> Break big changes into multiple PRs. As Kent Beck puts it: *First make the change easy, then make the easy change.* [An example of preparatory refactoring.](https://martinfowler.com/articles/preparatory-refactoring-example.html)
 
 The same pattern: every rule has a reason. "Bugfixes must be atomic" is a procedure; "bugfixes must be atomic *because*
 they need to be cherry-picked and merge conflicts are expensive" is guidance. One you follow blindly, the other you can
 adapt when the situation is slightly different.
-
-We include documentation on *how* as well — which git commands to use, how to do it in IntelliJ, common errors. The principles above are the part that actually shapes how people work.
 
 ## What We Learned
 
