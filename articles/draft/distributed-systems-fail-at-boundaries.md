@@ -110,37 +110,9 @@ Everything behind that interface is hidden from the GraphQL resolvers. They don'
 From there, each concern became a Decorator layered on top:
 
 ```java
-// Real HTTP call, used in production
+// Real HTTP call to /v1/entitlements/{user}?asOf={T}
 class HttpEntitlementApi implements EntitlementApi {
-    private final HttpClient http;
-    private final URI baseUri;
-    private final ObjectMapper mapper;
-
-    HttpEntitlementApi(URI baseUri) {
-        this.http = HttpClient.newHttpClient();
-        this.baseUri = baseUri;
-        this.mapper = new ObjectMapper();
-    }
-
-    @Override
-    public Entitlements fetch(UserId user, Instant asOf) {
-        URI uri = baseUri.resolve(
-            "/v1/entitlements/" + user.value() + "?asOf=" + asOf.toEpochMilli());
-        HttpRequest request = HttpRequest.newBuilder(uri)
-            .GET()
-            .header("Accept", "application/json")
-            .build();
-        try {
-            HttpResponse<String> response =
-                http.send(request, BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new EntitlementException("unexpected status: " + response.statusCode());
-            }
-            return mapper.readValue(response.body(), Entitlements.class);
-        } catch (IOException | InterruptedException e) {
-            throw new EntitlementException("fetch failed", e);
-        }
-    }
+    HttpEntitlementApi(URI baseUri) { ... }
 }
 
 // Caffeine-backed cache keyed on (user, asOf) — avoids redundant calls within a delivery
