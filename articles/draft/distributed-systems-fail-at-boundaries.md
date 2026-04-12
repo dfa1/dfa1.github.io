@@ -151,9 +151,9 @@ interface EntitlementApi {
 Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing
 implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The javadoc is also where
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months
-later ([write down the why](https://dfa1.github.io/articles/write-down-the-why)).
+later.
 
-From there, each concern became a Decorator layered on top:
+From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
 
 ```java
 // Real HTTP call to /v1/entitlements/{user}?asOf={T}
@@ -278,6 +278,13 @@ practice, they were what made it possible for two teams to ship on different sch
 there are three consumers and no clear owner. The time to establish versioning and ownership is before the first
 consumer, not after the third.
 
+Outcome
+---
+
+The `CachingEntitlementApi` decorator cut entitlement calls by ~99.95% — almost every call is a cache hit. The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API calls now complete with a single coherent authorization state. Several teams ship on independent schedules, with no coordinated rollbacks. The `LoggingEntitlementApi` made all of this visible: call count per delivery, cache hit/miss ratio, retry count and causes — the numbers that turned “it seems slower” into “retry rate spiked at 14:32”.
+
+Distributed systems fail at the boundaries because that’s where assumptions accumulate faster than feedback. Align teams on this early on and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
+
 ---
 
 ## The full picture
@@ -299,7 +306,7 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
                          │                      │                         │
                          ▼                      ▼                         ▼
                ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
-               │   API Gateway    │   │  Calculation     │   │    Elasticsearch     │
+               │   API Gateway    │   │  Product         │   │    Elasticsearch     │
                │   (mTLS, rate    │   │  Service         │   │    (search)          │
                │    limiting)     │   └──────────────────┘   └──────────────────────┘
                └────────┬─────────┘
@@ -313,17 +320,8 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 └─────────────────────┘    └─────────────────────┘
 ```
 
-Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the
+Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory fake replaces the
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
-integrate with anything external.
+integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html).
 
----
-
-The ETag cache cut entitlement calls by ~99% on high-volume deliveries — almost every call was a cache hit. The
-point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API calls
-now complete with a single coherent authorization state. Several teams ship on independent schedules, with no
-coordinated rollbacks. The `LoggingEntitlementApi` made all of this visible: call count per delivery, cache hit/miss
-ratio, retry count and causes — the numbers that turned "it seems slower" into "retry rate spiked at 14:32".
-
-*Distributed systems fail at the boundaries because that's where assumptions accumulate faster than feedback.*
