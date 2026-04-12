@@ -323,4 +323,7 @@ integrate with anything external.
 The ETag cache cut entitlement calls by ~99% on high-volume deliveries — almost every call was a cache hit. The
 point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API calls
 now complete with a single coherent authorization state. Several teams ship on independent schedules, with no
-coordinated rollbacks.
+coordinated rollbacks. The `LoggingEntitlementApi` made all of this visible: call count per delivery, cache hit/miss
+ratio, retry count and causes — the numbers that turned "it seems slower" into "retry rate spiked at 14:32".
+
+*Distributed systems fail at the boundaries because that's where assumptions accumulate faster than feedback.*
