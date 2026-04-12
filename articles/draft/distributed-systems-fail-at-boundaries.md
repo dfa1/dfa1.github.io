@@ -230,18 +230,17 @@ The technical boundary is the easy one. The decisions that caused the most pain 
 a gateway nobody owned end-to-end — were downstream of organizational ones. A team that designed their system in
 isolation. A release day that became a political constraint. A temporary integration that three teams inherited.
 
-Software breaks at boundaries because that's where assumptions meet. A team building in isolation always makes their
+Software breaks at boundaries because that's where assumptions are done. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside: a downstream client changes a field
 in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
 nobody tracked it. That's entropy. Not bugs, not negligence — just the natural drift between systems that don't share a
 feedback loop.
 
 How do you design systems that survive this? I don't have a full answer yet, and I'm skeptical of people who claim they
-do. The technical tools help — explicit interfaces, versioned contracts, retry policies — but they address the symptoms.
+do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry policies — but they address the symptoms.
 What seems to matter more is a mixture of clear expectations at each boundary (ownership, versioning guarantees, SLA
 commitments that someone is actually accountable for), communication that doesn't require scheduling a meeting to
-happen, and the willingness to push back on solutions that work for one team only. The temporary integration without
-versioning is always somebody's production dependency six months later.
+happen, and the willingness to push back on solutions that work for one team only.
 
 ## Architecture is the art of shaping boundaries
 
