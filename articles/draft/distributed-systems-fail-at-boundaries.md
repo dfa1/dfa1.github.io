@@ -89,7 +89,7 @@ We added `ETag` caching on top to make this solution scalable. If the entitlemen
 entitlement round-trips down to a handful.
 
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
-it's much simpler to reason about when something goes wrong.
+it's much simpler to reason about when something goes wrong [^asOf].
 
 ```
 ┌──────────────────┐  GET /entitlements/{user}?asOf={T}   ┌─────────────────────┐
@@ -157,13 +157,16 @@ class HttpEntitlementApi implements EntitlementApi {
 }
 // Configurable in-memory stub for local development and system tests
 class InMemoryEntitlementApi implements EntitlementApi { ...
+    InMemoryEntitlementApi(ConcurrentHashMap<UserId, Entitlements> state) { ... }
 }
 ```
 
 From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
 
 ```java
-// cache keyed on (user, asOf) — avoids redundant calls within a delivery
+// cache keyed on (user, timestamp) — avoids redundant calls within a delivery
+// the retention policy is to keep the cache as long as it is used:
+// if the key (userId/timestamp) is not used for 5 minutes, it is dropped
 // (see https://github.com/ben-manes/caffeine)
 class CachingEntitlementApi implements EntitlementApi {
 	CachingEntitlementApi(EntitlementApi delegate) { ...}
@@ -178,6 +181,9 @@ class FailsafeEntitlementApi implements EntitlementApi {
 class LoggingEntitlementApi implements EntitlementApi {
 	LoggingEntitlementApi(EntitlementApi delegate) { ...}
 }
+
+// DistributedTracing adds the X-RequestId header
+// other decorators can be added anytime: this is an extension point of the system
 
 ```
 
@@ -316,3 +322,6 @@ entire stack in tests. The wiring is visible at one place, not scattered across 
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
 integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
+---
+
+[^asOf]: every snapshot is kept for at most slightly more than 24h, after that it expires and frees the underlying storage and it is referenced by id as the `ETag`.
