@@ -10,6 +10,8 @@ The setup was straightforward: a GraphQL data API with per-field authorization. 
 
 No versioning. No formal contract. Two teams, one endpoint, and a shared understanding. That worked until the entitlement team renamed a response field on a Tuesday. The data API's deserializer mapped the missing field to null — no error, just silent denial. Every field in every delivery was quietly blocked. By the time the data team traced blank-page client reports back to a response-shape change, both teams were mid-rollback.
 
+[Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive changes (new fields, new enum values) are invisible to existing consumers and don't require coordination. But a rename is still a breaking change, and silently mapping a missing field to null made it worse — the system kept running, just wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't replace a contract.
+
 The first problem was release cadence. The entitlement API and the data API evolved independently, but they couldn't be *deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team — and if either side needed to roll back, the other was dragged along. Every release became a negotiation. Every rollback a fire drill.
 
 The boundary existed. It just wasn't owned.
