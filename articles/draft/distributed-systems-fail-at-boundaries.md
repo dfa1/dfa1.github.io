@@ -2,7 +2,7 @@
 
 *12 April 2021*
 
-*A GraphQL API that needed per-field authorization. What started as a straightforward integration turned into a sequence of architectural decisions — versioned contracts, point-in-time consistency, decorator-based composition — each one forced by a failure at the previous boundary. But the hardest boundaries weren't technical. They were organizational: two teams, misaligned release cycles, and a shared endpoint nobody fully owned. The patterns that emerged — a narrow interface, layered decorators, an in-memory stub for testing — became the blueprint for other integrations: product-data lookups, on-the-fly calculations, Elasticsearch-backed search. The lesson wasn't specific to entitlements. It was about finding solutions general enough to reuse. Here's what we built, why we built it, and what it cost us.*
+*A GraphQL API that needed per-field authorization. What started as a straightforward integration grew into a series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each one triggered by a failure at the previous boundary. The hardest boundaries turned out to be organizational, not technical. And the patterns that emerged became the blueprint for every external integration that followed.*
 
 ## The starting point
 
@@ -182,7 +182,11 @@ The pattern works because the interface boundary is narrow and consistent. Each 
 
 ## Good boundaries simplify the system
 
-When boundaries are explicit, predictable, and owned, the system becomes easier to reason about — not harder. The `EntitlementApi` interface is a boundary. The versioned REST endpoints are a boundary. The timestamp parameter is a boundary. Each one made the system *more* controllable, not more complex.
+The first version was operationally simple: one HTTP call, no versioning, no decorators. It was also the hardest to operate — a response shape change meant a coordinated rollback across two teams, and a consistency bug mid-delivery was nearly invisible until it surfaced as wrong data in production.
+
+The last version is the opposite. More moving parts in code: versioned endpoints, isolated DTOs, a decorator stack, a timestamp parameter. But operationally it's predictable: each team ships independently, failures are isolated, consistency problems surface as explicit errors rather than silent data drift. The complexity moved from the runtime — where it was invisible — into the code, where it can be read, tested, and reasoned about.
+
+That trade-off is worth being deliberate about.
 
 ## Architecture is the art of shaping boundaries
 
@@ -234,14 +238,10 @@ The architectural patterns in this article are tools for making technical bounda
 
 ## Conclusions
 
-Looking back, the decisions that had the most leverage weren't the technical ones. They were the ones that changed how teams related to each other through the system.
+**Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind of generalization doesn't happen automatically.
 
-A few things stand out as worth naming explicitly:
+**The contract needs an owner, not just the services on each side.** The early pain — synchronized rollbacks, no versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
 
-**Recognize when a local solution is actually a general one.** The decorator stack for the entitlement service wasn't invented as a company-wide pattern. It emerged from a specific problem. The move that mattered was noticing it could apply everywhere and making that explicit — not just using it again quietly, but establishing it as the standard so other teams didn't solve the same problem five different ways.
+**Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
 
-**Own the boundary end-to-end, not just your side of it.** The early pain — synchronized rollbacks, no versioning — came from two teams each owning their own service but nobody owning the contract between them. Versioned endpoints and isolated DTOs only became possible once someone accepted responsibility for the seam itself. That's not a technical decision; it's an organizational one that someone has to push for.
-
-**Design for independent deployment from day one.** Isolated DTOs felt like over-engineering at first. In practice, they were what made it possible for two teams to ship on different schedules. The cost of duplication is much lower than the cost of coordinated releases. This is the kind of trade-off that's obvious in hindsight and contested in the moment — and worth being explicit about early.
-
-**Push back on the unversioned integration.** Every unversioned, informally agreed-upon endpoint is a future incident waiting to be scheduled. The temporary integration without a contract is always somebody else's production dependency six months later. The time to establish versioning and ownership is before the first consumer, not after the third.
+**The unversioned endpoint is a deferred incident.** The informal agreement works fine until it doesn't, and by then there are three consumers and no clear owner. The time to establish versioning and ownership is before the first consumer, not after the third.
