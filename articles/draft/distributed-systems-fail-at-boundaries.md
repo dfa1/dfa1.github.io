@@ -264,11 +264,11 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 
 Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
-response to a specific problem with the entitlement service turned out to be a general answer to external integration (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
+response to a specific problem with the entitlement service turned out to be a general pattern for external integration (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
 ## Entropy between teams
 
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, coordinated releases and rollbacks — were rooted in organizational decisions: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, coordinated releases and rollbacks — came from organizational structure: one team designed their service in isolation, making every release a multi-meeting coordination effort. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
 
 Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
@@ -324,12 +324,12 @@ The point-in-time contract eliminated an entire class of consistency incidents: 
 calls completed with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
 proved quite effective, since user entitlements change rarely.
 
-On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% — almost every call was a
+On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call was a
 cache hit. This matched exactly how the Data API was used: when a downstream application started a delivery, it used
-the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. The volume reduction was also notable: of every 1M calls, only 5K were actually forwarded to the `Entitlement API`.
+the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node.
 
 Distributed systems fail at the boundaries because that’s where assumptions accumulate
-faster than feedback. Align your teams on this early and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
+faster than feedback. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
 ---
 
