@@ -2,14 +2,14 @@
 
 *10 June 2021*
 
-*A Data API that needed per-request authorization. A series of forced decisions — versioned contracts, point-in-time
+*A `Data API` that needed per-request authorization. A series of forced decisions — versioned contracts, point-in-time
 consistency, decorator-based composition — each triggered by a different problem.
 The patterns that emerged became the blueprint for every external
 integration that followed.*
 
 ## The starting point
 
-The setup was straightforward: a Data API with per-request authorization. Before returning data, each request had to
+The setup was straightforward: a `Data API` with per-request authorization. Before returning data, each request had to
 check whether the caller was entitled to see it. A dedicated entitlement service held that information, exposed over
 HTTP/REST.
 
@@ -26,22 +26,22 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 
 ## Versioned endpoints
 
-That worked until a field rename in the entitlement service hit staging environment — the deserializer started throwing errors on every call.
+That worked until a field rename in the entitlement service hit the staging environment — the deserializer started throwing errors on every call.
 
 The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
-setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a
+setup, every consumer had to migrate simultaneously — the `Data API` shared the same DTO, so any field change required a
 coordinated deployment.
 
-The problem was also release cadence. The Entitlement API and the Data API evolved independently, but they couldn't be
-*deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team —
+The problem was also release cadence. The `Entitlement API` and the `Data API` evolved independently, but they couldn't be
+*deployed* independently. A response shape change in the entitlement service meant coordinating with the `Data API` team —
 and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
-The solution was to add path-based versioning to the Entitlement API: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
+The solution was to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
 route at the gateway level. We also started publishing an [OpenAPI](https://www.openapis.org/) spec per version — a
 machine-readable contract that made the boundary explicit to any new consumer — and adopted contract testing with [Pact](https://pact.io).
 The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance
 between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly
-identical. But it meant the data API team could migrate to v2 on their own schedule: test it in parallel, roll back to
+identical. But it meant the `Data API` team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
 
 Isolated DTOs are what an independent release cycle looks like in practice, in the presence
@@ -73,7 +73,7 @@ wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't repla
 
 ## Point-in-time queries
 
-In load testing, a delivery file using Data API completed with half its fields missing. No errors in the logs — the entitlement service had responded correctly
+In load testing, a delivery using the `Data API` completed with half its data fields missing. No errors in the logs — the entitlement service had responded correctly
 every time. The problem was that two calls in the middle of a thousand-request delivery had landed after an entitlement
 update was applied. The result was a delivery that reflected two different authorization states.
 
@@ -86,7 +86,7 @@ entitlement service returns the state *as of that moment*. One timestamp anchors
 view.
 
 The entitlement team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
-`304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
+`304 Not Modified` and the `Data API` used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
 of round-trips down to a handful.
 
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
@@ -108,7 +108,7 @@ The entitlement service held authorization state for every user in the system. T
 mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
-operational surface. The gateway introduced failure modes distinct from the Entitlement API itself.
+operational surface. The gateway introduced failure modes distinct from the `Entitlement API` itself.
 
 We had to define and implement retries explicitly with
 exponential backoff and jitter. The boundary didn't disappear — it transformed into a
@@ -129,7 +129,7 @@ contract. The cost of leaving it implicit shows up later as another incident.
 
 ## Taming the boundary in the client code
 
-The operational complexity outside the process is only half the story. Inside the Data API, the Entitlement API
+The operational complexity outside the process is only half the story. Inside the `Data API`, the `Entitlement API`
 integration also needed to be isolated and composable.
 
 The starting point was a plain interface — [Fowler's Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
@@ -230,7 +230,7 @@ composition is explicit and visible at the wiring point, not scattered across th
 ## The full picture
 
 The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it
-became the standard approach for every external dependencies of the Data API grew.
+became the standard approach for every external dependency as the `Data API` grew.
 Every new integration got the same treatment: a narrow "Gateway" interface, an HTTP implementation,
 a caching layer, a retry wrapper, and an in-memory fake for testing.
 
@@ -319,7 +319,7 @@ calls completed with a single coherent authorization state. The `ETag` cache on 
 proved quite effective, since user entitlements change rarely.
 
 On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call was a
-cache hit. This matched exactly how the Data API was used: when a downstream application started a delivery, it used
+cache hit. This matched exactly how the `Data API` was used: when a downstream application started a delivery, it used
 the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node.
 
 The three-stage pipeline — integration, preprod, production — is what kept these failures contained. Issues that slipped past contract tests surfaced in integration or preprod, never in prod. The technical patterns made failures *visible*; the pipeline ensured visibility came early enough to act on.
