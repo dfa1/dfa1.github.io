@@ -337,8 +337,7 @@ faster than feedback. Align your teams on this early on and remember to [write d
 
 ---
 
-[^etag]: every change in the entitlements produces a new snapshot.  that is used to build the `ETag` in the `Entitlement API`.
-The `Data API` requests with `if-none-match` as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
+[^etag]: every change in the entitlements produces a new snapshot.  that is used to build the `ETag` in the `Entitlement API`. The `Data API` requests with `if-none-match` as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
 
 [^asOf]: every snapshot is kept for a short period of time (slightly more than 24h). After that it expires and frees
 the underlying storage, and it is referenced by id as the `ETag`.
