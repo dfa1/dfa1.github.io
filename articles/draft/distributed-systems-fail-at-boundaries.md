@@ -45,7 +45,7 @@ between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this fel
 identical. But it meant the data API team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
 
-Isolated DTOs are the concrete implementation of an independent release cycle in the presence
+Isolated DTOs are what an independent release cycle looks like in practice, in the presence
 of breaking changes. The duplication is the solution.
 
 ```
@@ -64,7 +64,7 @@ and on the staging environment
 
 ```
 
-Once the migration to v2 was complete, v1 was removed without any coordinate deployment.
+Once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -86,8 +86,8 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent
 view.
 
-The `Entitlement Api`'s team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
-`304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed hundred of thousands
+The `Entitlement API`'s team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
+`304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
 of round-trips down to a handful.
 
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
@@ -128,7 +128,7 @@ more complex one.
 ```
 
 Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit
-contract. The cost of leaving it implicit shows up later on another incident.
+contract. The cost of leaving it implicit shows up later as another incident.
 
 ## Taming the boundary in the client code
 
@@ -149,7 +149,7 @@ interface EntitlementApi {
 ```
 
 Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing
-implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The Javadoc is also where
+implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The Javadoc `@see` is also where
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
 
 ```java
@@ -161,6 +161,7 @@ class HttpEntitlementApi implements EntitlementApi {
 class InMemoryEntitlementApi implements EntitlementApi {
     InMemoryEntitlementApi(ConcurrentHashMap<UserId, Entitlements> state) { /* ... */ }
 }
+
 ```
 
 From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
@@ -262,14 +263,14 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 └─────────────────────┘    └─────────────────────┘
 ```
 
-Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory fake replaces the
+Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
 integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
 ## Entropy between teams
 
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational ones: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational decisions: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
 
 Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
@@ -319,25 +320,22 @@ practice, they were what made it possible for two teams to ship on different sch
 
 ## Outcome
 
-The 2 teams shipped on independent schedules, with no coordinated rollbacks.
+Two teams shipped on independent schedules, with no coordinated rollbacks.
 
 The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API
-calls now complete with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
-is quite effective (as user entitlements changes rarely).
+calls completed with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
+proved quite effective, since user entitlements change rarely.
 
-On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% — almost every call is a
-cache hit. It is exactly how the Data API is designed: when some downstream application starts a delivery, it uses
-the same `userId`/`asOf` repeatedly until all data is delivered. When it is done, it stops. So the 0.5% misses represent
-only the first call when the cache is empty. The cache stays alive for 10 minutes more, then it expires in each
-`Data API` node.  What is also interesting is the number of calls it is saving: every 1M calls, only 5K are actually
-forwarded to the `Entitlement API`.
+On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% — almost every call was a
+cache hit. This matched exactly how the Data API was used: when a downstream application started a delivery, it used
+the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. The volume reduction was also notable: of every 1M calls, only 5K were actually forwarded to the `Entitlement API`.
 
 Distributed systems fail at the boundaries because that’s where assumptions accumulate
 faster than feedback. Align your teams on this early on and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
 
 ---
 
-[^etag]: every change in the entitlements produces a new snapshot.  that is used to build the `ETag` in the `Entitlement API`. The `Data API` requests with `if-none-match` as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
+[^etag]: every change in the entitlements produces a new snapshot, which is used to build the `ETag` in the `Entitlement API`. The `Data API` sends requests with the `If-None-Match` header, as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
 
 [^asOf]: every snapshot is kept for a short period of time (slightly more than 24h). After that it expires and frees
 the underlying storage, and it is referenced by id as the `ETag`.
