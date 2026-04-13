@@ -2,23 +2,23 @@
 
 *10 June 2021*
 
-*A GraphQL API that needed per-field authorization. A series of forced decisions — versioned contracts, point-in-time
+*A Data API that needed per-request authorization. A series of forced decisions — versioned contracts, point-in-time
 consistency, decorator-based composition — each triggered by a different failure. The hardest boundaries
 turned out to be organizational, not technical. The patterns that emerged became the blueprint for every external
 integration that followed.*
 
 ## The starting point
 
-The setup was straightforward: a GraphQL data API with per-field authorization. Every resolver, before returning data,
-had to check whether the caller was entitled to see that field. A dedicated entitlement service held that information,
-exposed over HTTP/REST.
+The setup was straightforward: a Data API with per-request authorization. Before returning data, each request had to
+check whether the caller was entitled to see it. A dedicated entitlement service held that information, exposed over
+HTTP/REST.
 
 At this stage, we had two teams, one endpoint, and a shared understanding:
 
 ```
 ┌──────────────────┐          HTTP               ┌─────────────────────┐
 │    Data API      │ ──────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │                             │                     │
+│                  │                             │                     │
 └──────────────────┘                             └─────────────────────┘
                        ^^^^^^^^^^^^^^^^^^^^^^
                              boundary
@@ -50,7 +50,7 @@ of breaking changes. The duplication is the solution.
 ```
 ┌──────────────────┐   HTTPS GET /v1/entitlements/...   ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │                                    │                     │
+│                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
 
 
@@ -58,7 +58,7 @@ and on the staging environment
 
 ┌──────────────────┐   HTTPS GET /v2/entitlements/...   ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │                                    │                     │
+│                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
 
 ```
@@ -95,17 +95,17 @@ it's much simpler to reason about when something goes wrong.[^asOf]
 ```
 ┌──────────────────┐  GET /entitlements/{user}?asOf={T}   ┌─────────────────────┐
 │    Data API      │ ───────────────────────────────────► │   Entitlement API   │
-│   (GraphQL)      │ ◄─────────────────────────────────── │                     │
+│                  │ ◄─────────────────────────────────── │                     │
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
 ```
 
-## Transport security and API gateway
+## Zero-trust at the transport layer
 
-HTTPS came next — not a design decision so much as a forced one.
-A new consumer was found pointing their test environment at the shared staging entitlement instance during a routine access review — no enforced authentication at the transport layer, no rate limiting, nothing to prevent accidental load. That was the event that made a gateway non-negotiable.
+Internal services often rely on implicit network trust: if a caller is inside the perimeter, it is assumed safe. Zero-trust rejects that assumption — every caller must authenticate, regardless of where the call originates.
 
-As more services needed entitlements, an API gateway was introduced to handle routing, rate limiting, and — eventually —
-mutual TLS. mTLS was the right security choice, but it introduced a boundary in its own right.
+The entitlement service held authorization state for every user in the system. Treating it as implicitly trusted because it lived on an internal network was a design gap. As more services needed entitlements, an API gateway was introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer had a client certificate — mutual TLS.
+
+mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
 operational surface. The gateway introduced failure modes distinct from the entitlement service itself: gateway
@@ -119,7 +119,7 @@ more complex one.
 ```
 ┌──────────────────┐  mTLS   ┌─────────────────┐  HTTPS   ┌─────────────────────┐
 │    Data API      │ ──────► │   API Gateway   │ ───────► │   Entitlement API   │
-│   (GraphQL)      │         │  (rate limiting │          │    /v1     /v2      │
+│                  │         │  (rate limiting │          │    /v1     /v2      │
 └──────────────────┘         │   routing)      │          └─────────────────────┘
                              └─────────────────┘
 ```
@@ -145,7 +145,7 @@ interface EntitlementApi {
 }
 ```
 
-Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing
+Everything behind that interface is hidden from the callers. They don't know whether the backing
 implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The Javadoc `@see` is also where
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
 
@@ -190,7 +190,7 @@ class LoggingEntitlementApi implements EntitlementApi {
 The production stack composes them, innermost to outermost:
 
 ```
-  GraphQL resolver
+   Data API caller
          │
          ▼
  LoggingEntitlementApi      ← logs request / response counters
@@ -236,7 +236,7 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 
 ```
                           ┌──────────────────────────────────────── ... ─┐
-                          │              Data API (GraphQL)              │
+                          │                   Data API                   │
                           │                                              │
                           │  EntitlementApi  ProductApi  SearchApi  ...  │
                           │                                              │
@@ -266,7 +266,7 @@ response to a specific problem with the entitlement service turned out to be a g
 
 ## Entropy between teams
 
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, coordinated releases and rollbacks — came from organizational structure: one team designed their service in isolation, making every release a multi-meeting coordination effort. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, forced coordinated rollbacks — came from organizational structure: both teams owned their own service, but nobody owned the contract between them, which meant every breaking change required a negotiated deployment. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
 
 Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
