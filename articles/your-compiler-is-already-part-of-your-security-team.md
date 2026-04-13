@@ -1,4 +1,4 @@
-# Your Compiler is already part of your Security Team
+# Your Compiler Is Already Part of Your Security Team
 
 *4 January 2021*
 
@@ -26,8 +26,8 @@ one int from the other. Your safety net was discipline only... but that scales p
 ## Make Illegal State Unrepresentable
 
 This is the starting point: encode in your type the domain of the value.
-`MarketId` could be just a 3-digit non-negative number (representable as `short`),
-an `InstrumentId` representable as `int` with a non-negative constraint.
+`MarketId` could be a 3-digit non-negative number (representable as `short`);
+`InstrumentId` could be an `int` with a non-negative constraint.
 
 Design types such that invalid or dangerous values **cannot be constructed**.
 
@@ -49,9 +49,9 @@ quietly puts it into an invalid or dangerous state.
 
 In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
 a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
-In modern Java a `record` could be used to lower the effort of writing domain primitives systematically.
+In modern Java a `record` could be used to reduce the effort of writing domain primitives systematically.
 
-But validation itself has a pitfall people miss if a regex is used: **regex on unbounded input is a
+But regex validation has a pitfall people often miss: **regex on unbounded input is a
 vulnerability**. A crafted input of a few thousand characters can cause a backtracking regex to run for
 seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). The fix is
 simple: **always check length before applying regex**. It's one of those rules that once
@@ -186,7 +186,7 @@ InstrumentId instrumentId = new InstrumentId(request.getParam("instrumentId"));
 Price closePrice = fetchOpenPrice(instrumentId, marketId);
 
 publish(marketId + 1, instrumentId - 1, closePrice);
-        ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^ <-- compile time errors
+        ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^ <-- compile-time errors
 ```
 
 ---
@@ -295,7 +295,7 @@ After the password is used to authenticate the user, it cannot be used again... 
 This isn't just good design. Domain primitives directly contribute to eliminating whole vulnerability categories:
 - an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterized queries still matter for every other value);
 - the auditor won't find `ApiToken` leaks in the logs: `toString()` returns `"ApiToken[REDACTED]"`, so the secret cannot reach a log file or exception message;
-- in general, it will be much harder for the attacker who controls an input to use it.
+- in general, it will be much harder for an attacker who controls an input to exploit it.
 
 Security stops being a checklist applied at the end. It becomes a **property of the
 design**.
@@ -444,7 +444,7 @@ As already discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, and `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
-In other words: the more AI you use, the more your compiler matters to iterate on the software. Domain primitives are not just a design technique — they are the foundation
+In other words: the more AI you use, the more your compiler matters as you iterate on the software. Domain primitives are not just a design technique — they are the foundation
 that lets both humans and AI write secure, correct software at scale.
 
 ---
