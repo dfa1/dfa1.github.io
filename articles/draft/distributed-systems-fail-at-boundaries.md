@@ -1,6 +1,6 @@
 # Distributed systems fail at the boundaries
 
-*12 April 2021*
+*10 June 2021*
 
 *A GraphQL API that needed per-field authorization. A series of forced decisions — versioned contracts, point-in-time
 consistency, decorator-based composition — each triggered by a different failure. The hardest boundaries
@@ -20,6 +20,8 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 │    Data API      │ ──────────────────────────► │   Entitlement API   │
 │   (GraphQL)      │                             │                     │
 └──────────────────┘                             └─────────────────────┘
+                       ^^^^^^^^^^^^^^^^^^^^^^
+                             boundary
 ```
 
 ## Versioned endpoints
@@ -43,7 +45,7 @@ between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this fel
 identical. But it meant the data API team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
 
-Isolated DTOs are the concrete implementation of an independent release cycle in presence
+Isolated DTOs are the concrete implementation of an independent release cycle in the presence
 of breaking changes. The duplication is the solution.
 
 ```
@@ -62,9 +64,9 @@ and on the staging environment
 
 ```
 
-Once the migration to v2 was complete, v1 was removed.
+Once the migration to v2 was complete, v1 was removed without any coordinate deployment.
 
-Please note that [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
+[Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
 changes (new fields) are invisible to existing consumers and don't require coordination. But a rename
 is still a breaking change, and silently mapping a missing field to null made it worse — the system kept running, just
@@ -76,7 +78,7 @@ A delivery arrived with half its fields missing. No errors in the logs — the e
 every time. The problem was that two calls in the middle of a thousand-request delivery had landed after an entitlement
 update was applied. The client received a package that reflected two different authorization states.
 
-The root cause was the delivery model. A package delivery wasn't a single GraphQL call — it was hundreds, sometimes
+The root cause was the delivery model. A package delivery wasn't a single `Data API` call — it was hundreds, sometimes
 thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could
 shift mid-delivery: a field authorized on request 1 might be denied by request 800.
 
@@ -84,9 +86,9 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent
 view.
 
-We added `ETag` caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
-`304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed thousands of
-entitlement round-trips down to a handful.
+The `Entitlement Api`'s team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
+`304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed hundred of thousands
+of round-trips down to a handful.
 
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
 it's much simpler to reason about when something goes wrong [^asOf].
@@ -133,7 +135,7 @@ contract. The cost of leaving it implicit shows up later on another incident.
 The operational complexity outside the process is only half the story. Inside the data API, the entitlement service
 integration also needed to be isolated and composable.
 
-The starting point was a plain interface — Fowler's Gateway pattern:
+The starting point was a plain interface — [Fowler's Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
 
 ```java
 /**
@@ -147,17 +149,17 @@ interface EntitlementApi {
 ```
 
 Everything behind that interface is hidden from the GraphQL resolvers. They don't know whether the backing
-implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The javadoc is also where
+implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The Javadoc is also where
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
 
 ```java
 // Real HTTP call to /v1/entitlements/{user}?asOf={T}
 class HttpEntitlementApi implements EntitlementApi {
-	HttpEntitlementApi(URI baseUri) { ...}
+	HttpEntitlementApi(URI baseUri) { /* ... */ }
 }
 // Configurable in-memory stub for local development and system tests
-class InMemoryEntitlementApi implements EntitlementApi { ...
-    InMemoryEntitlementApi(ConcurrentHashMap<UserId, Entitlements> state) { ... }
+class InMemoryEntitlementApi implements EntitlementApi {
+    InMemoryEntitlementApi(ConcurrentHashMap<UserId, Entitlements> state) { /* ... */ }
 }
 ```
 
@@ -169,17 +171,17 @@ From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Deco
 // if the key (userId/timestamp) is not used for 5 minutes, it is dropped
 // (see https://github.com/ben-manes/caffeine)
 class CachingEntitlementApi implements EntitlementApi {
-	CachingEntitlementApi(EntitlementApi delegate) { ...}
+	CachingEntitlementApi(EntitlementApi delegate) { /* ... */ }
 }
 
 // Failsafe retry policy with backoff (see https://failsafe.dev)
 class FailsafeEntitlementApi implements EntitlementApi {
-	FailsafeEntitlementApi(EntitlementApi delegate, RetryPolicy policy) { ...}
+	FailsafeEntitlementApi(EntitlementApi delegate, RetryPolicy policy) { /* ... */ }
 }
 
 // Extra logging for specific environments
 class LoggingEntitlementApi implements EntitlementApi {
-	LoggingEntitlementApi(EntitlementApi delegate) { ...}
+	LoggingEntitlementApi(EntitlementApi delegate) { /* ... */ }
 }
 
 // DistributedTracing adds the X-RequestId header
@@ -193,16 +195,16 @@ The production stack composes them, innermost to outermost:
   GraphQL resolver
          │
          ▼
- LoggingEntitlementApi      ← logs request / response
+ LoggingEntitlementApi      ← logs request / response counters
          │
          ▼
 FailsafeEntitlementApi      ← retry with backoff on failure
          │
          ▼
- CachingEntitlementApi      ← Caffeine, keyed on user + asOf
+ CachingEntitlementApi      ← cache keyed on userId + asOf
          │  (cache miss)
          ▼
-  HttpEntitlementApi        ← java.net.http → /v1/entitlements/...
+  HttpEntitlementApi        ← GET /v1/entitlements/...
          │
          ▼
    Entitlement API
@@ -226,63 +228,6 @@ without standing up the entitlement service.
 
 The pattern works because the interface boundary is narrow and consistent. Each decorator does one thing. The
 composition is explicit and visible at the wiring point, not scattered across the codebase.
-
-## Entropy between teams
-
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational ones: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
-
-Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
-system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
-in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
-nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
-share a feedback loop.
-
-How do you design systems that survive this? I don't have a full answer, and I'm skeptical of people who claim they
-do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
-policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
-boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
-**communication that doesn't require scheduling a meeting to happen**, and the willingness to push back on solutions
-that work for one team only. Teams need to see beyond their own service boundary — to understand the context they operate in and accept changes that make the *overall* system better, even when those changes add friction locally. That's not an engineering problem; it's a socio-technical one.
-
-## Architecture is the art of shaping boundaries
-
-The first version was operationally simple: one HTTP call, no versioning, no decorators. And yet, it was also the hardest to
-operate — a response shape change meant a coordinated rollback across two teams, and a consistency bug mid-delivery was
-nearly invisible until it surfaced as wrong data in production.
-
-The current version is the opposite. More moving parts in code: versioned endpoints, isolated DTOs, a decorator stack, a
-timestamp parameter, mTLS, retries, etc. But operationally it's predictable: each team ships independently, failures are isolated,
-consistency problems surface as explicit errors rather than silent data drift. *The complexity moved from the runtime —
-where it was invisible — into the code, where it can be read, tested, and reasoned about.*
-
-That trade-off is worth being deliberate about. The job is not to eliminate failure — it's to make failure *transient*,
-*observable*, and *auditable*. The retry decorator `FailsafeEntitlementApi` handles transient network errors (that *will* happen). The cache absorbs repeated calls. The
-in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
-
-None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
-than something to patch over.
-
-**Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it
-emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
-product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
-of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
-after the fifth.
-
-**The contract and the why need to be shared.** The early pain — synchronized rollbacks, no
-versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned
-endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
-
-**Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In
-practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
-
-Outcome
----
-
-The `CachingEntitlementApi` decorator cut entitlement calls by ~99.95% — almost every call is a cache hit. The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API calls now complete with a single coherent authorization state. Several teams ship on independent schedules, with no coordinated rollbacks. The `LoggingEntitlementApi` made all of this visible: call count per delivery, cache hit/miss ratio, retry count and causes — the numbers that turned “it seems slower” into “retry rate spiked at 14:32”.
-
-Distributed systems fail at the boundaries because that’s where assumptions accumulate faster than feedback. Align teams on this early on and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
-
----
 
 ## The full picture
 
@@ -313,7 +258,7 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
            ▼                          ▼
 ┌─────────────────────┐    ┌─────────────────────┐
 │   Entitlement API   │    │    Entitlement API  │
-│   /v1               │    │        /v2          │
+│         /v1         │    │        /v2          │
 └─────────────────────┘    └─────────────────────┘
 ```
 
@@ -322,6 +267,78 @@ entire stack in tests. The wiring is visible at one place, not scattered across 
 response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
 integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
+## Entropy between teams
+
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational ones: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+
+Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
+system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
+in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
+nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
+share a feedback loop.
+
+How do you design systems that survive this? I don't have a full answer, and I'm skeptical of people who claim they
+do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
+policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
+boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
+**communication that doesn't require scheduling a meeting to happen**, and the willingness to push back on solutions
+that work for one team only. Teams need to see beyond their own service boundary — to understand the context they
+operate in and accept changes that make the *overall* system better, even when those changes add friction locally.
+That's not an engineering problem; it's a sociotechnical one.
+
+## Architecture is the art of shaping boundaries
+
+The first version was operationally simple: one HTTP call, no versioning, no decorators. And yet, it was also the hardest to
+operate — a response shape change meant a coordinated rollback across two teams, and a consistency bug mid-delivery was
+nearly invisible until it surfaced as wrong data in production.
+
+The current version is the opposite. More moving parts in code: versioned endpoints, isolated DTOs, a decorator stack, a
+timestamp parameter, mTLS, retries, etc. But operationally it's predictable: each team ships independently, failures are isolated,
+consistency problems surface as explicit errors rather than silent data drift. *The complexity moved from the runtime —
+where it was invisible — into the code, where it can be read, tested, and reasoned about.*
+
+That trade-off is worth being deliberate about. The job is not to eliminate failure — it's to make failure *transient*,
+*observable*, and *auditable*. The retry decorator `FailsafeEntitlementApi` handles transient network errors.
+The cache absorbs repeated calls. The in-memory stub removes the external dependency in tests. The mTLS gateway enforces identity at the transport layer.
+
+None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
+than something to patch over.
+
+**Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it
+emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
+product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
+of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
+after the fifth.
+
+**The contract and the why need to be shared.** The early pain — synchronized rollbacks, no
+versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned
+endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
+
+**Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In
+practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
+
+## Outcome
+
+The 2 teams shipped on independent schedules, with no coordinated rollbacks.
+
+The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API
+calls now complete with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
+is quite effective (as user entitlements changes rarely).
+
+On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% — almost every call is a
+cache hit. It is exactly how the Data API is designed: when some downstream application starts a delivery, it uses
+the same `userId`/`asOf` repeatedly until all data is delivered. When it is done, it stops. So the 0.5% misses represent
+only the first call when the cache is empty. The cache stays alive for 10 minutes more, then it expires in each
+`Data API` node.  What is also interesting is the number of calls it is saving: every 1M calls, only 5K are actually
+forwarded to the `Entitlement API`.
+
+Distributed systems fail at the boundaries because that’s where assumptions accumulate
+faster than feedback. Align your teams on this early on and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
+
 ---
 
-[^asOf]: every snapshot is kept for at most slightly more than 24h, after that it expires and frees the underlying storage and it is referenced by id as the `ETag`.
+[^etag]: every change in the entitlements produces a new snapshot.  that is used to build the `ETag` in the `Entitlement API`.
+The `Data API` requests with `if-none-match` as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
+
+[^asOf]: every snapshot is kept for a short period of time (slightly more than 24h). After that it expires and frees
+the underlying storage, and it is referenced by id as the `ETag`.
