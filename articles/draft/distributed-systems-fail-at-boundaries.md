@@ -270,7 +270,7 @@ in production, an API gateway upgrades and silently alters timeout behavior, a c
 nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
 share a feedback loop.
 
-How do you design systems that survive this? There is no complete answer — and skepticism is warranted toward those who claim there is. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
+How do you design systems that survive this? I don't have a full answer, and I'm skeptical of people who claim they do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
 policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
 boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
 **communication that doesn't require scheduling a meeting**, and the willingness to push back on solutions
