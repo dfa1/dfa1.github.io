@@ -210,7 +210,7 @@ that cheerfully prints itself is a secret waiting to leak into a log file or exc
 ```java
 public final class ApiToken {
     private static final int LENGTH = 128;
-    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_\\-]+$");
+    private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_-]+$");
 
     private final String value;
 
@@ -324,7 +324,7 @@ documentation that the compiler keeps accurate.**
 
 ## You already depend on domain primitives
 
-Is this new ideas? Not at all.
+Are these new ideas? Not at all.
 
 The JDK has shipped domain primitives for decades. `Path` wraps a raw file-system string
 and validates it — you don't pass `String` to `Files.readAllBytes`. `URI` parses and
@@ -428,7 +428,7 @@ it can enforce your domain boundaries.
 **Your compiler is already part of your security team. It's been waiting for you to give it the
 right types to work with.**
 
-Of course, this is not enough alone. Use TLS 1.3 with strong cipher suites, proper
+Of course, this alone is not enough. Use TLS 1.3 with strong cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
 every layer does its job. Why not start from the most basic pieces of the business logic?
