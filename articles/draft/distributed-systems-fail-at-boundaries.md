@@ -326,6 +326,8 @@ On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement ca
 cache hit. This matched exactly how the Data API was used: when a downstream application started a delivery, it used
 the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node.
 
+The three-stage pipeline — integration, preprod, production — is what kept these failures contained. Issues that slipped past contract tests surfaced in integration or preprod, never in prod. The technical patterns made failures *visible*; the pipeline ensured visibility came early enough to act on.
+
 Distributed systems fail at the boundaries because that’s where assumptions accumulate
 faster than feedback. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
