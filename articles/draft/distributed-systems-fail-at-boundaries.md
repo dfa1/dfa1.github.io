@@ -26,8 +26,7 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 
 ## Versioned endpoints
 
-That worked until the
-entitlement team renamed a response field on a rainy Tuesday. The data API's deserializer was throwing errors; every downstream call was failing for the same reason.
+That worked until the entitlement team renamed a response field. The data API's deserializer started throwing errors; every downstream call was failing for the same reason.
 
 The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
 setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a
@@ -37,7 +36,7 @@ The problem was also release cadence. The entitlement API and the data API evolv
 *deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team —
 and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
-The solution was to add path-based versioning to the EntitlementApi: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
+The solution was to add path-based versioning to the Entitlement API: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
 route at the gateway level. We also started publishing an [OpenAPI](https://www.openapis.org/) spec per version — a
 machine-readable contract that made the boundary explicit to any new consumer — and adopted contract testing with [Pact](https://pact.io).
 The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance
@@ -86,12 +85,12 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent
 view.
 
-The `Entitlement API`'s team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
+The entitlement team added `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
 `304 Not Modified` and the data API used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
 of round-trips down to a handful.
 
 The timestamp made consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
-it's much simpler to reason about when something goes wrong [^asOf].
+it's much simpler to reason about when something goes wrong.[^asOf]
 
 ```
 ┌──────────────────┐  GET /entitlements/{user}?asOf={T}   ┌─────────────────────┐
@@ -100,14 +99,14 @@ it's much simpler to reason about when something goes wrong [^asOf].
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
 ```
 
-## Transport security and API-GW
+## Transport security and API gateway
 
 HTTPS came next — not a design decision so much as a forced one.
 A third team integrated with the entitlement API directly — and called production from their staging environment for two
 weeks before anyone noticed. No enforced authentication at the transport layer, no rate limiting, nothing to prevent an
 accidental consumer from adding load. That was the event that made a gateway non-negotiable.
 
-As more services needed entitlements, an API gateway appeared to handle routing, rate limiting, and — eventually —
+As more services needed entitlements, an API gateway was introduced to handle routing, rate limiting, and — eventually —
 mutual TLS. mTLS was the right security choice, but it introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
@@ -265,12 +264,11 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 
 Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the
 entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
-response to a specific problem with the entitlement service turned out to be a general answer to the question of how to
-integrate with anything external (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
+response to a specific problem with the entitlement service turned out to be a general answer to external integration (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
 ## Entropy between teams
 
-**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, synchronized releases and rollbacks — were downstream of organizational decisions: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
+**The technical boundary is the easy one.** The decisions that caused the most pain — no versioning, coordinated releases and rollbacks — were rooted in organizational decisions: a team that designed their system in isolation, where every release required multiple meetings just to coordinate. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
 
 Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
 system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
@@ -282,7 +280,7 @@ How do you design systems that survive this? I don't have a full answer, and I'm
 do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
 policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
 boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
-**communication that doesn't require scheduling a meeting to happen**, and the willingness to push back on solutions
+**communication that doesn't require scheduling a meeting**, and the willingness to push back on solutions
 that work for one team only. Teams need to see beyond their own service boundary — to understand the context they
 operate in and accept changes that make the *overall* system better, even when those changes add friction locally.
 That's not an engineering problem; it's a sociotechnical one.
@@ -331,7 +329,7 @@ cache hit. This matched exactly how the Data API was used: when a downstream app
 the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. The volume reduction was also notable: of every 1M calls, only 5K were actually forwarded to the `Entitlement API`.
 
 Distributed systems fail at the boundaries because that’s where assumptions accumulate
-faster than feedback. Align your teams on this early on and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
+faster than feedback. Align your teams on this early and remember to [write down the why](https://dfa1.github.io/articles/write-down-the-why).
 
 ---
 
