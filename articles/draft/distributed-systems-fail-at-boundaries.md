@@ -26,7 +26,7 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 
 ## Versioned endpoints
 
-That worked until the entitlement team renamed a response field. The data API's deserializer started throwing errors; every downstream call was failing for the same reason.
+That worked until a field rename in the entitlement service hit staging — the deserializer started throwing errors on every call.
 
 The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
 setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a
@@ -73,9 +73,9 @@ wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't repla
 
 ## Point-in-time queries
 
-A delivery arrived with half its fields missing. No errors in the logs — the entitlement service had responded correctly
+In load testing, a delivery completed with half its fields missing. No errors in the logs — the entitlement service had responded correctly
 every time. The problem was that two calls in the middle of a thousand-request delivery had landed after an entitlement
-update was applied. The client received a package that reflected two different authorization states.
+update was applied. The result was a delivery that reflected two different authorization states.
 
 The root cause was the delivery model. A package delivery wasn't a single `Data API` call — it was hundreds, sometimes
 thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could
@@ -102,9 +102,7 @@ it's much simpler to reason about when something goes wrong.[^asOf]
 ## Transport security and API gateway
 
 HTTPS came next — not a design decision so much as a forced one.
-A third team integrated with the entitlement API directly — and called production from their staging environment for two
-weeks before anyone noticed. No enforced authentication at the transport layer, no rate limiting, nothing to prevent an
-accidental consumer from adding load. That was the event that made a gateway non-negotiable.
+A new consumer was found pointing their test environment at the shared staging entitlement instance during a routine access review — no enforced authentication at the transport layer, no rate limiting, nothing to prevent accidental load. That was the event that made a gateway non-negotiable.
 
 As more services needed entitlements, an API gateway was introduced to handle routing, rate limiting, and — eventually —
 mutual TLS. mTLS was the right security choice, but it introduced a boundary in its own right.
