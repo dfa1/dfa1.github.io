@@ -21,6 +21,10 @@ Sereval projects, one of them is
 - **Code examples**: include only what is necessary to illustrate the point; prefer real code from the project over toy examples
 - **Use American english** consistently, never mix up British English
 
+## Review workflow
+
+When a file path is given without explicit instruction, treat it as a review request: read the file and proactively flag grammar, prose, and technical issues before asking what to do.
+
 ## Editorial standards
 
 - Every article is formatted as markdown, has .md extension and the following a common structure
