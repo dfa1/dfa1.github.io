@@ -431,6 +431,8 @@ network segmentation, secrets management that keeps credentials out of source co
 dependency scanning, runtime monitoring — all of it still matters. Defense in depth means
 every layer does its job. Why not start from the most basic pieces of the business logic?
 
+---
+
 **Update April 2026**: when you add AI to this picture, the conclusion is not “AI replaces this”
 — it is the opposite: AI makes these design principles more necessary, not less.
 
