@@ -25,7 +25,7 @@ one int from the other. Your safety net was discipline only... but that scales p
 
 ## Make Illegal State Unrepresentable
 
-This is the starting point: encode in your type what is the domain of the value.
+This is the starting point: encode in your type the domain of the value.
 `MarketId` could be just a 3-digit non-negative number (representable with `short`),
 an `InstrumentId` could be representable with `int` with non-negative constraint.
 
@@ -35,7 +35,7 @@ The shift in framing matters. Validation is a check you add to code that already
 It can be forgotten, skipped under a time-pressed refactor, or called in the wrong order.
 A type whose constructor rejects bad input cannot be bypassed — it is structural, not
 procedural. You stop asking *"did we remember to validate this"?* and start asking *"can this
-type even hold that value?* — a question the compiler answers for you at every call site.
+type even hold that value?"* — a question the compiler answers for you at every call site.
 
 ---
 
@@ -58,7 +58,7 @@ simple: **always check length before applying regex**. It's one of those rules t
 you see it you can't unsee it.
 
 This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
-one of the most popular identifiers for financial instruments (same logic applies cleanly to other domains):
+one of the most popular identifiers for financial instruments — the same logic applies cleanly to other domains:
 
 ```java
 public final class Isin {
@@ -81,7 +81,7 @@ public final class Isin {
         this.value = value;
     }
 
-    // the value as string is always valid
+    // the value as a string is always valid
     public String value() { return value; }
 
     // get Country domain primitive using the first 2 characters of the isin
@@ -194,7 +194,7 @@ publish(marketId + 1, instrumentId - 1, closePrice);
 
 ## Security is built-in
 
-So the first line of defense is the domain primitives: they prevent bad inputs to leak deep
+So the first line of defense is the domain primitives: they prevent bad inputs from leaking deep
 into the business logic and they help to better document how the data is flowing.
 
 Another underused practice: treat the CI build as a second line of defense by writing
@@ -260,7 +260,7 @@ A few deliberate choices here:
   an attacker with control over a serialized stream could reconstruct an `ApiToken`
   without passing any validation. This one method closes that path entirely.
 
-Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly after authentication. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design** closes that gap:
+Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly once the object exists. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design** closes that gap:
 
 ```java
 public final class Password {
@@ -268,18 +268,19 @@ public final class Password {
     // char[] is preferred over String because it is a mutable type that
     // can be explicitly zeroed after use; String is immutable and may be
     // interned, making it impossible to clear from memory on demand.
-    private char[] value;
+    // AtomicReference makes readOnce() thread-safe: getAndSet is atomic,
+    // so only one caller ever receives the array.
+    private final AtomicReference<char[]> value;
 
     public Password(char[] value) {
-        this.value = Arrays.copyOf(value, value.length);
+        this.value = new AtomicReference<>(Arrays.copyOf(value, value.length));
     }
 
     public char[] readOnce() {
-        if (value == null) {
+        char[] result = value.getAndSet(null);
+        if (result == null) {
             throw new IllegalStateException("Password already consumed");
         }
-        char[] result = value;
-        value = null;
         return result;
     }
 
@@ -292,7 +293,7 @@ public final class Password {
 
 After the password is used to authenticate the user, it cannot be used again... even accidentally.
 
-This isn't just good design. It directly contributes to eliminating whole vulnerability categories:
+This isn't just good design. Domain primitives directly contribute to eliminating whole vulnerability categories:
 - an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterised queries still matter for every other value);
 - the auditor won't find `ApiToken` leaks in the logs: `toString()` returns `"ApiToken[REDACTED]"`, so the secret cannot reach a log file or exception message;
 - in general, it will be much harder for the attacker who controls an input to use it.
@@ -441,9 +442,9 @@ But domain primitives are structural: they encode the rules of your domain in th
 itself. When humans and AI both write code, the compiler becomes the only actor that sees
 everything and enforces the invariants consistently.
 
-And, like already discussed
+As already discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
-thrives in codebases that are explorable: a codebase full of raw `String`, `int`, `long`
+thrives in codebases that are explorable: a codebase full of raw `String`, `int`, and `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
 In other words: the more AI you use, the more your compiler matters to quickly iterate
 the software. Domain primitives are not just a design technique — they are the foundation
