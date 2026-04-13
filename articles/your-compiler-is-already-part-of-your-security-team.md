@@ -193,7 +193,7 @@ publish(marketId + 1, instrumentId - 1, closePrice);
 
 ## Security is built-in
 
-So the first line of defense is the domain primitives: they prevent bad inputs from leaking deep
+The first line of defense is the domain primitives: they prevent bad inputs from leaking deep
 into the business logic and they help document how data flows.
 
 Another underused practice: treat the CI build as a second line of defense by writing
@@ -360,8 +360,7 @@ because values arriving from user input are not guaranteed to be valid. The priv
 constructor means nobody constructs an `ExitStatus` in an unanticipated way.
 
 `VariableName` in the same codebase goes further: it enforces a regex pattern *and* a
-maximum length of 256 characters — the same ReDoS defense discussed above. The pattern
-appears in every well-designed primitive because the problems it solves are universal.
+maximum length of 256 characters — the same ReDoS defense discussed above. This length-first approach appears in every well-designed primitive because the problems it solves are universal.
 
 ---
 
@@ -440,7 +439,7 @@ Domain primitives are structural: they encode the rules of your domain in the ty
 When humans and AI both write code, the compiler becomes the only actor that sees
 everything and enforces the invariants consistently.
 
-As already discussed
+As discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, and `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
