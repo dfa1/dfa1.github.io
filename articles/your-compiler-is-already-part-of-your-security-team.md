@@ -26,8 +26,8 @@ one int from the other. Your safety net was discipline only... but that scales p
 ## Make Illegal State Unrepresentable
 
 This is the starting point: encode in your type the domain of the value.
-`MarketId` could be just a 3-digit non-negative number (representable with `short`),
-an `InstrumentId` could be representable with `int` with non-negative constraint.
+`MarketId` could be just a 3-digit non-negative number (representable as `short`),
+an `InstrumentId` representable as `int` with a non-negative constraint.
 
 Design types such that invalid or dangerous values **cannot be constructed**.
 
@@ -57,7 +57,7 @@ seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). T
 simple: **always check length before applying regex**. It's one of those rules that once
 you see it you can't unsee it.
 
-This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number)
+This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number),
 one of the most popular identifiers for financial instruments — the same logic applies cleanly to other domains:
 
 ```java
@@ -122,7 +122,7 @@ void registerInstrument(String isin, boolean isActive, boolean isEquity, boolean
 }
 ```
 
-8 possible combinations. How many are actually valid for your domain? Probably not all
+Eight possible combinations. How many are actually valid for your domain? Probably not all
 of them — and "active equity" versus "inactive bond" are very different things. A silent
 flag swap here is a business-logic flaw waiting to be exploited.
 
@@ -140,8 +140,7 @@ void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status)
 ```
 
 **Records + sealed interfaces** for richer cases where variants carry different data.
-Consider data quality in a financial feed — real-time, delayed by some minutes, or end of
-day. These are not just labels; they carry different information.
+Consider data quality in a financial feed — real-time, delayed, or end of day. These are not just labels; they carry different information.
 
 ```java
 public sealed interface DataQuality
@@ -195,7 +194,7 @@ publish(marketId + 1, instrumentId - 1, closePrice);
 ## Security is built-in
 
 So the first line of defense is the domain primitives: they prevent bad inputs from leaking deep
-into the business logic and they help to better document how the data is flowing.
+into the business logic and they help document how data flows.
 
 Another underused practice: treat the CI build as a second line of defense by writing
 `@ParameterizedTest` suites for every domain primitive and feed them adversarial inputs —
@@ -294,7 +293,7 @@ public final class Password {
 After the password is used to authenticate the user, it cannot be used again... even accidentally.
 
 This isn't just good design. Domain primitives directly contribute to eliminating whole vulnerability categories:
-- an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterised queries still matter for every other value);
+- an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterized queries still matter for every other value);
 - the auditor won't find `ApiToken` leaks in the logs: `toString()` returns `"ApiToken[REDACTED]"`, so the secret cannot reach a log file or exception message;
 - in general, it will be much harder for the attacker who controls an input to use it.
 
@@ -361,7 +360,7 @@ because values arriving from user input are not guaranteed to be valid. The priv
 constructor means nobody constructs an `ExitStatus` in an unanticipated way.
 
 `VariableName` in the same codebase goes further: it enforces a regex pattern *and* a
-maximum length of 256 characters — the same ReDoS defence discussed above. The pattern
+maximum length of 256 characters — the same ReDoS defense discussed above. The pattern
 appears in every well-designed primitive because the problems it solves are universal.
 
 ---
@@ -436,18 +435,16 @@ every layer does its job. Why not start from the most basic pieces of the busine
 **Update April 2026**: when you add AI to this picture, the conclusion is not “AI replaces this”
 — it is the opposite: AI makes these design principles more necessary, not less.
 
-Why? Because AI is procedural whereas domain primitives are structural:
-AI tools generate code procedurally: they produce sequences of steps, validations, and checks.
-But domain primitives are structural: they encode the rules of your domain in the type system
-itself. When humans and AI both write code, the compiler becomes the only actor that sees
+Why? Because AI tools generate code procedurally — sequences of steps, validations, and checks.
+Domain primitives are structural: they encode the rules of your domain in the type system itself.
+When humans and AI both write code, the compiler becomes the only actor that sees
 everything and enforces the invariants consistently.
 
 As already discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, and `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
-In other words: the more AI you use, the more your compiler matters to quickly iterate
-the software. Domain primitives are not just a design technique — they are the foundation
+In other words: the more AI you use, the more your compiler matters to iterate on the software. Domain primitives are not just a design technique — they are the foundation
 that lets both humans and AI write secure, correct software at scale.
 
 ---
