@@ -423,8 +423,8 @@ it can enforce your domain boundaries.
 
 ## Conclusion
 
-**Your compiler is already part of your security team. It's been waiting for you to give it the
-right types to work with.**
+Your compiler is already part of your security team. It's been waiting for you to give it the
+right types to work with.
 
 Of course, this alone is not enough. Use TLS 1.3 with strong cipher suites, proper
 network segmentation, secrets management that keeps credentials out of source control,
