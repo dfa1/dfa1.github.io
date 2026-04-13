@@ -3,8 +3,8 @@
 *10 June 2021*
 
 *A Data API that needed per-request authorization. A series of forced decisions — versioned contracts, point-in-time
-consistency, decorator-based composition — each triggered by a different failure. The hardest boundaries
-turned out to be organizational, not technical. The patterns that emerged became the blueprint for every external
+consistency, decorator-based composition — each triggered by a different problem.
+The patterns that emerged became the blueprint for every external
 integration that followed.*
 
 ## The starting point
@@ -26,13 +26,13 @@ At this stage, we had two teams, one endpoint, and a shared understanding:
 
 ## Versioned endpoints
 
-That worked until a field rename in the entitlement service hit staging — the deserializer started throwing errors on every call.
+That worked until a field rename in the entitlement service hit staging environment — the deserializer started throwing errors on every call.
 
 The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
 setup, every consumer had to migrate simultaneously — the data API shared the same DTO, so any field change was a
 coordinated deployment.
 
-The problem was also release cadence. The entitlement API and the data API evolved independently, but they couldn't be
+The problem was also release cadence. The Entitlement API and the Data API evolved independently, but they couldn't be
 *deployed* independently. A response shape change in the entitlement service meant coordinating with the data API team —
 and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
@@ -73,7 +73,7 @@ wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't repla
 
 ## Point-in-time queries
 
-In load testing, a delivery completed with half its fields missing. No errors in the logs — the entitlement service had responded correctly
+In load testing, a delivery file using Data API completed with half its fields missing. No errors in the logs — the entitlement service had responded correctly
 every time. The problem was that two calls in the middle of a thousand-request delivery had landed after an entitlement
 update was applied. The result was a delivery that reflected two different authorization states.
 
@@ -108,13 +108,12 @@ The entitlement service held authorization state for every user in the system. T
 mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
-operational surface. The gateway introduced failure modes distinct from the entitlement service itself: gateway
-timeouts, gateway retries, and a retry storm at the gateway level that looks nothing like a retry at the application
-level — it amplifies instead of absorbs.
+operational surface. The gateway introduced failure modes distinct from the Entitlement API itself.
 
-We had to define separate timeout budgets for the gateway hop and the service hop, and implement retries explicitly with
+We had to define and implement retries explicitly with
 exponential backoff and jitter. The boundary didn't disappear — it transformed into a
 more complex one.
+
 
 ```
 ┌──────────────────┐  mTLS   ┌─────────────────┐  HTTPS   ┌─────────────────────┐
@@ -124,12 +123,13 @@ more complex one.
                              └─────────────────┘
 ```
 
+In this case, the API Gateway was operated by yet another team.
 Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit
 contract. The cost of leaving it implicit shows up later as another incident.
 
 ## Taming the boundary in the client code
 
-The operational complexity outside the process is only half the story. Inside the data API, the entitlement service
+The operational complexity outside the process is only half the story. Inside the Data API, the Entitlement API
 integration also needed to be isolated and composable.
 
 The starting point was a plain interface — [Fowler's Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
@@ -141,7 +141,7 @@ The starting point was a plain interface — [Fowler's Gateway pattern](https://
  * @see <a href="https://martinfowler.com/eaaCatalog/gateway.html">Gateway (EAA)</a>
  */
 interface EntitlementApi {
-	Entitlements fetch(UserId user, Instant asOf);
+    Entitlements fetch(UserId user, Instant asOf);
 }
 ```
 
@@ -152,7 +152,7 @@ the *why* lives — a direct link back to the pattern that motivated the design,
 ```java
 // Real HTTP call to /v1/entitlements/{user}?asOf={T}
 class HttpEntitlementApi implements EntitlementApi {
-	HttpEntitlementApi(URI baseUri) { /* ... */ }
+    HttpEntitlementApi(URI baseUri) { /* ... */ }
 }
 // Configurable in-memory stub for local development and system tests
 class InMemoryEntitlementApi implements EntitlementApi {
@@ -169,17 +169,17 @@ From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Deco
 // if the key (userId/timestamp) is not used for 5 minutes, it is dropped
 // (see https://github.com/ben-manes/caffeine)
 class CachingEntitlementApi implements EntitlementApi {
-	CachingEntitlementApi(EntitlementApi delegate) { /* ... */ }
+    CachingEntitlementApi(EntitlementApi delegate) { /* ... */ }
 }
 
 // Failsafe retry policy with backoff (see https://failsafe.dev)
 class FailsafeEntitlementApi implements EntitlementApi {
-	FailsafeEntitlementApi(EntitlementApi delegate, RetryPolicy policy) { /* ... */ }
+    FailsafeEntitlementApi(EntitlementApi delegate, RetryPolicy policy) { /* ... */ }
 }
 
 // Extra logging for specific environments
 class LoggingEntitlementApi implements EntitlementApi {
-	LoggingEntitlementApi(EntitlementApi delegate) { /* ... */ }
+    LoggingEntitlementApi(EntitlementApi delegate) { /* ... */ }
 }
 
 // DistributedTracing adds the X-RequestId header
@@ -230,9 +230,9 @@ composition is explicit and visible at the wiring point, not scattered across th
 ## The full picture
 
 The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it
-became the standard approach for every external dependency the data API grew. Product-data lookups, on-the-fly field
-calculations, Elasticsearch-backed search — each one got the same treatment: a narrow interface, an HTTP implementation,
-a caching layer, a retry wrapper, and an in-memory stub for testing.
+became the standard approach for every external dependencies of the Data API grew.
+Every new integration got the same treatment: a narrow "Gateway" interface, an HTTP implementation,
+a caching layer, a retry wrapper, and an in-memory fake for testing.
 
 ```
                           ┌──────────────────────────────────────── ... ─┐
@@ -259,10 +259,6 @@ a caching layer, a retry wrapper, and an in-memory stub for testing.
 │         /v1         │    │        /v2          │
 └─────────────────────┘    └─────────────────────┘
 ```
-
-Every integration follows the same composition stack: logging → retry → cache → HTTP. The in-memory stub replaces the
-entire stack in tests. The wiring is visible at one place, not scattered across the codebase. What looked like a
-response to a specific problem with the entitlement service turned out to be a general pattern for external integration (see [Gateway](https://martinfowler.com/articles/gateway-pattern.html)).
 
 ## Entropy between teams
 
