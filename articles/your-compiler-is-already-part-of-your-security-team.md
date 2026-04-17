@@ -307,6 +307,9 @@ public final class Password {
     private final AtomicReference<char[]> value;
 
     public Password(char[] value) {
+        // No format or length constraint: passwords are user-chosen secrets,
+        // not system-generated tokens with a fixed structure. Length and
+        // complexity policy belongs to the authentication layer, not here.
         this.value = new AtomicReference<>(Arrays.copyOf(value, value.length));
     }
 
@@ -438,14 +441,22 @@ exposing only a validated constructor.
 struct does the job:
 
 ```cpp
-struct InstrumentId { int value; };
-struct MarketId     { int value; };
+struct InstrumentId {
+    explicit InstrumentId(int v) : value(v) {}
+    int value;
+};
+struct MarketId {
+    explicit MarketId(int v) : value(v) {}
+    int value;
+};
 
 void publish(MarketId market, InstrumentId instrument, Price price);
 ```
 
-Argument swapping is a compile error. For stronger guarantees — preventing implicit
-construction from raw ints, enforcing validation — libraries like
+`explicit` prevents implicit conversion: `publish(42, 7, price)` no longer compiles.
+Argument swapping is a compile error. The field remains public — `id.value` is still
+accessible raw. For full encapsulation — hiding the inner `int` and enforcing
+validation — libraries like
 [`type_safe`](https://github.com/foonathan/type_safe) or
 [`strong_type`](https://github.com/rollbear/strong_type) provide newtype semantics
 without additional boilerplate. The underlying principle is the same: one named type per
