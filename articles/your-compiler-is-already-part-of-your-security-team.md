@@ -19,7 +19,7 @@ void publishClosePrice(int marketId, int instrumentId, double closePrice) {
 ```
 
 *Nothing stops a caller from swapping those arguments. Nothing in the type system distinguishes
-one int from the other. Your safety net was discipline only... but that scales poorly.*
+one int from the other. Your safety net was discipline only... but that scaled poorly.*
 
 ---
 
@@ -49,13 +49,13 @@ quietly puts it into an invalid or dangerous state.
 
 In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
 a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
-In modern Java a `record` could be used to reduce the effort of writing domain primitives systematically.
+In modern Java a `record` reduces the effort of writing domain primitives systematically.
 
 But regex validation has a pitfall people often miss: **regex on unbounded input is a
 vulnerability**. A crafted input of a few thousand characters can cause a backtracking regex to run for
 seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). The fix is
-simple: **always check length before applying regex**. It's one of those rules that once
-you see it you can't unsee it.
+simple: **always check length before applying regex**. It's one of those rules that, once
+you see it, you can't unsee it.
 
 This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number),
 one of the most popular identifiers for financial instruments — the same logic applies cleanly to other domains:
@@ -143,20 +143,55 @@ void registerInstrument(Isin isin, InstrumentType type, InstrumentStatus status)
 Consider data quality in a financial feed — real-time, delayed, or end of day. These are not just labels; they carry different information.
 
 ```java
+void processPrice(Price price, boolean isRealTime, boolean isDelayed, Duration lag, boolean isEndOfDay) {
+    ...
+}
+```
+
+This exposes several problems at once: three mutually exclusive booleans with no enforcement,
+lag silently ignored when `isDelayed=false`, `lag=null` accepted when `isDelayed=true`,
+and nothing stops a caller from passing `true`, `true`, `false` — an invalid combination that
+compiles fine.
+
+A better approach is to use a sealed hierarchy:
+
+```java
 public sealed interface DataQuality
         permits DataQuality.RealTime, DataQuality.Delayed, DataQuality.EndOfDay {
 
     record RealTime()            implements DataQuality {}
-    record Delayed(Duration lag) implements DataQuality {}
+
+    record Delayed(Duration lag) implements DataQuality {
+        Delayed {
+            Objects.requireNonNull(lag, "lag must not be null");
+            if (lag.isZero() || lag.isNegative()) {
+                throw new IllegalArgumentException("lag must be positive: " + lag);
+            }
+        }
+
+    }
+
     record EndOfDay()            implements DataQuality {}
 }
 ```
 
 A `Delayed` value without its `lag` makes no sense. The type system enforces that the data travels with its
-context — always.
+context — always. Every `switch` on `DataQuality` is exhaustive — the compiler tells you when you've missed
+a case:
 
-Every `switch` on `DataQuality` is exhaustive — the compiler tells you when you've missed
-a case. You cannot accidentally treat a 15-minute delayed price as real-time. The
+```java
+void processPrice(Isin isin, DataQuality quality, Price price) {
+    switch (quality) {
+        case DataQuality.RealTime rt ->
+            publish(isin, price);
+        case DataQuality.Delayed d ->
+            publishWithDelay(isin, price, d.lag());
+        case DataQuality.EndOfDay eod ->
+            scheduleEndOfDayPublication(isin, price);
+    }
+}
+```
+You cannot accidentally treat a 15-minute delayed price as real-time. The
 dangerous path is the hard one to write.
 
 ---
@@ -169,7 +204,7 @@ typically looks like this:
 ```java
 int marketId = Integer.parseInt(request.getParam("marketId"));
 int instrumentId = Integer.parseInt(request.getParam("instrumentId"));
-double closePrice = fetchOpenPrice(instrumentId, marketId);
+double closePrice = fetchClosePrice(instrumentId, marketId);
 
 publishClosePrice(marketId, instrumentId, closePrice);
 ```
