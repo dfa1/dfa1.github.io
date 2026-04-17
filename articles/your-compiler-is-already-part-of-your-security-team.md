@@ -182,11 +182,11 @@ a case:
 ```java
 void processPrice(Isin isin, DataQuality quality, Price price) {
     switch (quality) {
-        case DataQuality.RealTime rt ->
-            publish(isin, price);
+        case DataQuality.RealTime _ ->
+            publishPrice(isin, price);
         case DataQuality.Delayed d ->
-            publishWithDelay(isin, price, d.lag());
-        case DataQuality.EndOfDay eod ->
+            scheduleDelayedPublication(isin, price, d.lag());
+        case DataQuality.EndOfDay _ ->
             scheduleEndOfDayPublication(isin, price);
     }
 }
