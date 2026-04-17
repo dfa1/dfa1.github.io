@@ -62,4 +62,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 11 April 2026
+Updated: 17 April 2026
