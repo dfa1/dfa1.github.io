@@ -32,10 +32,13 @@ tooling around it has changed enormously.
 
 ## What cBPF actually is
 
-BPF was introduced in 1992. The original paper described a simple virtual
-machine with two registers, a small set of opcodes, and a verifiable
-property: every program terminates. No loops, no dynamic jumps. The kernel
-can run it safely.
+BPF was introduced in 1992. The [kernel documentation](https://www.kernel.org/doc/Documentation/networking/filter.txt)
+describes a simple virtual machine with two registers, a small set of
+opcodes, and a verifiable property: every program terminates. The guarantee
+comes from a structural constraint: the jump offsets `jt` and `jf` are
+unsigned, so jumps can only go forward. No backward branches means no loops,
+and with a fixed instruction count the program must halt in bounded time.
+The kernel can run it safely.
 
 Each instruction is four fields:
 
@@ -226,10 +229,124 @@ yields synthetic events for unit tests. `KafkaEventSink` ships to Kafka.
 
 The BPF layer never appears in a test. It is just another I/O boundary.
 
-A detection platform for security telemetry and a detection platform for
-financial market data have the same architecture: high-throughput event
-stream, windowed aggregation, threshold matching, auditable output. The
-schema is different. The engineering is the same.
+---
+
+## From printk to ring buffer
+
+The DNS sensor uses `bpf_trace_printk` — a formatted string written to
+`/sys/kernel/debug/tracing/trace_pipe`. That is fine for a toy. For
+production you want structured binary events, and that means a ring buffer.
+
+`BPF_MAP_TYPE_RINGBUF` (Linux 5.8) is shared memory between kernel and
+userspace. When the BPF program calls `bpf_ringbuf_reserve()`, it gets a
+pointer into that shared region and writes the struct directly. Userspace
+reads the same bytes — no serialization, no copy, just a cast.
+
+Each hook point gets its own struct, but all share a common header:
+
+```c
+struct event_header {
+    __u64 timestamp_ns;
+    __u32 pid;
+    __u32 tid;
+    __u32 uid;
+    __u32 gid;
+    char  comm[16];
+    __u32 type;        /* EVENT_OPENAT, EVENT_CONNECT, ... */
+};
+
+struct openat_event {
+    struct event_header hdr;
+    int  dirfd;
+    int  flags;
+    int  ret;
+    char filename[256];
+};
+```
+
+Userspace reads the type field and dispatches:
+
+```c
+static int handle_event(void *ctx, void *data, size_t sz)
+{
+    struct event_header *hdr = data;
+    switch (hdr->type) {
+    case EVENT_OPENAT:  handle_openat((struct openat_event *)data);  break;
+    case EVENT_CONNECT: handle_connect((struct connect_event *)data); break;
+    }
+    return 0;
+}
+```
+
+This is what `BpfEventSource.events()` wraps: `ring_buffer__poll()` calls
+`handle_event` for each record, which translates the binary struct into a
+`KernelEvent` and yields it upstream.
+
+Production systems add three refinements on top of this skeleton:
+
+- **In-kernel filtering**: check a BPF map (pid allowlist, path prefix)
+  before calling `bpf_ringbuf_reserve`. Events that do not match never
+  cross the kernel/userspace boundary.
+- **Back-pressure**: if `bpf_ringbuf_reserve` returns NULL the buffer is
+  full. The BPF program increments a counter in a separate map; userspace
+  reads it to distinguish "quiet" from "dropping".
+- **Aggregation**: instead of emitting every event, accumulate counts or
+  histograms in a `BPF_MAP_TYPE_PERCPU_HASH` and read periodic snapshots.
+  This is how profilers like Parca avoid per-event overhead entirely.
+
+The pattern is always the same: push decisions into the BPF program to
+reduce the volume crossing the boundary, then handle only what matters in
+userspace.
+
+---
+
+## Observability without overhead
+
+The aggregation point above extends further: BPF can build performance
+profiles and latency distributions entirely in the kernel, surfacing only
+summaries to userspace.
+
+**CPU profiling.** Attach a BPF program to a `perf_event` firing at fixed
+frequency (99 Hz is conventional — avoids lockstep with 100 Hz timers).
+On each sample, `bpf_get_stackid()` hashes the current call stack and
+stores it as a key in a map; the value is a hit counter. Userspace reads
+the map periodically, resolves stack IDs to symbols, and builds a flame
+graph. No per-sample ring buffer traffic — just a snapshot of accumulated
+state. This is how Parca and Pyroscope work.
+
+**Latency histograms.** Record a timestamp on syscall entry, compute the
+delta on exit, and increment a histogram bucket:
+
+```c
+// sys_enter_read: stash timestamp by pid
+__u64 ts = bpf_ktime_get_ns();
+bpf_map_update_elem(&start, &pid, &ts, BPF_ANY);
+
+// sys_exit_read: compute delta, increment log2 bucket
+__u64 *tsp = bpf_map_lookup_elem(&start, &pid);
+__u64  delta_us = (bpf_ktime_get_ns() - *tsp) / 1000;
+__u32  bucket = log2l(delta_us);
+__sync_fetch_and_add(&hist[bucket], 1);
+```
+
+Userspace reads the array and prints a latency distribution — `p50`, `p99`,
+`p999` — without ever seeing individual events. The BCC toolkit ships
+`biolatency` (disk I/O) and `runqlat` (scheduler queue wait) built on this
+pattern.
+
+**Scheduling latency.** The `sched_wakeup` and `sched_switch` tracepoints
+let you measure how long a process waited in the run queue before the
+scheduler gave it CPU time. Average CPU utilization can look fine while
+tail latency is high; run queue wait catches that.
+
+Memory is the weakest area: there is no helper to read RSS or heap size
+directly. Hooking `kmalloc`/`kfree` or the `mm_page_alloc` tracepoint
+works but building a complete picture is involved. Production memory
+profilers tend to rely on language-level hooks or `/proc` instead.
+
+The common thread: BPF aggregates in the kernel. Histograms and counters
+live in BPF maps; userspace reads the final numbers. O(1) traffic across
+the boundary regardless of event volume.
 
 ---
 
@@ -249,6 +366,51 @@ The bytecode VM is the same. What changed:
 The mental model — a verified bytecode program running in a kernel
 sandbox — has not changed. The kernel just got smarter about what it does
 with the bytecode underneath.
+
+---
+The analogy for java  world:
+- eBPFJavabpf_trace_printk   System.out.println
+-perf buffer LinkedBlockingQueue per thread
+- ring buffer   Disruptor — single ring, multiple producers, ordered
+
+You'd never build a financial market data pipeline on System.out.println. Same reasoning applies here.
+
+---
+
+## eBPF in production
+
+The same architecture appears across the cloud-native ecosystem, at
+different points on the observability-to-enforcement spectrum.
+
+**[Cilium](https://cilium.io)** replaces iptables as the Kubernetes CNI.
+Rather than maintaining netfilter rules that scale poorly with pod count, it
+programs eBPF maps directly in the kernel network path. XDP (eXpress Data
+Path) — the lowest eBPF hook, running before the kernel's network stack
+processes the packet — handles load balancing at line rate.
+
+**[Falco](https://falco.org)** (CNCF) captures system calls via an eBPF
+driver and matches them against rules. It focuses on auditability: emit an
+alert when a container opens a sensitive file or spawns a shell. The hook is
+the same as Tetragon — syscall entry — but Falco predates Tetragon's
+enforcement model and stops at detection.
+
+**[Tetragon](https://tetragon.io)**, built on Cilium, goes further: it can
+`SIGKILL` a process or drop a connection from inside the eBPF program,
+before the syscall returns to userspace. Operators declare policy in a
+`TracingPolicy` custom resource; enforcement happens at the kernel hook, not
+in a userspace daemon that races against the event.
+
+**[bpftrace](https://github.com/bpftrace/bpftrace)** sits at the opposite
+end of the abstraction spectrum — a high-level tracing language that
+compiles to eBPF. The visibility Tetragon exposes as a platform, bpftrace
+exposes as a one-liner:
+
+```
+bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(args->filename)); }'
+```
+
+No C, no loading bytecode manually. The same idea condensed to a single
+expression.
 
 ---
 
