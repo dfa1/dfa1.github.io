@@ -190,6 +190,18 @@ Note `bpf_htons(53)` — network byte order conversion. In 2004 I wrote
 `__builtin_bswap16(53)` which is subtly wrong on little-endian
 architectures. The BPF helper function is the right call.
 
+BCC is convenient for exploration: it compiles the embedded C string at
+runtime using LLVM/Clang, so there is no separate build step. The cost
+is a runtime dependency on a full LLVM installation and a compilation
+delay on first load. Production tools use
+[libbpf](https://github.com/libbpf/libbpf) instead. With libbpf you
+compile the BPF program ahead of time with Clang, embed the resulting
+object file in your binary, and load it with `bpf_object__open` /
+`bpf_object__load`. Combined with BTF (BPF Type Format) and CO-RE
+(Compile Once, Run Everywhere), the same binary runs across kernel
+versions without recompilation — the loader rewrites field offsets at
+load time to match the running kernel's struct layout.
+
 ---
 
 ## The pipeline
