@@ -389,7 +389,8 @@ On each sample, `bpf_get_stackid()` hashes the current call stack and
 stores it as a key in a map; the value is a hit counter. Userspace reads
 the map periodically, resolves stack IDs to symbols, and builds a flame
 graph. No per-sample ring buffer traffic — just a snapshot of accumulated
-state. This is how [Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) work.
+state. Sound familiar? That is roughly how continuous profilers like
+[Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) could be built on top of eBPF.
 
 **Latency histograms.** Record a timestamp on syscall entry, compute the
 delta on exit, and increment a histogram bucket:
