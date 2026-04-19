@@ -199,7 +199,7 @@ verifier, the same JIT.
 
 [BCC](https://github.com/iovisor/bcc) is convenient for exploration. There is no separate build step: the C string compiles at runtime using LLVM/Clang embedded in the BCC library. The costs are real: a full LLVM installation as a runtime dependency, and a compilation delay on first load. Acceptable for a one-shot script; not for a daemon that restarts under load.
 
-[libbpf](https://github.com/libbpf/libbpf) takes the opposite approach: compile ahead of time, ship a binary, load in milliseconds. You compile the BPF program ahead of time:
+[libbpf](https://github.com/libbpf/libbpf) takes the opposite approach ([Brendan Gregg's overview](https://www.brendangregg.com/blog/2020-11-04/bpf-co-re-btf-libbpf.html) is a good introduction): compile ahead of time, ship a binary, load in milliseconds. You compile the BPF program ahead of time:
 
 ```sh
 clang -O2 -target bpf -c dns_sensor.bpf.c -o dns_sensor.bpf.o
