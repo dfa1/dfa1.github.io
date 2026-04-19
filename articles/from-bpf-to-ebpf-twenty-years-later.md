@@ -487,7 +487,7 @@ architecture, and the pieces fit together clearly enough to sketch.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-SIEM (Security Information and Event Management) is the platform at the
+`SIEM` (Security Information and Event Management) is the platform at the
 end of the pipeline: it ingests the event stream, correlates events against
 threat-intelligence rules, and surfaces alerts for analysts. The eBPF layer
 feeds it raw, high-fidelity data — process lineage, file access, network
@@ -551,8 +551,7 @@ that the kernel can reject an unsafe program before it runs.
 
 Going back to [pangolin](https://github.com/dfa1/pangolin) and following the thread forward felt like
 archaeology. The original cBPF filter is still there, buried underneath
-the eBPF verifier and the JIT compiler — [unchanged](https://github.com/dfa1/pangolin/blob/master/filters.c). The kernel just got smarter about
-what it does with it.
+the eBPF verifier and the JIT compiler — [unchanged](https://github.com/dfa1/pangolin/blob/master/src/filters.c).
 
 That arc — from hand-written socket-filter bytecode on one machine to a
 verified, JIT-compiled program deployed across a fleet — is what twenty
