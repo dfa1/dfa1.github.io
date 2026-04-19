@@ -1,10 +1,10 @@
 # From BPF to eBPF, Twenty Years Later
 
-*April 2026*
+*19 April 2026*
 
-In 2004, I wrote a packet sniffer called
+*In 2004, I wrote a packet sniffer called
 [pangolin](https://github.com/dfa1/pangolin). It filtered network traffic
-using BPF — Berkeley Packet Filter. To select only UDP packets I wrote this:
+using BPF — Berkeley Packet Filter. To select only UDP packets I wrote this:*
 
 ```c
 struct sock_filter UDP_code[] = {
@@ -17,16 +17,16 @@ struct sock_filter UDP_code[] = {
 };
 ```
 
-Raw bytecode. No compiler, no abstraction. Instructions for a virtual
-machine running inside the Linux kernel, written by hand.
+*Raw bytecode. No compiler, no abstraction. Instructions for a virtual
+machine running inside the Linux kernel, written by hand.*
 
-Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
+*Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
-`filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)).
+`filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)).*
 
-That got me curious. The bytecode survived twenty years unchanged — what
+*That got me curious. The bytecode survived twenty years unchanged — what
 did the tooling around it become? Brendan Gregg's [eBPF overview](https://www.brendangregg.com/ebpf.html)
-was the map I used to find out.
+was the map I used to find out.*
 
 ---
 
