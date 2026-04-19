@@ -205,28 +205,37 @@ The resulting object file ships embedded in your binary. At startup, `bpf_object
 
 BTF (BPF Type Format) and [CO-RE](https://nakryiko.com/posts/bpf-portability-and-co-re/) (Compile Once, Run Everywhere) solve the kernel version problem. BPF programs access kernel structs directly, and those structs change across versions. Without CO-RE, you compile once per kernel. With CO-RE, the loader rewrites field offsets at load time to match the running kernel's layout — the same binary runs on 5.15 and 6.9.
 
+One concrete step: `bpftool` can dump the running kernel's BTF data as a C header:
+
+```sh
+bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+```
+
+`/sys/kernel/btf/vmlinux` exists on any kernel built with `CONFIG_DEBUG_INFO_BTF=y` — standard on most distributions since 5.8. The resulting `vmlinux.h` contains every struct, enum, and typedef the kernel exposes via BTF. A BPF program can include it once instead of pulling in dozens of per-subsystem headers. The file is large (~6 MB), but it ships only at build time. CO-RE then rewrites field offsets at load time to match whatever kernel is actually running on the target host — the compiled object does not need to change.
+
 For what I was doing — writing a sensor to understand the APIs — BCC was the right fit. But reading how production tools are built, the pattern is consistent: BCC for interactive exploration and one-off scripts, `libbpf` for anything that ships. A `DaemonSet` running on a thousand nodes, a security agent that must not pull LLVM into a production image — that is `libbpf` territory.
 
 ---
 
-## The pipeline
+## Drafting some code in Python
 
 I kept following the thread: what would a production version of this sensor
 look like? A sensor that prints to stdout is a debugging aid. A sensor
-that ships events to a pipeline is something else — and the design problems
-it raises are familiar ones.
+that ships events to a Kafka topic is something else — and the design problems
+it raises are familiar ones in my domain (i.e. financial data).
 
 BPF only runs on Linux, and loading a program requires root. Testing
 directly against it means no macOS, no CI without privileged containers,
 and no fast iteration loop. The fix I reached for was the same one that
 applies to any external I/O dependency: hide it behind an interface. If the BPF layer is
 just another `EventSource`, the entire processing pipeline — filtering,
-enrichment, correlation, routing — is testable with a `GeneratorEventSource`
-on any machine without kernel access.
+enrichment, correlation, routing — is testable with a `ReplayEventSource`
+(this is critical to achieve good test coverage and fast CI builds).
+
+Here are some basic classes:
 
 ```python
-from abc import ABC, abstractmethod
-from typing import Iterator
+from typing import Iterator, Protocol
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
@@ -234,24 +243,62 @@ class Event:
     timestamp: int    # nanoseconds since boot
     pid: int
     process: str
-    payload: str
+    payload: str      # vmlinux.h exposes the whole C structures
 
-class EventSource(ABC):
-    @abstractmethod
-    def events(self) -> Iterator[Event]:
-        pass
+class EventSource(Protocol):
+    def events(self) -> Iterator[Event]: ...
 
-class EventSink(ABC):
-    @abstractmethod
-    def send(self, event: Event) -> None:
-        pass
+class EventSink(Protocol):
+    def send(self, event: Event) -> None: ...
 ```
 
-`BpfEventSource` runs on Linux. `ReplayEventSource` reads NDJSON recorded
-from a previous run — runs on macOS, no kernel access needed.
-`GeneratorEventSource` yields synthetic events for unit tests.
-`KafkaEventSink` ships to Kafka. `InMemoryEventSink` collects events in a
-list for assertion.
+```
+┌──────────────────────┐      ┌──────────────────────┐
+│   BpfEventSource     │      │  ReplayEventSource   │
+│  (Linux, root only)  │      │  (anywhere, no root) │
+└──────────┬───────────┘      └──────────┬───────────┘
+           └────────────────┬────────────┘
+                            │ Iterator[Event]
+                 ┌──────────▼──────────┐
+                 │  pipeline           │
+                 │  filter / enrich /  │
+                 │  correlate          │
+                 └──────────┬──────────┘
+              ┌─────────────┴──────────────┐
+   ┌──────────▼──────────┐  ┌──────────────▼──────┐
+   │   KafkaEventSink    │  │   RecordEventSink   │
+   │   (production)      │  │   (tests)           │
+   └─────────────────────┘  └─────────────────────┘
+```
+
+`BpfEventSource` wraps the DNS tracepoint probe shown earlier:
+
+```python
+import socket
+import struct
+import time
+from bcc import BPF
+
+class BpfEventSource(EventSource):
+    """Loads the DNS tracepoint probe via BCC. Requires Linux and root."""
+
+    def __init__(self):
+        self._bpf = BPF(text=prog)  # prog defined above
+
+    def events(self) -> Iterator[Event]:
+        for fields in self._bpf.trace_fields():
+            msg = fields.decode(errors='replace') if isinstance(fields, bytes) else str(fields)
+            if 'DNS' not in msg:
+                continue
+            parts = dict(p.split('=') for p in msg.split() if '=' in p)
+            ip_str = socket.inet_ntoa(struct.pack('<I', int(parts['ip'], 16)))
+            yield Event(
+                timestamp=time.time_ns(),
+                pid=int(parts['pid']),
+                process='',
+                payload=f"dst={ip_str}",
+            )
+```
 
 ```python
 import json
@@ -282,14 +329,23 @@ class ReplayEventSource(EventSource):
                 yield Event(**json.loads(line))
 ```
 
+`BpfEventSource` runs on Linux. `ReplayEventSource` reads NDJSON recorded
+from a previous run — runs on macOS, no kernel access needed.
+`KafkaEventSink` ships to Kafka. `RecordEventSink` collects events in a
+list for assertion.
+
 To record a session for later replay, pipe any `EventSource` through an
-`NdjsonEventSink` that writes one JSON object per line to a file. The same
+`ReplayEventSink` that writes one JSON object per line to a file. The same
 file feeds `ReplayEventSource` in tests.
 
-The BPF layer never appears in a test. It is just another I/O boundary.
+The BPF layer never appears in a test: it is just another I/O boundary.
 This is the [sans I/O pattern](https://sans-io.readthedocs.io/): implement
 protocol logic independently of I/O so it can be composed and tested in
 isolation.
+
+Of course, eventually a real test of the BPF code is needed but it can be tested
+in isolation (e.g. without writing to a real Kafka topic or similar system).
+Viceversa, it is possible to unit test a concrete `Sink` by using `ReplayEventSink`.
 
 ---
 
@@ -467,9 +523,7 @@ expression.
 
 ---
 
-## Fleet-wide observability
-
-Following the thread to its logical end: a DNS sensor on one machine is
+Following the thread to its logical end: a BPF sensor on one machine is
 a debugging tool. The same sensor deployed as a Kubernetes `DaemonSet` —
 one pod per node — becomes an observability platform. I have not built
 this myself, but tools like Falco and Tetragon follow exactly this
@@ -500,15 +554,9 @@ node. BPF-level filtering keeps the event rate manageable — only events
 matching policy cross the kernel boundary, regardless of syscall volume on
 the host.
 
-The stream processor joins events by `pid` and `ppid` to reconstruct
-process lineage: which process opened which file, which spawned which child,
-which made which network connection. Join against threat-intelligence feeds,
-run anomaly detection, archive for compliance. The kernel already did the
-hard part.
+---
 
-The footprint is small: the BPF program loads in milliseconds, no LLVM on
-the host, no kernel module, no recompile on kernel upgrade — CO-RE handles
-that.
+## What I took away
 
 What struck me reading through this was how closely the architecture mirrors
 what high-throughput financial systems do with market data. A feed handler runs co-located with the exchange, applies
@@ -521,9 +569,7 @@ and Kafka carries the normalized event stream to wherever analysis happens.
 The principle is the same in both worlds: push the filter as close to the
 source as possible, and only pay for what crosses the boundary.
 
----
-
-## What I took away
+### First surprise
 
 What surprised me most was not how much had changed, but how much had
 not. The bytecode I wrote in 2004 still runs, unmodified, on a 2026 kernel.
@@ -541,6 +587,8 @@ The bytecode VM is the same. What changed:
 | No shared state | BPF maps |
 | Trust the programmer | Verifier proves safety |
 | Silent drops under load | Ring buffers, drops detectable |
+
+### Second surprise
 
 The second surprise was the verifier. I expected a filter VM; I did not
 expect a static analyzer that makes kernel extensions safe enough to ship
