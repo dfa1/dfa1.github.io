@@ -205,7 +205,7 @@ The resulting object file ships embedded in your binary. At startup, `bpf_object
 
 BTF (BPF Type Format) and [CO-RE](https://nakryiko.com/posts/bpf-portability-and-co-re/) (Compile Once, Run Everywhere) solve the kernel version problem. BPF programs access kernel structs directly, and those structs change across versions. Without CO-RE, you compile once per kernel. With CO-RE, the loader rewrites field offsets at load time to match the running kernel's layout — the same binary runs on 5.15 and 6.9.
 
-For what I was doing — writing a sensor to understand the APIs — BCC was the right fit. But reading how production tools are built, the pattern is consistent: BCC for interactive exploration and one-off scripts, libbpf for anything that ships. A DaemonSet running on a thousand nodes, a security agent that must not pull LLVM into a production image — that is libbpf territory.
+For what I was doing — writing a sensor to understand the APIs — BCC was the right fit. But reading how production tools are built, the pattern is consistent: BCC for interactive exploration and one-off scripts, `libbpf` for anything that ships. A `DaemonSet` running on a thousand nodes, a security agent that must not pull LLVM into a production image — that is `libbpf` territory.
 
 ---
 
@@ -247,10 +247,44 @@ class EventSink(ABC):
         pass
 ```
 
-`BpfEventSource` runs on Linux. `ReplayEventSource` replays recorded
-events from a file — runs on macOS, useful for debugging. `GeneratorEventSource`
-yields synthetic events for unit tests. `KafkaEventSink` ships to Kafka.
-`InMemoryEventSink` collects events in a list for testing.
+`BpfEventSource` runs on Linux. `ReplayEventSource` reads NDJSON recorded
+from a previous run — runs on macOS, no kernel access needed.
+`GeneratorEventSource` yields synthetic events for unit tests.
+`KafkaEventSink` ships to Kafka. `InMemoryEventSink` collects events in a
+list for assertion.
+
+```python
+import json
+from dataclasses import asdict
+from kafka import KafkaProducer
+
+class KafkaEventSink(EventSink):
+    def __init__(self, bootstrap_servers: str, topic: str):
+        self._producer = KafkaProducer(
+            bootstrap_servers=bootstrap_servers,
+            value_serializer=lambda v: json.dumps(v).encode(),
+        )
+        self._topic = topic
+
+    def send(self, event: Event) -> None:
+        self._producer.send(self._topic, asdict(event))
+
+
+class ReplayEventSource(EventSource):
+    """Replays events from an NDJSON file. Runs anywhere, no root required."""
+
+    def __init__(self, path: str):
+        self._path = path
+
+    def events(self) -> Iterator[Event]:
+        with open(self._path) as f:
+            for line in f:
+                yield Event(**json.loads(line))
+```
+
+To record a session for later replay, pipe any `EventSource` through an
+`NdjsonEventSink` that writes one JSON object per line to a file. The same
+file feeds `ReplayEventSource` in tests.
 
 The BPF layer never appears in a test. It is just another I/O boundary.
 This is the [sans I/O pattern](https://sans-io.readthedocs.io/): implement
@@ -454,7 +488,7 @@ expression.
 ## Fleet-wide observability
 
 Following the thread to its logical end: a DNS sensor on one machine is
-a debugging tool. The same sensor deployed as a Kubernetes DaemonSet —
+a debugging tool. The same sensor deployed as a Kubernetes `DaemonSet` —
 one pod per node — becomes an observability platform. I have not built
 this myself, but tools like Falco and Tetragon follow exactly this
 architecture, and the pieces fit together clearly enough to sketch.
@@ -478,7 +512,7 @@ feeds it raw, high-fidelity data — process lineage, file access, network
 connections — that would be impractical to collect at this cost any other way.
 
 Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
-loads the BPF program via libbpf, polls the ring buffer, serializes each
+loads the BPF program via `libbpf`, polls the ring buffer, serializes each
 event to Avro or Protobuf, and produces to a Kafka topic partitioned by
 node. BPF-level filtering keeps the event rate manageable — only events
 matching policy cross the kernel boundary, regardless of syscall volume on
