@@ -437,12 +437,14 @@ The pattern I kept seeing: push decisions into the BPF program to reduce
 the volume crossing the boundary, then handle only what matters in
 userspace.
 
+---
+
 ## How to apply in Kubernetes clusters?
 
 Following the thread to its logical end: a BPF sensor on one machine is
 a debugging tool. The same sensor deployed as a Kubernetes `DaemonSet` —
 one pod per node — becomes an observability platform. I have not built
-this myself the pieces fit together clearly enough to sketch:
+this myself, but the pieces fit together clearly enough to sketch:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -456,7 +458,7 @@ this myself the pieces fit together clearly enough to sketch:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The key used in Kafka could be the id of the pod, so all events are
+The key used in Kafka could be the ID of the pod, so all events are
 grouped together in the same partition, to give an ordered stream of events
 for that pod.
 
@@ -473,6 +475,8 @@ node. BPF-level filtering keeps the event rate manageable — only events
 matching policy cross the kernel boundary, regardless of syscall volume on
 the host.
 
+
+---
 
 ## eBPF in production
 
