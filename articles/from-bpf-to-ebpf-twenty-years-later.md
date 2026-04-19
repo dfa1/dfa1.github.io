@@ -20,7 +20,7 @@ struct sock_filter UDP_code[] = {
 Raw bytecode. No compiler, no abstraction. Instructions for a virtual
 machine running inside the Linux kernel, written by hand.
 
-22 years later, I compiled pangolin on kernel 6.17 on ARM64. One
+Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
 `filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)).
 
@@ -216,12 +216,12 @@ For what I was doing — writing a sensor to understand the APIs — BCC was the
 
 ---
 
-## Drafting some code in Python
+## Abstracting the BPF layer
 
 [I kept following the thread](https://github.com/dfa1/ebpf-sensor): what would a production version of this sensor
 look like? A sensor that prints to stdout is a debugging aid. A sensor
 that ships events to a Kafka topic is something else — and the design problems
-it raises are familiar ones in my domain (i.e. financial data).
+it raises are familiar ones in financial systems.
 
 BPF only runs on Linux, and loading a program requires root. Testing
 directly against it means no macOS, no CI without privileged containers,
@@ -242,7 +242,7 @@ class Event:
     timestamp: int    # nanoseconds since boot
     pid: int
     process: str
-    payload: str      # full kernel struct layout via vmlinux.h
+    payload: str      # event-specific data as a string
 
 class EventSource(Protocol):
     def events(self) -> Iterator[Event]: ...
@@ -332,8 +332,8 @@ list for assertion.
 `ReplayEventSource` reads [NDJSON](https://ndjson.com/) recorded
 from a previous run — runs on macOS, no kernel access needed.
 
-To record a session for later replay, pipe any `EventSource` through an
-`ReplayEventSink` that writes one JSON object per line to a file. The same
+To record a session for later replay, pipe any `EventSource` through a
+`RecordEventSink` that writes one JSON object per line to a file. The same
 file feeds `ReplayEventSource` in tests.
 
 The BPF layer never appears in a test: it is just another I/O boundary.
@@ -343,7 +343,7 @@ isolation.
 
 Eventually a real test of the BPF code is needed, but it can be tested in
 isolation — without writing to a real Kafka topic or similar system.
-Vice versa, processing logic is testable by feeding events from `ReplayEventSource`
+Processing logic is testable by feeding events from `ReplayEventSource`
 into any `EventSink`.
 
 ---
@@ -410,9 +410,9 @@ static int handle_event(void *ctx, void *data, size_t sz)
 }
 ```
 
-This is what `BpfEventSource.events()` wraps: `ring_buffer__poll()` calls
-`handle_event` for each record, which translates the binary struct into a
-`KernelEvent` and yields it upstream.
+In a libbpf-based implementation, `BpfEventSource.events()` wraps this:
+`ring_buffer__poll()` calls `handle_event` for each record, which translates
+the binary struct into an `Event` and yields it upstream.
 
 Reading how real tools handle this, I found three refinements that come up consistently:
 
@@ -445,7 +445,7 @@ stores it as a key in a map; the value is a hit counter. Userspace reads
 the map periodically, resolves stack IDs to symbols, and builds a flame
 graph. No per-sample ring buffer traffic — just a snapshot of accumulated
 state. Sound familiar? That is roughly how continuous profilers like
-[Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) could be built on top of eBPF.
+[Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) are built on top of eBPF.
 
 **Latency histograms.** Record a timestamp on syscall entry, compute the
 delta on exit, and increment a histogram bucket:
