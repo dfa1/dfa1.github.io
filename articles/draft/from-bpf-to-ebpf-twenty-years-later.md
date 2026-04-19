@@ -2,7 +2,9 @@
 
 *April 2026*
 
-In 2004 I wrote a packet sniffer called
+*In 2004 I wrote a packet sniffer using hand-crafted BPF bytecode. Twenty years later the bytecode still runs — and the tooling around it has become something else entirely.*
+
+In 2004, I wrote a packet sniffer called
 [pangolin](https://github.com/dfa1/pangolin). It filtered network traffic
 using BPF — Berkeley Packet Filter. To select only UDP packets I wrote this:
 
@@ -25,7 +27,8 @@ type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
 `filters.c` was untouched.
 
 That got me curious. The bytecode survived twenty years unchanged — what
-did the tooling around it become?
+did the tooling around it become? Brendan Gregg's [eBPF overview](https://www.brendangregg.com/ebpf.html)
+was the map I used to find out.
 
 ---
 
@@ -104,7 +107,7 @@ filter are dropped in the kernel — your application never sees them.
 ## What the kernel does with cBPF today
 
 Since [Linux 3.15](https://www.kernel.org/doc/html/latest/networking/filter.html#ebpf-extensions-to-the-socket-interface), the kernel translates cBPF to eBPF internally before
-execution. When you call `setsockopt(SO_ATTACH_FILTER)` with your 1992
+execution. When you call `setsockopt(SO_ATTACH_FILTER)` with your 2004
 bytecode, the kernel:
 
 1. Translates it to eBPF bytecode
@@ -133,7 +136,8 @@ idea — bytecode in a kernel sandbox — and adds:
 The verifier is what makes the rest possible. It checks every path through
 the program: no out-of-bounds memory access, no null pointer dereference,
 no unbounded loops. If the program passes verification, the kernel
-guarantees it cannot crash or compromise the system.
+considers it safe to run — no out-of-bounds memory access, no arbitrary
+writes, no unbounded loops.
 
 You no longer write bytecode by hand. You write C, and Clang compiles it
 to BPF bytecode.
@@ -185,8 +189,9 @@ for fields in b.trace_fields():
 
 The C code runs inside the kernel. Python runs in userspace. `bcc`
 compiles the C string at runtime using LLVM/Clang and loads the bytecode
-via the `bpf()` syscall. The same syscall your `setsockopt` ultimately
-reaches, just with a much richer API on top.
+via the `bpf()` syscall. `setsockopt(SO_ATTACH_FILTER)` and `bpf()` are
+separate syscall paths, but both feed the same eBPF subsystem — the same
+verifier, the same JIT.
 
 ---
 
@@ -204,24 +209,25 @@ The resulting object file ships embedded in your binary. At startup, `bpf_object
 
 BTF (BPF Type Format) and [CO-RE](https://nakryiko.com/posts/bpf-portability-and-co-re/) (Compile Once, Run Everywhere) solve the kernel version problem. BPF programs access kernel structs directly, and those structs change across versions. Without CO-RE, you compile once per kernel. With CO-RE, the loader rewrites field offsets at load time to match the running kernel's layout — the same binary runs on 5.15 and 6.9.
 
-The choice comes down to context. BCC is the right tool for interactive exploration and one-off scripts — the kind of thing you run on a live system to diagnose a problem. libbpf is the right tool for anything that ships: a DaemonSet running on a thousand nodes, a security agent that must not pull LLVM into a production image, a program that needs to restart cleanly under load.
+For what I was doing — writing a sensor to understand the APIs — BCC was the right fit. But reading how production tools are built, the pattern is consistent: BCC for interactive exploration and one-off scripts, libbpf for anything that ships. A DaemonSet running on a thousand nodes, a security agent that must not pull LLVM into a production image — that is libbpf territory.
 
 ---
 
 ## The pipeline
 
-A sensor that prints to stdout is a toy. A sensor that ships events to a
-pipeline is useful. The same design principle that applies to financial
-market data pipelines applies here: separate the I/O boundaries, make the
-logic testable, inject dependencies.
+I kept following the thread: what would a production version of this sensor
+look like? A sensor that prints to stdout is a debugging aid. A sensor
+that ships events to a pipeline is something else — and the design problems
+it raises are familiar ones.
 
 BPF only runs on Linux, and loading a program requires root. Testing
 directly against it means no macOS, no CI without privileged containers,
-and no fast iteration loop. The fix is the same one you apply to any
-external I/O dependency: hide it behind an interface. If the BPF layer is
+and no fast iteration loop. The fix I reached for was the same one that
+applies to any external I/O dependency: hide it behind an interface. If the BPF layer is
 just another `EventSource`, the entire processing pipeline — filtering,
 enrichment, correlation, routing — is testable with a `GeneratorEventSource`
 on any machine without kernel access.
+
 ```python
 from abc import ABC, abstractmethod
 from typing import Iterator
@@ -266,8 +272,9 @@ unsuitable for production:
 
 1. **Global mutex.** Only one program can write at a time. Under load, BPF
    programs on multiple CPUs spin waiting for the lock.
-2. **Limited arguments.** [`bpf_trace_printk` accepts at most three format
-   arguments](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html). The verifier rejects programs that pass more.
+2. **Limited arguments.** [`bpf_trace_printk` accepted at most three format
+   arguments](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html) before Linux 5.13; the verifier rejects programs that pass more on
+   older kernels.
 3. **Silent drops.** If the pipe fills faster than userspace reads, events
    disappear with no indication.
 
@@ -322,7 +329,7 @@ This is what `BpfEventSource.events()` wraps: `ring_buffer__poll()` calls
 `handle_event` for each record, which translates the binary struct into a
 `KernelEvent` and yields it upstream.
 
-Production systems add three refinements on top of this skeleton:
+Reading how real tools handle this, I found three refinements that come up consistently:
 
 - **In-kernel filtering**: check a BPF map (pid allowlist, path prefix)
   before calling `bpf_ringbuf_reserve`. Events that do not match never
@@ -334,17 +341,17 @@ Production systems add three refinements on top of this skeleton:
   histograms in a `BPF_MAP_TYPE_PERCPU_HASH` and read periodic snapshots.
   This is how profilers like Parca avoid per-event overhead entirely.
 
-The pattern is always the same: push decisions into the BPF program to
-reduce the volume crossing the boundary, then handle only what matters in
+The pattern I kept seeing: push decisions into the BPF program to reduce
+the volume crossing the boundary, then handle only what matters in
 userspace.
 
 ---
 
 ## Observability without overhead
 
-The aggregation point above extends further: BPF can build performance
-profiles and latency distributions entirely in the kernel, surfacing only
-summaries to userspace.
+That aggregation idea extends further than I first expected. BPF can build
+performance profiles and latency distributions entirely in the kernel,
+surfacing only summaries to userspace.
 
 **CPU profiling.** Attach a BPF program to a `perf_event` firing at fixed
 frequency ([99 Hz is conventional](https://www.brendangregg.com/perf.html#CPU) — avoids lockstep with 100 Hz timers).
@@ -364,6 +371,7 @@ bpf_map_update_elem(&start, &pid, &ts, BPF_ANY);
 
 // sys_exit_read: compute delta, increment log2 bucket
 __u64 *tsp = bpf_map_lookup_elem(&start, &pid);
+if (!tsp) return 0;  // missed sys_enter (e.g. process started before probe)
 __u64  delta_us = (bpf_ktime_get_ns() - *tsp) / 1000;
 __u32  bucket = log2l(delta_us);
 __sync_fetch_and_add(&hist[bucket], 1);
@@ -418,7 +426,8 @@ different points on the observability-to-enforcement spectrum.
 Rather than maintaining netfilter rules that scale poorly with pod count, it
 programs eBPF maps directly in the kernel network path. XDP (eXpress Data
 Path) — the lowest eBPF hook, running before the kernel's network stack
-processes the packet — handles load balancing at line rate.
+processes the packet — handles load balancing without leaving the driver,
+avoiding most per-packet kernel overhead.
 
 **[Falco](https://falco.org)** (CNCF) captures system calls via an eBPF
 driver and matches them against rules. It focuses on auditability: emit an
@@ -448,9 +457,11 @@ expression.
 
 ## Fleet-wide observability
 
-A DNS sensor on one machine is a debugging tool. The same sensor deployed
-as a Kubernetes DaemonSet — one pod per node — becomes an observability
-platform.
+Following the thread to its logical end: a DNS sensor on one machine is
+a debugging tool. The same sensor deployed as a Kubernetes DaemonSet —
+one pod per node — becomes an observability platform. I have not built
+this myself, but tools like Falco and Tetragon follow exactly this
+architecture, and the pieces fit together clearly enough to sketch.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -468,7 +479,7 @@ SIEM (Security Information and Event Management) is the platform at the
 end of the pipeline: it ingests the event stream, correlates events against
 threat-intelligence rules, and surfaces alerts for analysts. The eBPF layer
 feeds it raw, high-fidelity data — process lineage, file access, network
-connections — that would be impossible to collect this cheaply any other way.
+connections — that would be impractical to collect at this cost any other way.
 
 Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
 loads the BPF program via libbpf, polls the ring buffer, serializes each
@@ -487,8 +498,8 @@ The footprint is small: the BPF program loads in milliseconds, no LLVM on
 the host, no kernel module, no recompile on kernel upgrade — CO-RE handles
 that.
 
-The architecture mirrors what high-throughput financial systems do with
-market data. A feed handler runs co-located with the exchange, applies
+What struck me reading through this was how closely the architecture mirrors
+what high-throughput financial systems do with market data. A feed handler runs co-located with the exchange, applies
 symbol filters at the wire level, and forwards only the instruments that
 matter downstream — because every unnecessary message costs latency and
 bandwidth. An eBPF sensor does the same thing at the syscall level: in-kernel
