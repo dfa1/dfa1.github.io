@@ -2,8 +2,6 @@
 
 *April 2026*
 
-*In 2004 I wrote a packet sniffer using hand-crafted BPF bytecode. Twenty years later the bytecode still runs — and the tooling around it has become something else entirely.*
-
 In 2004, I wrote a packet sniffer called
 [pangolin](https://github.com/dfa1/pangolin). It filtered network traffic
 using BPF — Berkeley Packet Filter. To select only UDP packets I wrote this:
@@ -24,7 +22,7 @@ machine running inside the Linux kernel, written by hand.
 
 Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
-`filters.c` was untouched.
+`filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)..
 
 That got me curious. The bytecode survived twenty years unchanged — what
 did the tooling around it become? Brendan Gregg's [eBPF overview](https://www.brendangregg.com/ebpf.html)
