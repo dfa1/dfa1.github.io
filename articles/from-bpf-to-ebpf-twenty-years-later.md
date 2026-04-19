@@ -173,8 +173,8 @@ TRACEPOINT_PROBE(syscalls, sys_enter_sendto) {
 
 b = BPF(text=prog)
 
-for fields in b.trace_fields():
-    msg = fields.decode(errors='replace') if isinstance(fields, bytes) else str(fields)
+for (task, pid, cpu, flags, ts, msg) in b.trace_fields():
+    msg = msg.decode(errors='replace') if isinstance(msg, bytes) else str(msg)
     if 'DNS' not in msg:
         continue
     data = dict(part.split('=') for part in msg.split() if '=' in part)
@@ -210,7 +210,7 @@ One concrete step: `bpftool` can dump the running kernel's BTF data as a C heade
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 ```
 
-`/sys/kernel/btf/vmlinux` exists on any kernel built with `CONFIG_DEBUG_INFO_BTF=y` — standard on most distributions since 5.8. The resulting `vmlinux.h` contains every struct, enum, and typedef the kernel exposes via BTF. A BPF program can include it once instead of pulling in dozens of per-subsystem headers. The file is large (~6 MB), but it ships only at build time. CO-RE then rewrites field offsets at load time to match whatever kernel is actually running on the target host — the compiled object does not need to change.
+`/sys/kernel/btf/vmlinux` exists on any kernel built with `CONFIG_DEBUG_INFO_BTF=y` — standard on most distributions since 5.8. The resulting `vmlinux.h` contains every struct, enum, and typedef the kernel exposes via BTF. A BPF program can include it once instead of pulling in dozens of per-subsystem headers. The file is large (~6 MB), but it is only needed at compile time — not bundled at runtime. CO-RE then rewrites field offsets at load time to match whatever kernel is actually running on the target host — the compiled object does not need to change.
 
 For what I was doing — writing a sensor to understand the APIs — BCC was the right fit. But reading how production tools are built, the pattern is consistent: BCC for interactive exploration and one-off scripts, `libbpf` for anything that ships. A `DaemonSet` running on a thousand nodes, a security agent that must not pull LLVM into a production image — that is `libbpf` territory.
 
@@ -285,8 +285,8 @@ class BpfEventSource(EventSource):
         self._bpf = BPF(text=prog)  # prog defined above
 
     def events(self) -> Iterator[Event]:
-        for fields in self._bpf.trace_fields():
-            msg = fields.decode(errors='replace') if isinstance(fields, bytes) else str(fields)
+        for (task, pid, cpu, flags, ts, msg) in self._bpf.trace_fields():
+            msg = msg.decode(errors='replace') if isinstance(msg, bytes) else str(msg)
             parts = dict(p.split('=') for p in msg.split() if '=' in p)
             ip_str = socket.inet_ntoa(struct.pack('<I', int(parts['ip'], 16)))
             yield Event(
@@ -324,6 +324,16 @@ class ReplayEventSource(EventSource):
         with open(self._path) as f:
             for line in f:
                 yield Event(**json.loads(line))
+
+
+class RecordEventSink(EventSink):
+    """Collects events in memory. Used in tests for assertion."""
+
+    def __init__(self):
+        self.events: list[Event] = []
+
+    def send(self, event: Event) -> None:
+        self.events.append(event)
 ```
 
 `KafkaEventSink` ships to Kafka. `RecordEventSink` collects events in a
@@ -341,10 +351,10 @@ This is the [sans I/O pattern](https://sans-io.readthedocs.io/): implement
 protocol logic independently of I/O so it can be composed and tested in
 isolation.
 
-Eventually a real test of the BPF code is needed, but it can be tested in
-isolation — without writing to a real Kafka topic or similar system.
 Processing logic is testable by feeding events from `ReplayEventSource`
-into any `EventSink`.
+into any `EventSink` — no Kafka, no kernel access needed. The BPF code
+itself still requires a privileged test, but that can be isolated from
+the rest of the pipeline.
 
 ---
 
@@ -365,8 +375,8 @@ unsuitable for production:
 
 The intermediate step was `BPF_MAP_TYPE_PERF_EVENT_ARRAY` (perf buffer) —
 per-CPU ring buffers that avoid the global lock. Events arrive out of order
-across CPUs, and userspace must poll each CPU's buffer separately. Better
-than `trace_printk`, but not very scalable.
+across CPUs, and userspace must poll each CPU's buffer separately —
+more complex to consume than a single shared buffer.
 
 [`BPF_MAP_TYPE_RINGBUF`](https://nakryiko.com/posts/bpf-ringbuf/) (Linux 5.8) replaces both. Single buffer, shared
 across CPUs, memory-mapped between kernel and userspace. When the BPF
@@ -459,7 +469,7 @@ bpf_map_update_elem(&start, &pid, &ts, BPF_ANY);
 __u64 *tsp = bpf_map_lookup_elem(&start, &pid);
 if (!tsp) return 0;  // missed sys_enter (e.g. process started before probe)
 __u64  delta_us = (bpf_ktime_get_ns() - *tsp) / 1000;
-__u32  bucket = log2l(delta_us);
+__u32  bucket = delta_us ? (63 - __builtin_clzll(delta_us)) : 0;
 __sync_fetch_and_add(&hist[bucket], 1);
 ```
 
