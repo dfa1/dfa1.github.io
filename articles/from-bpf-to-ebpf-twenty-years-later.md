@@ -20,7 +20,7 @@ struct sock_filter UDP_code[] = {
 Raw bytecode. No compiler, no abstraction. Instructions for a virtual
 machine running inside the Linux kernel, written by hand.
 
-Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
+22 years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
 `filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)).
 
@@ -218,7 +218,7 @@ For what I was doing — writing a sensor to understand the APIs — BCC was the
 
 ## Drafting some code in Python
 
-I kept following the thread: what would a production version of this sensor
+[I kept following the thread](https://github.com/dfa1/ebpf-sensor): what would a production version of this sensor
 look like? A sensor that prints to stdout is a debugging aid. A sensor
 that ships events to a Kafka topic is something else — and the design problems
 it raises are familiar ones in my domain (i.e. financial data).

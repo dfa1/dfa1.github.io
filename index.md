@@ -40,7 +40,8 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
-- [rocksdbffm](https://github.com/dfa1/rocksdbffm), experimenal RocksDB bindings in pure Java (2026)
+- [bpf-sensor](https://github.com/dfa1/ebpf-sensor), EBPF, Python + uv (2026)
+- [rocksdbffm](https://github.com/dfa1/rocksdbffm), experimenal RocksDB FFM bindings in Java (2026)
 - [hosh](https://github.com/hosh-shell/hosh), **H**uman **O**riented **SH**ell in Java (2018)
 - [fungoid](https://github.com/dfa1/fungoid.js), transducer library in Javascript (2016)
 - [vim-stuff](https://github.com/dfa1/vim-stuff), my minimal .vimrc (2013)
@@ -63,4 +64,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 17 April 2026
+Updated: 19 April 2026
