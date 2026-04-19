@@ -113,7 +113,7 @@ bytecode, the kernel:
 3. JIT-compiles it to native machine code
 4. Runs it
 
-Your 2004 program runs on a 2025 kernel. The API is stable — removing it
+Early 2000s programs run unchanged on a 2026 kernel. The API held — removing it
 would break `tcpdump`, `libpcap`, and everything built on top of them.
 
 ---
