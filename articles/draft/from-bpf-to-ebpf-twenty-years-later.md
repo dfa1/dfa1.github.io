@@ -83,7 +83,7 @@ struct sock_filter UDP_code[] = {
 };
 ```
 
-Now it reads like prose. Load EtherType, check for IPv4, load protocol
+Load EtherType, check for IPv4, load protocol
 byte, check for UDP, accept or reject. The instructions did not change —
 only the names did. The same insight as naming a magic `int` `MarketId`
 instead of leaving it as a raw number.
