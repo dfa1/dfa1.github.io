@@ -22,7 +22,7 @@ machine running inside the Linux kernel, written by hand.
 
 Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
-`filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)..
+`filters.c` was untouched (see [this commit](https://github.com/dfa1/pangolin/commit/5bee9a49a93ab4b72efb106e10ca70475692c904)).
 
 That got me curious. The bytecode survived twenty years unchanged — what
 did the tooling around it become? Brendan Gregg's [eBPF overview](https://www.brendangregg.com/ebpf.html)
@@ -133,9 +133,8 @@ idea — bytecode in a kernel sandbox — and adds:
 
 The verifier is what makes the rest possible. It checks every path through
 the program: no out-of-bounds memory access, no null pointer dereference,
-no unbounded loops. If the program passes verification, the kernel
-considers it safe to run — no out-of-bounds memory access, no arbitrary
-writes, no unbounded loops.
+no unbounded loops. If the program passes, the kernel considers it safe to
+run in production — as infrastructure, not as a debugging aid.
 
 
 ---
@@ -243,7 +242,7 @@ class Event:
     timestamp: int    # nanoseconds since boot
     pid: int
     process: str
-    payload: str      # vmlinux.h exposes the whole C structures
+    payload: str      # full kernel struct layout via vmlinux.h
 
 class EventSource(Protocol):
     def events(self) -> Iterator[Event]: ...
@@ -288,8 +287,6 @@ class BpfEventSource(EventSource):
     def events(self) -> Iterator[Event]:
         for fields in self._bpf.trace_fields():
             msg = fields.decode(errors='replace') if isinstance(fields, bytes) else str(fields)
-            if 'DNS' not in msg:
-                continue
             parts = dict(p.split('=') for p in msg.split() if '=' in p)
             ip_str = socket.inet_ntoa(struct.pack('<I', int(parts['ip'], 16)))
             yield Event(
@@ -329,10 +326,11 @@ class ReplayEventSource(EventSource):
                 yield Event(**json.loads(line))
 ```
 
-`BpfEventSource` runs on Linux. `ReplayEventSource` reads NDJSON recorded
-from a previous run — runs on macOS, no kernel access needed.
 `KafkaEventSink` ships to Kafka. `RecordEventSink` collects events in a
 list for assertion.
+
+`ReplayEventSource` reads [NDJSON](https://ndjson.com/) recorded
+from a previous run — runs on macOS, no kernel access needed.
 
 To record a session for later replay, pipe any `EventSource` through an
 `ReplayEventSink` that writes one JSON object per line to a file. The same
@@ -343,9 +341,10 @@ This is the [sans I/O pattern](https://sans-io.readthedocs.io/): implement
 protocol logic independently of I/O so it can be composed and tested in
 isolation.
 
-Of course, eventually a real test of the BPF code is needed but it can be tested
-in isolation (e.g. without writing to a real Kafka topic or similar system).
-Viceversa, it is possible to unit test a concrete `Sink` by using `ReplayEventSink`.
+Eventually a real test of the BPF code is needed, but it can be tested in
+isolation — without writing to a real Kafka topic or similar system.
+Vice versa, processing logic is testable by feeding events from `ReplayEventSource`
+into any `EventSink`.
 
 ---
 
