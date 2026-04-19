@@ -140,7 +140,7 @@ to BPF bytecode.
 
 ---
 
-## A modern DNS sensor
+## A toy DNS sensor
 
 Here is a port 53 sensor rewritten as a modern eBPF tracepoint in Python.
 Unlike the original cBPF socket filter — which ran in the network path and
@@ -188,13 +188,13 @@ compiles the C string at runtime using LLVM/Clang and loads the bytecode
 via the `bpf()` syscall. The same syscall your `setsockopt` ultimately
 reaches, just with a much richer API on top.
 
-Note `bpf_htons(53)` — network byte order conversion. In 2004 I wrote
-`__builtin_bswap16(53)` which is subtly wrong on little-endian
-architectures. The BPF helper function is the right call.
+---
+
+## BCC vs libbpf
 
 [BCC](https://github.com/iovisor/bcc) is convenient for exploration. There is no separate build step: the C string compiles at runtime using LLVM/Clang embedded in the BCC library. The costs are real: a full LLVM installation as a runtime dependency, and a compilation delay on first load. Acceptable for a one-shot script; not for a daemon that restarts under load.
 
-Production tools use [libbpf](https://github.com/libbpf/libbpf) instead. You compile the BPF program ahead of time:
+[libbpf](https://github.com/libbpf/libbpf) takes the opposite approach: compile ahead of time, ship a binary, load in milliseconds. You compile the BPF program ahead of time:
 
 ```sh
 clang -O2 -target bpf -c dns_sensor.bpf.c -o dns_sensor.bpf.o
@@ -203,6 +203,8 @@ clang -O2 -target bpf -c dns_sensor.bpf.c -o dns_sensor.bpf.o
 The resulting object file ships embedded in your binary. At startup, `bpf_object__open` / `bpf_object__load` loads it in milliseconds — no compiler on the target host.
 
 BTF (BPF Type Format) and [CO-RE](https://nakryiko.com/posts/bpf-portability-and-co-re/) (Compile Once, Run Everywhere) solve the kernel version problem. BPF programs access kernel structs directly, and those structs change across versions. Without CO-RE, you compile once per kernel. With CO-RE, the loader rewrites field offsets at load time to match the running kernel's layout — the same binary runs on 5.15 and 6.9.
+
+The choice comes down to context. BCC is the right tool for interactive exploration and one-off scripts — the kind of thing you run on a live system to diagnose a problem. libbpf is the right tool for anything that ships: a DaemonSet running on a thousand nodes, a security agent that must not pull LLVM into a production image, a program that needs to restart cleanly under load.
 
 ---
 
@@ -213,13 +215,20 @@ pipeline is useful. The same design principle that applies to financial
 market data pipelines applies here: separate the I/O boundaries, make the
 logic testable, inject dependencies.
 
+BPF only runs on Linux, and loading a program requires root. Testing
+directly against it means no macOS, no CI without privileged containers,
+and no fast iteration loop. The fix is the same one you apply to any
+external I/O dependency: hide it behind an interface. If the BPF layer is
+just another `EventSource`, the entire processing pipeline — filtering,
+enrichment, correlation, routing — is testable with a `GeneratorEventSource`
+on any machine without kernel access.
 ```python
 from abc import ABC, abstractmethod
 from typing import Iterator
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
-class KernelEvent:
+class Event:
     timestamp: int    # nanoseconds since boot
     pid: int
     process: str
@@ -227,12 +236,12 @@ class KernelEvent:
 
 class EventSource(ABC):
     @abstractmethod
-    def events(self) -> Iterator[KernelEvent]:
+    def events(self) -> Iterator[Event]:
         pass
 
 class EventSink(ABC):
     @abstractmethod
-    def send(self, event: dict) -> None:
+    def send(self, event: Event) -> None:
         pass
 ```
 
@@ -242,6 +251,9 @@ yields synthetic events for unit tests. `KafkaEventSink` ships to Kafka.
 `InMemoryEventSink` collects events in a list for testing.
 
 The BPF layer never appears in a test. It is just another I/O boundary.
+This is the [sans I/O pattern](https://sans-io.readthedocs.io/): implement
+protocol logic independently of I/O so it can be composed and tested in
+isolation.
 
 ---
 
@@ -262,7 +274,7 @@ unsuitable for production:
 The intermediate step was `BPF_MAP_TYPE_PERF_EVENT_ARRAY` (perf buffer) —
 per-CPU ring buffers that avoid the global lock. Events arrive out of order
 across CPUs, and userspace must poll each CPU's buffer separately. Better
-than `trace_printk`, but awkward.
+than `trace_printk`, but not very scalable.
 
 [`BPF_MAP_TYPE_RINGBUF`](https://nakryiko.com/posts/bpf-ringbuf/) (Linux 5.8) replaces both. Single buffer, shared
 across CPUs, memory-mapped between kernel and userspace. When the BPF
@@ -325,17 +337,6 @@ Production systems add three refinements on top of this skeleton:
 The pattern is always the same: push decisions into the BPF program to
 reduce the volume crossing the boundary, then handle only what matters in
 userspace.
-
-If the Java concurrency model is more familiar, the analogy maps cleanly:
-
-| BPF | Java |
-|-----|------|
-| `bpf_trace_printk` | `System.out.println` |
-| `BPF_MAP_TYPE_PERF_EVENT_ARRAY` | `LinkedBlockingQueue` per thread |
-| `BPF_MAP_TYPE_RINGBUF` | [Disruptor](https://lmax-exchange.github.io/disruptor/) — single ring, lock-free, ordered |
-
-You would not build a financial market data pipeline on `System.out.println`.
-The same reasoning applies here.
 
 ---
 
@@ -456,12 +457,18 @@ platform.
 │ Kubernetes cluster                                           │
 │                                                              │
 │  node 0  [eBPF sensor] ──┐                                   │
-│  node 1  [eBPF sensor] ──┼──> Kafka ──> Flink ──> SIEM / alerts
+│  node 1  [eBPF sensor] ──┼──> Kafka ──> SIEM / alerts        │
 │  node 2  [eBPF sensor] ──┤                                   │
 │    ...                   │                                   │
 │  node N  [eBPF sensor] ──┘                                   │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+SIEM (Security Information and Event Management) is the platform at the
+end of the pipeline: it ingests the event stream, correlates events against
+threat-intelligence rules, and surfaces alerts for analysts. The eBPF layer
+feeds it raw, high-fidelity data — process lineage, file access, network
+connections — that would be impossible to collect this cheaply any other way.
 
 Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
 loads the BPF program via libbpf, polls the ring buffer, serializes each
@@ -480,7 +487,38 @@ The footprint is small: the BPF program loads in milliseconds, no LLVM on
 the host, no kernel module, no recompile on kernel upgrade — CO-RE handles
 that.
 
+The architecture mirrors what high-throughput financial systems do with
+market data. A feed handler runs co-located with the exchange, applies
+symbol filters at the wire level, and forwards only the instruments that
+matter downstream — because every unnecessary message costs latency and
+bandwidth. An eBPF sensor does the same thing at the syscall level: in-kernel
+maps act as the subscription filter, the ring buffer is the zero-copy
+transport (the same role the [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/) plays in Java trading systems),
+and Kafka carries the normalized event stream to wherever analysis happens.
+The principle is the same in both worlds: push the filter as close to the
+source as possible, and only pay for what crosses the boundary.
+
 ---
+
+## What I took away
+
+What surprised me most was not how much had changed, but how much had
+not. The bytecode I wrote in 2004 still runs, unmodified, on a 2025 kernel.
+The `sock_filter` struct is still in the UAPI headers. The API guarantee
+held for two decades — a level of stability you rarely see anywhere in
+systems software.
+
+The second surprise was the verifier. I expected a filter VM; I did not
+expect a static analyzer that makes kernel extensions safe enough to ship
+as production infrastructure. The verifier is not a side feature — it is
+what makes all of eBPF possible. Without it there is no safe enforcement,
+no CO-RE, no Cilium, no Tetragon. Everything else is built on the guarantee
+that the kernel can reject an unsafe program before it runs.
+
+Going back to pangolin and following the thread forward felt like
+archaeology. The original cBPF filter is still there, buried underneath
+the eBPF verifier and the JIT compiler. The kernel just got smarter about
+what it does with it.
 
 That arc — from hand-written socket-filter bytecode on one machine to a
 verified, JIT-compiled program deployed across a fleet — is what twenty
