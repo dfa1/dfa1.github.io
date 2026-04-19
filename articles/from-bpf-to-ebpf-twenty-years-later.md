@@ -339,7 +339,7 @@ class RecordEventSink(EventSink):
 `KafkaEventSink` ships to Kafka. `RecordEventSink` collects events in a
 list for assertion.
 
-`ReplayEventSource` reads [NDJSON](https://ndjson.com/) recorded
+`ReplayEventSource` reads [NDJSON](https://github.com/ndjson/ndjson-spec) recorded
 from a previous run — runs on macOS, no kernel access needed.
 
 To record a session for later replay, pipe any `EventSource` through a
