@@ -21,6 +21,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [From BPF to eBPF, Twenty Years Later](articles/from-bpf-to-ebpf-twenty-years-later) (2026)
 - [Java + RocksDB - JNI](articles/java-plus-rocksdb-minus-jni) (2026)
 - [The Joy of Proper Encapsulation](articles/the-joy-of-proper-encapsulation) (2026)
 - [Coding With Claude Code](articles/coding-with-claude-code) (2026)
