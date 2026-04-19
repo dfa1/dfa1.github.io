@@ -542,7 +542,7 @@ The bytecode VM is the same. What changed:
 | Socket filter only | kprobes, tracepoints, network, perf |
 | No shared state | BPF maps |
 | Trust the programmer | Verifier proves safety |
-| Packets drop under load | Ring buffers, no drops |
+| Silent drops under load | Ring buffers, drops detectable |
 
 The second surprise was the verifier. I expected a filter VM; I did not
 expect a static analyzer that makes kernel extensions safe enough to ship
