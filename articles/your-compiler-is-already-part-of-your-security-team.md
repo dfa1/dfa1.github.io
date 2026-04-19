@@ -4,7 +4,7 @@
 
 *It's 3am. Your phone is ringing.
 A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry,
-went out clean. Now some important data is publishing under the wrong market. Instruments from
+went out clean. Now some important data is being published under the wrong market. Instruments from
 exchange A showing up under exchange B. Clients are seeing it. Someone is already asking
 if it's a breach.
 It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a
@@ -25,7 +25,7 @@ one int from the other. Your safety net was discipline only... but that scaled p
 
 ## Make Illegal State Unrepresentable
 
-This is the starting point: encode in your type the domain of the value.
+This is the starting point: encode the domain of the value in your type.
 `MarketId` could be a 3-digit non-negative number (representable as `short`);
 `InstrumentId` could be an `int` with a non-negative constraint.
 
@@ -49,7 +49,7 @@ quietly puts it into an invalid or dangerous state.
 
 In Java this means `final` fields on immutable types, no setters, and a `final` class. That last point matters:
 a subclass can override `toString`, `equals`, or `hashCode` in ways you did not anticipate.
-In modern Java a `record` reduces the effort of writing domain primitives systematically.
+In modern Java a `record` reduces the boilerplate of writing domain primitives.
 
 But regex validation has a pitfall people often miss: **regex on unbounded input is a
 vulnerability**. A crafted input of a few thousand characters can cause a backtracking regex to run for
@@ -57,7 +57,7 @@ seconds or minutes — a Denial of Service with a single HTTP request (ReDoS). T
 simple: **always check length before applying regex**. It's one of those rules that, once
 you see it, you can't unsee it.
 
-This is an example domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number),
+This is an example of a domain primitive in Java for [ISIN](https://en.wikipedia.org/wiki/International_Securities_Identification_Number),
 one of the most popular identifiers for financial instruments — the same logic applies cleanly to other domains:
 
 ```java
@@ -218,7 +218,7 @@ operations are not just discouraged — they do not exist:
 ```java
 MarketId marketId = new MarketId(request.getParam("marketId"));
 InstrumentId instrumentId = new InstrumentId(request.getParam("instrumentId"));
-Price closePrice = fetchOpenPrice(instrumentId, marketId);
+Price closePrice = fetchClosePrice(instrumentId, marketId);
 
 publish(marketId + 1, instrumentId - 1, closePrice);
         ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^ <-- compile-time errors
@@ -328,7 +328,7 @@ public final class Password {
 }
 ```
 
-After the password is used to authenticate the user, it cannot be used again... even accidentally.
+After the password is used to authenticate the user, it cannot be used again... even accidentally. Pydantic applies the same idea in Python: [`SecretStr`](https://pydantic.dev/docs/validation/2.1/usage/types/secrets/) hides the value from `repr` and requires an explicit `.get_secret_value()` call to access it.
 
 This isn't just good design. Domain primitives directly contribute to eliminating whole vulnerability categories:
 - an `Isin` cannot carry a SQL injection payload — the format constraint rejects anything that isn't two uppercase letters followed by nine alphanumerics and a digit, so that injection path is closed at the boundary (parameterized queries still matter for every other value);
@@ -372,7 +372,7 @@ HTTP client. `UUID` enforces its format. `Instant`, `Duration`, and `Period` rep
 The people who built the platform you run on decided a raw `String` or `long` was not good
 enough for these values. The same logic applies to your domain.
 
-In [Hosh](https://github.com/dfa1/hosh), an experimental JVM shell I'm writing, `ExitStatus`
+In [Hosh](https://github.com/hosh-shell/hosh), an experimental JVM shell I'm writing, `ExitStatus`
 wraps an `int` exit code:
 
 ```java
@@ -491,8 +491,7 @@ As discussed
 in [Coding With Claude Code](https://dfa1.github.io/articles/coding-with-claude-code), AI
 thrives in codebases that are explorable: a codebase full of raw `String`, `int`, and `long`
 is ambiguous to humans and to AI. A system built from `InstrumentId`, `MarketId`, `ApiToken`, and `DataQuality` is explicit, navigable, and safe by construction.
-In other words: the more AI you use, the more your compiler matters as you iterate on the software. Domain primitives are not just a design technique — they are the foundation
-that lets both humans and AI write secure, correct software at scale.
+In other words: the more AI you use, the more your compiler matters as you iterate on the software. Domain primitives are not just a design technique — they are what makes a codebase legible and safe to both humans and AI.
 
 ---
 
