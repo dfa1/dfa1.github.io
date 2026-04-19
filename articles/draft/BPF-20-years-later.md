@@ -1,4 +1,4 @@
-# From Raw Bytecode to eBPF: the Same Idea, Twenty Years Apart
+# From BPF to eBPF, Twenty Years Later
 
 *April 2026*
 
@@ -17,22 +17,22 @@ struct sock_filter UDP_code[] = {
 };
 ```
 
-Raw bytecode. No compiler, no abstraction. I wrote the instructions for a
-virtual machine running inside the Linux kernel by hand.
+Raw bytecode. No compiler, no abstraction. Instructions for a virtual
+machine running inside the Linux kernel, written by hand.
 
 Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One
 type fix — `size_t` → `socklen_t` — and it ran. The bytecode in
 `filters.c` was untouched.
 
-That is the thesis of this post: **cBPF and eBPF are the same idea at
-different abstraction levels**. The mental model has not changed. The
-tooling around it has changed enormously.
+That got me curious. The bytecode survived twenty years unchanged — what
+did the tooling around it become?
 
 ---
 
 ## What cBPF actually is
 
-BPF was introduced in 1992. The [kernel documentation](https://www.kernel.org/doc/Documentation/networking/filter.txt)
+BPF was introduced in the [1993 McCanne & Jacobson paper](https://www.tcpdump.org/papers/bpf-usenix93.pdf).
+The [kernel documentation](https://www.kernel.org/doc/html/latest/networking/filter.html)
 describes a simple virtual machine with two registers, a small set of
 opcodes, and a verifiable property: every program terminates. The guarantee
 comes from a structural constraint: the jump offsets `jt` and `jf` are
@@ -103,7 +103,7 @@ filter are dropped in the kernel — your application never sees them.
 
 ## What the kernel does with cBPF today
 
-Since Linux 3.15, the kernel translates cBPF to eBPF internally before
+Since [Linux 3.15](https://www.kernel.org/doc/html/latest/networking/filter.html#ebpf-extensions-to-the-socket-interface), the kernel translates cBPF to eBPF internally before
 execution. When you call `setsockopt(SO_ATTACH_FILTER)` with your 1992
 bytecode, the kernel:
 
@@ -119,7 +119,7 @@ would break `tcpdump`, `libpcap`, and everything built on top of them.
 
 ## What eBPF adds
 
-eBPF (extended BPF, introduced in Linux 3.18, 2014) keeps the same core
+eBPF (extended BPF, [introduced in Linux 3.18, 2014](https://lwn.net/Articles/599755/)) keeps the same core
 idea — bytecode in a kernel sandbox — and adds:
 
 - **64-bit registers** (cBPF had two; eBPF has eleven)
@@ -142,8 +142,10 @@ to BPF bytecode.
 
 ## A modern DNS sensor
 
-Here is the UDP port 53 filter from pangolin, rewritten as a modern eBPF
-tracepoint in Python:
+Here is a port 53 sensor rewritten as a modern eBPF tracepoint in Python.
+Unlike the original cBPF socket filter — which ran in the network path and
+matched on UDP protocol and port — this hooks the `sendto` syscall and checks
+the destination port. Any `sendto` to port 53 matches, including TCP.
 
 ```python
 from bcc import BPF
@@ -190,17 +192,17 @@ Note `bpf_htons(53)` — network byte order conversion. In 2004 I wrote
 `__builtin_bswap16(53)` which is subtly wrong on little-endian
 architectures. The BPF helper function is the right call.
 
-BCC is convenient for exploration: it compiles the embedded C string at
-runtime using LLVM/Clang, so there is no separate build step. The cost
-is a runtime dependency on a full LLVM installation and a compilation
-delay on first load. Production tools use
-[libbpf](https://github.com/libbpf/libbpf) instead. With libbpf you
-compile the BPF program ahead of time with Clang, embed the resulting
-object file in your binary, and load it with `bpf_object__open` /
-`bpf_object__load`. Combined with BTF (BPF Type Format) and CO-RE
-(Compile Once, Run Everywhere), the same binary runs across kernel
-versions without recompilation — the loader rewrites field offsets at
-load time to match the running kernel's struct layout.
+[BCC](https://github.com/iovisor/bcc) is convenient for exploration. There is no separate build step: the C string compiles at runtime using LLVM/Clang embedded in the BCC library. The costs are real: a full LLVM installation as a runtime dependency, and a compilation delay on first load. Acceptable for a one-shot script; not for a daemon that restarts under load.
+
+Production tools use [libbpf](https://github.com/libbpf/libbpf) instead. You compile the BPF program ahead of time:
+
+```sh
+clang -O2 -target bpf -c dns_sensor.bpf.c -o dns_sensor.bpf.o
+```
+
+The resulting object file ships embedded in your binary. At startup, `bpf_object__open` / `bpf_object__load` loads it in milliseconds — no compiler on the target host.
+
+BTF (BPF Type Format) and [CO-RE](https://nakryiko.com/posts/bpf-portability-and-co-re/) (Compile Once, Run Everywhere) solve the kernel version problem. BPF programs access kernel structs directly, and those structs change across versions. Without CO-RE, you compile once per kernel. With CO-RE, the loader rewrites field offsets at load time to match the running kernel's layout — the same binary runs on 5.15 and 6.9.
 
 ---
 
@@ -245,14 +247,28 @@ The BPF layer never appears in a test. It is just another I/O boundary.
 
 ## From printk to ring buffer
 
-The DNS sensor uses `bpf_trace_printk` — a formatted string written to
-`/sys/kernel/debug/tracing/trace_pipe`. That is fine for a toy. For
-production you want structured binary events, and that means a ring buffer.
+The DNS sensor uses `bpf_trace_printk`. This writes a formatted string to
+`/sys/kernel/debug/tracing/trace_pipe` — a global pipe shared across every
+BPF program and the kernel's own ftrace subsystem. Three problems make it
+unsuitable for production:
 
-`BPF_MAP_TYPE_RINGBUF` (Linux 5.8) is shared memory between kernel and
-userspace. When the BPF program calls `bpf_ringbuf_reserve()`, it gets a
-pointer into that shared region and writes the struct directly. Userspace
-reads the same bytes — no serialization, no copy, just a cast.
+1. **Global mutex.** Only one program can write at a time. Under load, BPF
+   programs on multiple CPUs spin waiting for the lock.
+2. **Limited arguments.** [`bpf_trace_printk` accepts at most three format
+   arguments](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html). The verifier rejects programs that pass more.
+3. **Silent drops.** If the pipe fills faster than userspace reads, events
+   disappear with no indication.
+
+The intermediate step was `BPF_MAP_TYPE_PERF_EVENT_ARRAY` (perf buffer) —
+per-CPU ring buffers that avoid the global lock. Events arrive out of order
+across CPUs, and userspace must poll each CPU's buffer separately. Better
+than `trace_printk`, but awkward.
+
+[`BPF_MAP_TYPE_RINGBUF`](https://nakryiko.com/posts/bpf-ringbuf/) (Linux 5.8) replaces both. Single buffer, shared
+across CPUs, memory-mapped between kernel and userspace. When the BPF
+program calls `bpf_ringbuf_reserve()`, it gets a pointer into that shared
+region and writes the struct directly. Userspace reads the same bytes via
+`ring_buffer__poll()` — no copy, no serialization, no syscall per event.
 
 Each hook point gets its own struct, but all share a common header:
 
@@ -310,6 +326,17 @@ The pattern is always the same: push decisions into the BPF program to
 reduce the volume crossing the boundary, then handle only what matters in
 userspace.
 
+If the Java concurrency model is more familiar, the analogy maps cleanly:
+
+| BPF | Java |
+|-----|------|
+| `bpf_trace_printk` | `System.out.println` |
+| `BPF_MAP_TYPE_PERF_EVENT_ARRAY` | `LinkedBlockingQueue` per thread |
+| `BPF_MAP_TYPE_RINGBUF` | [Disruptor](https://lmax-exchange.github.io/disruptor/) — single ring, lock-free, ordered |
+
+You would not build a financial market data pipeline on `System.out.println`.
+The same reasoning applies here.
+
 ---
 
 ## Observability without overhead
@@ -319,12 +346,12 @@ profiles and latency distributions entirely in the kernel, surfacing only
 summaries to userspace.
 
 **CPU profiling.** Attach a BPF program to a `perf_event` firing at fixed
-frequency (99 Hz is conventional — avoids lockstep with 100 Hz timers).
+frequency ([99 Hz is conventional](https://www.brendangregg.com/perf.html#CPU) — avoids lockstep with 100 Hz timers).
 On each sample, `bpf_get_stackid()` hashes the current call stack and
 stores it as a key in a map; the value is a hit counter. Userspace reads
 the map periodically, resolves stack IDs to symbols, and builds a flame
 graph. No per-sample ring buffer traffic — just a snapshot of accumulated
-state. This is how Parca and Pyroscope work.
+state. This is how [Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) work.
 
 **Latency histograms.** Record a timestamp on syscall entry, compute the
 delta on exit, and increment a histogram bucket:
@@ -343,7 +370,7 @@ __sync_fetch_and_add(&hist[bucket], 1);
 
 Userspace reads the array and prints a latency distribution — `p50`, `p99`,
 `p999` — without ever seeing individual events. The BCC toolkit ships
-`biolatency` (disk I/O) and `runqlat` (scheduler queue wait) built on this
+[`biolatency`](https://github.com/iovisor/bcc/blob/master/tools/biolatency.py) (disk I/O) and [`runqlat`](https://github.com/iovisor/bcc/blob/master/tools/runqlat.py) (scheduler queue wait) built on this
 pattern.
 
 **Scheduling latency.** The `sched_wakeup` and `sched_switch` tracepoints
@@ -378,14 +405,6 @@ The bytecode VM is the same. What changed:
 The mental model — a verified bytecode program running in a kernel
 sandbox — has not changed. The kernel just got smarter about what it does
 with the bytecode underneath.
-
----
-The analogy for java  world:
-- eBPFJavabpf_trace_printk   System.out.println
--perf buffer LinkedBlockingQueue per thread
-- ring buffer   Disruptor — single ring, multiple producers, ordered
-
-You'd never build a financial market data pipeline on System.out.println. Same reasoning applies here.
 
 ---
 
@@ -426,53 +445,43 @@ expression.
 
 ---
 
-## Appendix: fixing a 20-year-old codebase
+## Fleet-wide observability
 
-Compiling pangolin on a modern kernel required one real fix and several
-cleanups. In rough order of severity:
+A DNS sensor on one machine is a debugging tool. The same sensor deployed
+as a Kubernetes DaemonSet — one pod per node — becomes an observability
+platform.
 
-**`socklen_t` vs `size_t`** — the only fix required to compile:
-```c
-// before
-size_t errlen = sizeof(err);
-// after
-socklen_t errlen = sizeof(err);
 ```
-`socklen_t` is `unsigned int` (32-bit); `size_t` is `unsigned long`
-(64-bit) on 64-bit platforms. The ABI difference did not exist in 2004.
-
-**`memcpy` buffer overread** — a real bug:
-```c
-// before: copies 8 bytes from a 4-byte struct
-long t;
-memcpy(&t, &in, sizeof(long));
-args->host = TOHOST32(t);
-
-// after
-args->host = ntohl(in.s_addr);
+┌──────────────────────────────────────────────────────────────┐
+│ Kubernetes cluster                                           │
+│                                                              │
+│  node 0  [eBPF sensor] ──┐                                   │
+│  node 1  [eBPF sensor] ──┼──> Kafka ──> Flink ──> SIEM / alerts
+│  node 2  [eBPF sensor] ──┤                                   │
+│    ...                   │                                   │
+│  node N  [eBPF sensor] ──┘                                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-**`inet_aton` → `inet_pton`** — `inet_aton` is BSD-specific and never
-made POSIX. `inet_pton` handles both IPv4 and IPv6 and has a clearer
-return value contract.
+Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
+loads the BPF program via libbpf, polls the ring buffer, serializes each
+event to Avro or Protobuf, and produces to a Kafka topic partitioned by
+node. BPF-level filtering keeps the event rate manageable — only events
+matching policy cross the kernel boundary, regardless of syscall volume on
+the host.
 
-**Designated initializers** — C99 syntax that silences missing-field
-warnings and makes struct initialization self-documenting:
-```c
-// before
-static struct argp argp = { options, parse_opt, NULL, program_doc };
+The stream processor joins events by `pid` and `ppid` to reconstruct
+process lineage: which process opened which file, which spawned which child,
+which made which network connection. Join against threat-intelligence feeds,
+run anomaly detection, archive for compliance. The kernel already did the
+hard part.
 
-// after
-static struct argp argp = {
-    .options  = options,
-    .parser   = parse_opt,
-    .args_doc = NULL,
-    .doc      = program_doc
-};
-```
+The footprint is small: the BPF program loads in milliseconds, no LLVM on
+the host, no kernel module, no recompile on kernel upgrade — CO-RE handles
+that.
 
-**Implicit fallthrough** — add `__attribute__((fallthrough))` where
-fallthrough is intentional, or restructure to eliminate it.
+---
 
-The filters themselves — the BPF bytecode in `filters.c` — required no
-changes at all.
+That arc — from hand-written socket-filter bytecode on one machine to a
+verified, JIT-compiled program deployed across a fleet — is what twenty
+years of kernel engineering bought.
