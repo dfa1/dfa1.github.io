@@ -431,25 +431,6 @@ the boundary regardless of event volume.
 
 ---
 
-## What changed in twenty years
-
-The bytecode VM is the same. What changed:
-
-| 2004 | 2025 |
-|------|------|
-| Hand-written opcodes | C compiled by Clang |
-| `SO_ATTACH_FILTER` | `bpf()` syscall |
-| Socket filter only | kprobes, tracepoints, network, perf |
-| No shared state | BPF maps |
-| Trust the programmer | Verifier proves safety |
-| Packets drop under load | Ring buffers, no drops |
-
-The mental model — a verified bytecode program running in a kernel
-sandbox — has not changed. The kernel just got smarter about what it does
-with the bytecode underneath.
-
----
-
 ## eBPF in production
 
 The same architecture appears across the cloud-native ecosystem, at
@@ -547,10 +528,21 @@ source as possible, and only pay for what crosses the boundary.
 ## What I took away
 
 What surprised me most was not how much had changed, but how much had
-not. The bytecode I wrote in 2004 still runs, unmodified, on a 2025 kernel.
+not. The bytecode I wrote in 2004 still runs, unmodified, on a 2026 kernel.
 The `sock_filter` struct is still in the UAPI headers. The API guarantee
 held for two decades — a level of stability you rarely see anywhere in
 systems software.
+
+The bytecode VM is the same. What changed:
+
+| 2004 | 2026 |
+|------|------|
+| Hand-written opcodes | C compiled by Clang |
+| `SO_ATTACH_FILTER` | `bpf()` syscall |
+| Socket filter only | kprobes, tracepoints, network, perf |
+| No shared state | BPF maps |
+| Trust the programmer | Verifier proves safety |
+| Packets drop under load | Ring buffers, no drops |
 
 The second surprise was the verifier. I expected a filter VM; I did not
 expect a static analyzer that makes kernel extensions safe enough to ship
