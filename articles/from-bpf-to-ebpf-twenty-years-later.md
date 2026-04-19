@@ -137,8 +137,6 @@ no unbounded loops. If the program passes verification, the kernel
 considers it safe to run — no out-of-bounds memory access, no arbitrary
 writes, no unbounded loops.
 
-You no longer write bytecode by hand. You write C, and Clang compiles it
-to BPF bytecode.
 
 ---
 
