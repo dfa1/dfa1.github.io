@@ -551,9 +551,9 @@ what makes all of eBPF possible. Without it there is no safe enforcement,
 no CO-RE, no Cilium, no Tetragon. Everything else is built on the guarantee
 that the kernel can reject an unsafe program before it runs.
 
-Going back to pangolin and following the thread forward felt like
+Going back to [pangolin](https://github.com/dfa1/pangolin) and following the thread forward felt like
 archaeology. The original cBPF filter is still there, buried underneath
-the eBPF verifier and the JIT compiler. The kernel just got smarter about
+the eBPF verifier and the JIT compiler — [unchanged](https://github.com/dfa1/pangolin/blob/master/filters.c). The kernel just got smarter about
 what it does with it.
 
 That arc — from hand-written socket-filter bytecode on one machine to a
