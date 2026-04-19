@@ -378,13 +378,14 @@ per-CPU ring buffers that avoid the global lock. Events arrive out of order
 across CPUs, and userspace must poll each CPU's buffer separately —
 more complex to consume than a single shared buffer.
 
-[`BPF_MAP_TYPE_RINGBUF`](https://nakryiko.com/posts/bpf-ringbuf/) (Linux 5.8) replaces both. Single buffer, shared
+[`BPF_MAP_TYPE_RINGBUF`](https://nakryiko.com/posts/bpf-ringbuf/) (Linux 5.8) replaces both.
+Single buffer, shared
 across CPUs, memory-mapped between kernel and userspace. When the BPF
 program calls `bpf_ringbuf_reserve()`, it gets a pointer into that shared
 region and writes the struct directly. Userspace reads the same bytes via
 `ring_buffer__poll()` — no copy, no serialization, no syscall per event.
 
-Each hook point gets its own struct, but all share a common header:
+Each hook point gets its own struct, but all share a common header (like `PyObject`):
 
 ```c
 struct event_header {
@@ -420,10 +421,6 @@ static int handle_event(void *ctx, void *data, size_t sz)
 }
 ```
 
-In a libbpf-based implementation, `BpfEventSource.events()` wraps this:
-`ring_buffer__poll()` calls `handle_event` for each record, which translates
-the binary struct into an `Event` and yields it upstream.
-
 Reading how real tools handle this, I found three refinements that come up consistently:
 
 - **In-kernel filtering**: check a BPF map (pid allowlist, path prefix)
@@ -440,9 +437,44 @@ The pattern I kept seeing: push decisions into the BPF program to reduce
 the volume crossing the boundary, then handle only what matters in
 userspace.
 
----
+## How to apply in Kubernetes clusters?
 
-## Observability without overhead
+Following the thread to its logical end: a BPF sensor on one machine is
+a debugging tool. The same sensor deployed as a Kubernetes `DaemonSet` —
+one pod per node — becomes an observability platform. I have not built
+this myself the pieces fit together clearly enough to sketch:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Kubernetes cluster                                           │
+│                                                              │
+│  node 0  [eBPF sensor] ──┐                                   │
+│  node 1  [eBPF sensor] ──┼──> Kafka ──> SIEM / alerts        │
+│  node 2  [eBPF sensor] ──┤                                   │
+│    ...                   │                                   │
+│  node N  [eBPF sensor] ──┘                                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The key used in Kafka could be the id of the pod, so all events are
+grouped together in the same partition, to give an ordered stream of events
+for that pod.
+
+`SIEM` (Security Information and Event Management) is the platform at the
+end of the pipeline: it ingests the event stream, correlates events against
+threat-intelligence rules, and surfaces alerts for analysts. The eBPF layer
+feeds it raw, high-fidelity data — process lineage, file access, network
+connections — that would be impractical to collect at this cost any other way.
+
+Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
+loads the BPF program via `libbpf`, polls the ring buffer, serializes each
+event to Avro or Protobuf, and produces to a Kafka topic partitioned by
+node. BPF-level filtering keeps the event rate manageable — only events
+matching policy cross the kernel boundary, regardless of syscall volume on
+the host.
+
+
+## eBPF in production
 
 That aggregation idea extends further than I first expected. BPF can build
 performance profiles and latency distributions entirely in the kernel,
@@ -455,24 +487,11 @@ stores it as a key in a map; the value is a hit counter. Userspace reads
 the map periodically, resolves stack IDs to symbols, and builds a flame
 graph. No per-sample ring buffer traffic — just a snapshot of accumulated
 state. Sound familiar? That is roughly how continuous profilers like
-[Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/) are built on top of eBPF.
+[Parca](https://www.parca.dev/) and [Pyroscope](https://grafana.com/oss/pyroscope/)
+are built on top of eBPF.
 
 **Latency histograms.** Record a timestamp on syscall entry, compute the
-delta on exit, and increment a histogram bucket:
-
-```c
-// sys_enter_read: stash timestamp by pid
-__u64 ts = bpf_ktime_get_ns();
-bpf_map_update_elem(&start, &pid, &ts, BPF_ANY);
-
-// sys_exit_read: compute delta, increment log2 bucket
-__u64 *tsp = bpf_map_lookup_elem(&start, &pid);
-if (!tsp) return 0;  // missed sys_enter (e.g. process started before probe)
-__u64  delta_us = (bpf_ktime_get_ns() - *tsp) / 1000;
-__u32  bucket = delta_us ? (63 - __builtin_clzll(delta_us)) : 0;
-__sync_fetch_and_add(&hist[bucket], 1);
-```
-
+delta on exit, and increment a histogram bucket.
 Userspace reads the array and prints a latency distribution — `p50`, `p99`,
 `p999` — without ever seeing individual events. The BCC toolkit ships
 [`biolatency`](https://github.com/iovisor/bcc/blob/master/tools/biolatency.py) (disk I/O) and [`runqlat`](https://github.com/iovisor/bcc/blob/master/tools/runqlat.py) (scheduler queue wait) built on this
@@ -491,10 +510,6 @@ profilers tend to rely on language-level hooks or `/proc` instead.
 The common thread: BPF aggregates in the kernel. Histograms and counters
 live in BPF maps; userspace reads the final numbers. O(1) traffic across
 the boundary regardless of event volume.
-
----
-
-## eBPF in production
 
 The same architecture appears across the cloud-native ecosystem, at
 different points on the observability-to-enforcement spectrum.
@@ -530,38 +545,6 @@ bpftrace -e 'tracepoint:syscalls:sys_enter_openat { printf("%s %s\n", comm, str(
 No C, no loading bytecode manually. The same idea condensed to a single
 expression.
 
----
-
-Following the thread to its logical end: a BPF sensor on one machine is
-a debugging tool. The same sensor deployed as a Kubernetes `DaemonSet` —
-one pod per node — becomes an observability platform. I have not built
-this myself, but tools like Falco and Tetragon follow exactly this
-architecture, and the pieces fit together clearly enough to sketch.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ Kubernetes cluster                                           │
-│                                                              │
-│  node 0  [eBPF sensor] ──┐                                   │
-│  node 1  [eBPF sensor] ──┼──> Kafka ──> SIEM / alerts        │
-│  node 2  [eBPF sensor] ──┤                                   │
-│    ...                   │                                   │
-│  node N  [eBPF sensor] ──┘                                   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-`SIEM` (Security Information and Event Management) is the platform at the
-end of the pipeline: it ingests the event stream, correlates events against
-threat-intelligence rules, and surfaces alerts for analysts. The eBPF layer
-feeds it raw, high-fidelity data — process lineage, file access, network
-connections — that would be impractical to collect at this cost any other way.
-
-Each sensor runs as a privileged pod with [`CAP_BPF` and `CAP_PERFMON`](https://man7.org/linux/man-pages/man7/capabilities.7.html) (split from `CAP_SYS_ADMIN` in Linux 5.8). It
-loads the BPF program via `libbpf`, polls the ring buffer, serializes each
-event to Avro or Protobuf, and produces to a Kafka topic partitioned by
-node. BPF-level filtering keeps the event rate manageable — only events
-matching policy cross the kernel boundary, regardless of syscall volume on
-the host.
 
 ---
 
@@ -578,7 +561,7 @@ and Kafka carries the normalized event stream to wherever analysis happens.
 The principle is the same in both worlds: push the filter as close to the
 source as possible, and only pay for what crosses the boundary.
 
-### First surprise
+### Stability over two decades
 
 What surprised me most was not how much had changed, but how much had
 not. The bytecode I wrote in 2004 still runs, unmodified, on a 2026 kernel.
@@ -597,7 +580,7 @@ The bytecode VM is the same. What changed:
 | Trust the programmer | Verifier proves safety |
 | Silent drops under load | Ring buffers, drops detectable |
 
-### Second surprise
+### The verifier as foundation
 
 The second surprise was the verifier. I expected a filter VM; I did not
 expect a static analyzer that makes kernel extensions safe enough to ship
