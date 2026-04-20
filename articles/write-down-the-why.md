@@ -102,13 +102,13 @@ document above is the *why*.
 If merging hurts, do it more often: *multiple times per day*. The idea is essentially
 [Trunk Based Development](https://trunkbaseddevelopment.com). Small branches, measured in hours or days rather than
 weeks. A handful of commits, rebased and squashed before merge. **Feature flags** to decouple deployment from release —
-a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. We adopt a variation called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) — suited to regulated environments where changes must stage for several days before reaching end users.
+a half-finished feature lives in trunk behind a flag, invisible to users, without blocking anyone else's work. We adopt a variation called [Branch for Release](https://trunkbaseddevelopment.com/branch-for-release/) — suited to regulated environments where changes must be staged for several days before reaching end users.
 
 I am not the only one who feels this way. Another engineer on the team has worked with trunk-based dev before and
 understands the tradeoffs. Having an internal ally matters — not to win an argument, but to demonstrate that this is
 not a personal preference. It is a known, practiced approach with a track record.
 
-The team adopts it and as people try the workflow, find the feedback loops
+The team adopts it and as people try the workflow, find the feedback loops are
 faster, and stop dreading merge day. There is no single moment where it clicks. It becomes the default because it
 works.
 
@@ -144,7 +144,7 @@ reasoning.
 The page in the wiki is not a procedural checklist. It focuses on *why*: why testing the mapper is better than testing
 the data, why data coverage is the wrong goal in this domain, why short-lived branches and feature flags make
 integration cheaper. It includes concrete examples — a good unit test next to a bad one, with an explanation of what
-makes the difference. We even include screenshots of complex git histories: one particularly complex with about 40 parallel lines and merges from master in both directions.
+makes the difference. We even include screenshots of complex git histories: one particularly complex one with about 40 parallel lines and merges from master in both directions.
 
 An explicit document that captures *why* outlasts any individual on the team; it shapes the culture of the team.
 
