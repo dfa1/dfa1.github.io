@@ -110,9 +110,7 @@ mTLS is the concrete implementation of zero-trust at the service boundary: the s
 Every caller now needs a client certificate. Certificate rotation, expiry, and provisioning become their own
 operational surface. The gateway introduces failure modes distinct from the `Entitlement API` itself.
 
-Retries need to be defined explicitly with
-exponential backoff and jitter. The boundary doesn't disappear — it transforms into a
-more complex one.
+Those failure modes require explicit retry logic with exponential backoff and jitter. The boundary doesn't disappear — it transforms into a more complex one.
 
 
 ```
@@ -302,7 +300,7 @@ product-data integration comes, and then the calculation service, and then Elast
 of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
 after the fifth.
 
-**The contract and the why need to be shared.** The early pain — synchronized rollbacks, no
+**The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
 versioning — comes from two teams each owning their own service but nobody owning the seam between them. Versioned
 endpoints and isolated DTOs only become possible once someone accepts responsibility for the contract itself.
 
