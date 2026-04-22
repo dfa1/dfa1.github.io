@@ -294,18 +294,18 @@ The cache absorbs repeated calls. The in-memory stub removes the external depend
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
 than something to patch over.
 
-**Local solutions that generalize are worth naming.** The decorator stack isn't invented as a company-wide pattern — it
-emerges from one problem. What makes it durable is treating it as the standard rather than a one-off, so when the
-product-data integration comes, and then the calculation service, and then Elasticsearch, nobody reinvents it. That kind
-of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
-after the fifth.
+- **Local solutions that generalize are worth naming.** The decorator stack isn't invented as a company-wide pattern — it
+  emerges from one problem. What makes it durable is treating it as the standard rather than a one-off, so when the
+  product-data integration comes, and then the calculation service, and then Elasticsearch, nobody reinvents it. That kind
+  of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
+  after the fifth.
 
-**The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
-versioning — comes from two teams each owning their own service but nobody owning the seam between them. Versioned
-endpoints and isolated DTOs only become possible once someone accepts responsibility for the contract itself.
+- **The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
+  versioning — comes from two teams each owning their own service but nobody owning the seam between them. Versioned
+  endpoints and isolated DTOs only become possible once someone accepts responsibility for the contract itself.
 
-**Isolated DTOs are what independent deployment actually looks like.** They feel like over-engineering at first. In
-practice, they are what makes it possible for two teams to ship on different schedules. The duplication is the point.
+- **Isolated DTOs are what independent deployment actually looks like.** They feel like over-engineering at first. In
+  practice, they are what makes it possible for two teams to ship on different schedules. The duplication is the point.
 
 ## Outcome
 
