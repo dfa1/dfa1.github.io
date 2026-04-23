@@ -37,6 +37,7 @@ When a file path is given without explicit instruction, treat it as a review req
 - Hyphenate compound modifiers (e.g. "zero-warnings policy", "FFM-based terminal")
 - Code fences must always be properly closed
 - Warns about dogmatic positions and lecture style
+- **Titles**: prefer actionable/imperative over descriptive observations (e.g. "Make the Implicit Explicit" not "Distributed Systems Fail at Boundaries"); when proposing titles, cross-check tone and style against existing articles
 
 ## Repository layout
 

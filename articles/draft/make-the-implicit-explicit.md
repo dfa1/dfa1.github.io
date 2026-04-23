@@ -2,17 +2,16 @@
 
 *10 June 2022*
 
-*A `Data API` with per-request authorization. A series of forced decisions — versioned contracts, point-in-time
-consistency, decorator-based composition — each driven by a different problem. This is a retrospective on a real
-system — each of these problems surfaced in production.*
+*A `Data API` with per-request authorization — entitlements delegated to an `Entitlement API` owned by a separate team.
+A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each
+driven by a different problem. This is a retrospective on a real system — each of these problems surfaced in production.*
 
 *The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
 
 ## The starting point
 
-The setup was straightforward: a `Data API` with per-request authorization. Before returning data, each request had to
-check whether the caller was entitled to see it. A dedicated entitlement service held that information, exposed over
-HTTP/REST.
+Before returning data, each request had to check whether the caller was entitled to see it. A dedicated entitlement
+service held that information, exposed over HTTP/REST.
 
 Two teams, one endpoint, one shared understanding:
 
@@ -49,7 +48,7 @@ Isolated DTOs are what an independent release cycle looks like in practice, in t
 of breaking changes. The duplication is the solution.
 
 ```
-┌──────────────────┐   HTTPS GET /v1/entitlements/...   ┌─────────────────────┐
+┌──────────────────┐   GET /v1/entitlements/...   ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
 │                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
@@ -57,7 +56,7 @@ of breaking changes. The duplication is the solution.
 
 and on the staging environment
 
-┌──────────────────┐   HTTPS GET /v2/entitlements/...   ┌─────────────────────┐
+┌──────────────────┐   GET /v2/entitlements/...   ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
 │                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
@@ -106,7 +105,7 @@ Internal services often rely on implicit network trust: if a caller is inside th
 
 The entitlement service held authorization state for every user in the system. Treating it as implicitly trusted because it lives on an internal network was a design gap. As more services needed entitlements, an API gateway was introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer had a client certificate — mutual TLS.
 
-mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduces a boundary in its own right.
+mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
 operational surface. The gateway introduced failure modes distinct from the `Entitlement API` itself.
@@ -209,11 +208,11 @@ FailsafeEntitlementApi      ← retry with backoff on failure
 Production-like config:
 ```java
 EntitlementApi api =
-		new LoggingEntitlementApi(
-				new FailsafeEntitlementApi(
-						new CachingEntitlementApi(
-								new HttpEntitlementApi(baseUri)),
-						retryPolicy));
+    new LoggingEntitlementApi(
+        new FailsafeEntitlementApi(
+            new CachingEntitlementApi(
+                new HttpEntitlementApi(baseUri)),
+            retryPolicy));
 ```
 
 In local development or system tests, `InMemoryEntitlementApi` replaced the whole stack. It could be programmed
@@ -257,27 +256,9 @@ a caching layer, a retry wrapper, and an in-memory fake for testing.
 └─────────────────────┘    └─────────────────────┘
 ```
 
-## Entropy between teams
-
-**The technical boundary is the easy one.** The decisions that cause the most pain — no versioning, forced coordinated rollbacks — come from organizational structure: both teams own their own service, but nobody owns the contract between them, which means every breaking change requires a negotiated deployment. Inter-team dependencies like that can sometimes be managed, but it's far better to remove them.
-
-Software breaks at boundaries because that's where assumptions accumulate. A team building in isolation always makes their
-system work — they control the inputs. The interesting failures happen just outside that box: a downstream client changes a field
-in production, an API gateway upgrades and silently alters timeout behavior, a certificate expires on a Saturday because
-nobody tracked it. **That's entropy** — not bugs, not negligence, just the natural drift between systems that don't
-share a feedback loop.
-
-How do you design systems that survive this? I don't have a full answer, and I'm skeptical of people who claim they do. The technical tools help — explicit interfaces, versioned contracts, [contract testing](https://pact.io), retry
-policies — but *they address the symptoms*. What seems to matter more is a mixture of **clear expectations at each
-boundary** (ownership, versioning guarantees, SLA commitments that someone is actually accountable for),
-**communication that doesn't require scheduling a meeting**, and the willingness to push back on solutions
-that work for one team only. Teams need to see beyond their own service boundary — to understand the context they
-operate in and accept changes that make the *overall* system better, even when those changes add friction locally.
-That's not an engineering problem; it's a sociotechnical one.
-
 ## What good boundary design looks like
 
-The first version is operationally simple: one HTTP call, no versioning, no decorators. And yet the hardest to
+The first version looks simple to write: one HTTP call, no versioning, no decorators. But it's the hardest to
 operate — a response shape change means a coordinated rollback across two teams, and a consistency bug mid-delivery is
 nearly invisible until it surfaces as wrong data in production.
 
@@ -293,35 +274,36 @@ The cache absorbs repeated calls. The in-memory stub removes the external depend
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
 than something to patch over.
 
-- **Local solutions that generalize are worth naming.** The decorator stack isn't invented as a company-wide pattern — it
-  emerges from one problem. What makes it durable is treating it as the standard rather than a one-off, so when the
-  product-data integration comes, and then the calculation service, and then Elasticsearch, nobody reinvents it. That kind
-  of generalization requires someone to notice the pattern and name it explicitly — before the second integration, not
+- **Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it
+  emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
+  product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
+  of generalization required someone to notice the pattern and name it explicitly — before the second integration, not
   after the fifth.
 
 - **The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
-  versioning — comes from two teams each owning their own service but nobody owning the seam between them. Versioned
-  endpoints and isolated DTOs only become possible once someone accepts responsibility for the contract itself.
+  versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned
+  endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
 
-- **Isolated DTOs are what independent deployment actually looks like.** They feel like over-engineering at first. In
-  practice, they are what makes it possible for two teams to ship on different schedules. The duplication is the point.
+- **Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In
+  practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
 
 ## Outcome
 
-Two teams ship on independent schedules, with no coordinated rollbacks.
+Two teams shipped on independent schedules, with no coordinated rollbacks.
 
-The point-in-time contract eliminates an entire class of consistency incidents: deliveries spanning thousands of API
-calls complete with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
-proves quite effective, since user entitlements change rarely.
+The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API
+calls completed with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
+proved quite effective, since user entitlements changed rarely.
 
-On the `Data API` side, the `CachingEntitlementApi` decorator cuts entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call is a
-cache hit. This matches exactly how the `Data API` is used: when a downstream application starts a delivery, it uses
-the same `userId`/`asOf` repeatedly until all data is delivered. When the delivery ends, it stops. The 0.5% misses represent only the first call per delivery, when the cache is cold. The cache entry expires 10 minutes after last use in each `Data API` node.
+On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call was a
+cache hit. This matched exactly how the `Data API` was used: when a downstream application started a delivery, it used
+the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node.
 
-Deploying through integration, preprod, and production in sequence is what keeps these failures contained. Issues that slip past contract tests surface before reaching prod. The technical patterns make failures *visible*; the deployment pipeline ensures visibility comes early enough to act on.
+Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching prod. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
-The strategy that runs through all of this is the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above is an instance of that: a versioned endpoint makes the migration path explicit, a timestamp makes the consistency boundary explicit, an interface makes the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
+The strategy that ran through all of this was the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above was an instance of that: a versioned endpoint made the migration path explicit, a timestamp made the consistency boundary explicit, an interface made the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
+Software breaks at boundaries because that's where assumptions accumulate.
 
 ---
 
