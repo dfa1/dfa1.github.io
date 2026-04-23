@@ -10,8 +10,6 @@ driven by a different problem. This is a retrospective on a real system — each
 
 > **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code.
 
-**TL;DR:** Every incident here had the same root cause: an implicit assumption at a service boundary — in the contract, in the consistency model, in the client code. Making each assumption explicit — through versioned endpoints, a timestamp parameter, mTLS, and a narrow interface — turned coordination problems into engineering problems.
-
 ## The starting point
 
 Before returning data, each request had to check whether the caller was entitled to see it. A dedicated entitlement
