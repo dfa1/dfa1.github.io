@@ -8,6 +8,8 @@ driven by a different problem. This is a retrospective on a real system — each
 
 *The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
 
+> **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code.
+
 **TL;DR:** Every incident here had the same root cause: an implicit assumption at a service boundary — in the contract, in the consistency model, in the client code. Making each assumption explicit — through versioned endpoints, a timestamp parameter, mTLS, and a narrow interface — turned coordination problems into engineering problems.
 
 ## The starting point
@@ -278,6 +280,18 @@ The cache absorbs repeated calls. The in-memory stub removes the external depend
 None of these are heroic. They're the result of treating each boundary as something to design, own, and evolve — rather
 than something to patch over.
 
+```
+Before                                   After
+─────────────────────────────────────    ────────────────────────────────────────────
+Data API ──HTTP──► Entitlement API       Data API ──mTLS──► API Gateway
+                                                  ──HTTPS──► Entitlement API /v2
+shared DTO                               isolated DTOs per version (OpenAPI + Pact)
+coupled deploys                          independent deploys
+perimeter trust                          mutual TLS, explicit identity
+eventual consistency                     ?asOf= timestamp, ETag / 304
+flat HTTP call                           decorator stack (cache, retry, logging)
+```
+
 - **Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it
   emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
   product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
@@ -290,6 +304,14 @@ than something to patch over.
 
 - **Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In
   practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
+
+## When to apply this
+
+The incidents here were all predictable in hindsight. The signal is usually a deployment that required more coordination than it should have, or a bug that only appeared under load because an assumption about consistency was never written down.
+
+The pattern applies wherever two teams share a boundary without anyone owning the seam between them. The cost of leaving it implicit scales with how often either side changes and how many consumers sit downstream. A single team, a single consumer, infrequent change: the informal contract probably survives. Two teams, multiple consumers, frequent change: it won't.
+
+A useful test: can either team deploy today without coordinating with the other? If not, the boundary is implicit. The incident is deferred, not avoided.
 
 ## Outcome
 
