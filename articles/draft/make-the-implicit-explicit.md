@@ -111,7 +111,6 @@ operational surface. The gateway introduces failure modes distinct from the `Ent
 
 Those failure modes require explicit retry logic with exponential backoff and jitter. The boundary doesn't disappear — it transforms into a more complex one.
 
-
 ```
 ┌──────────────────┐  mTLS   ┌─────────────────┐  HTTPS   ┌─────────────────────┐
 │    Data API      │ ──────► │   API Gateway   │ ───────► │   Entitlement API   │
@@ -120,7 +119,7 @@ Those failure modes require explicit retry logic with exponential backoff and ji
                              └─────────────────┘
 ```
 
-In this case, the API Gateway is operated by yet another team.
+The API Gateway is operated by yet another team.
 Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit
 contract. The cost of leaving it implicit shows up later as another incident.
 
@@ -205,7 +204,6 @@ FailsafeEntitlementApi      ← retry with backoff on failure
    Entitlement API
 ```
 
-
 Production-like config:
 ```java
 EntitlementApi api =
@@ -277,7 +275,7 @@ That's not an engineering problem; it's a sociotechnical one.
 
 ## What good boundary design looks like
 
-The first version is operationally simple: one HTTP call, no versioning, no decorators. And yet, it is also the hardest to
+The first version is operationally simple: one HTTP call, no versioning, no decorators. And yet the hardest to
 operate — a response shape change means a coordinated rollback across two teams, and a consistency bug mid-delivery is
 nearly invisible until it surfaces as wrong data in production.
 
