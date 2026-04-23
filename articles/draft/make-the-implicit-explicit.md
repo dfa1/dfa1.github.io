@@ -1,15 +1,17 @@
 # Make the Implicit Explicit
 
-*10 June 2021*
+*10 June 2022*
 
 *A `Data API` with per-request authorization. A series of forced decisions — versioned contracts, point-in-time
-consistency, decorator-based composition — each driven by a different problem.
-The patterns that emerge apply to any external integration — independent of language or stack.*
+consistency, decorator-based composition — each driven by a different problem. This is a retrospective on a real
+system — each of these problems surfaced in production.*
+
+*The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
 
 ## The starting point
 
-The setup is straightforward: a `Data API` with per-request authorization. Before returning data, each request has to
-check whether the caller is entitled to see it. A dedicated entitlement service holds that information, exposed over
+The setup was straightforward: a `Data API` with per-request authorization. Before returning data, each request had to
+check whether the caller was entitled to see it. A dedicated entitlement service held that information, exposed over
 HTTP/REST.
 
 Two teams, one endpoint, one shared understanding:
@@ -25,22 +27,22 @@ Two teams, one endpoint, one shared understanding:
 
 ## Versioned endpoints
 
-That holds until a field rename in the entitlement service hits the staging environment — the deserializer starts throwing errors on every call.
+That held until a field rename in the entitlement service hit the staging environment — the deserializer started throwing errors on every call.
 
-The entitlement team needs to restructure the response format to support a new authorization model. Under the existing
-setup, every consumer has to migrate simultaneously — the `Data API` shares the same DTO, so any field change requires a
+The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
+setup, every consumer had to migrate simultaneously — the `Data API` shared the same DTO, so any field change required a
 coordinated deployment.
 
-The problem is also release cadence. The `Entitlement API` and the `Data API` evolve independently, but they can't be
-*deployed* independently. A response shape change in the entitlement service means coordinating with the `Data API` team —
-and if either side needs to roll back, the other is dragged along. Every release becomes a negotiation.
+The problem was also release cadence. The `Entitlement API` and the `Data API` evolved independently, but they couldn't be
+*deployed* independently. A response shape change in the entitlement service meant coordinating with the `Data API` team —
+and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
-The solution is to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
-route at the gateway level. An [OpenAPI](https://www.openapis.org/) spec is published per version — a
+The solution was to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
+route at the gateway level. An [OpenAPI](https://www.openapis.org/) spec was published per version — a
 machine-readable contract that makes the boundary explicit to any new consumer — alongside contract testing with [Pact](https://pact.io).
-The discipline that matters is keeping the DTOs fully isolated between versions. No shared types, no inheritance
-between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this feels redundant — the fields are nearly
-identical. But it means the `Data API` team can migrate to v2 on their own schedule: test it in parallel, roll back to
+The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance
+between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly
+identical. But it meant the `Data API` team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
 
 Isolated DTOs are what an independent release cycle looks like in practice, in the presence
@@ -62,7 +64,7 @@ and on the staging environment
 
 ```
 
-Once the migration to v2 is complete, v1 is removed without any coordinated deployment.
+Once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -72,20 +74,20 @@ wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't repla
 
 ## Point-in-time queries
 
-In load testing, a delivery using the `Data API` completes with half its data fields missing. No errors in the logs — the entitlement service responded correctly
-every time. The problem is that two calls in the middle of a thousand-request delivery land after an entitlement
-update is applied. The result is a delivery that reflects two different authorization states.
+In load testing, a delivery using the `Data API` completed with half its data fields missing. No errors in the logs — the entitlement service responded correctly
+every time. The problem was that two calls in the middle of a thousand-request delivery landed after an entitlement
+update was applied. The result was a delivery that reflected two different authorization states.
 
-The root cause is the delivery model. A package delivery isn't a single `Data API` call — it's hundreds, sometimes
-thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state can
+The root cause was the delivery model. A package delivery wasn't a single `Data API` call — it was hundreds, sometimes
+thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could
 shift mid-delivery: a field authorized on request 1 might be denied by request 800.
 
-The fix is to treat the entitlement snapshot as part of the request contract. The client sends a timestamp; the
-entitlement service returns the state *as of that moment*. One timestamp anchors the entire delivery to a consistent
+The fix was to treat the entitlement snapshot as part of the request contract. The client sent a timestamp; the
+entitlement service returned the state *as of that moment*. One timestamp anchored the entire delivery to a consistent
 view.
 
-The entitlement team adds `ETag` [^etag] caching on top to make this solution scalable. If the entitlement snapshot hasn't changed since the last call, the service returns
-`304 Not Modified` and the `Data API` uses its cached copy. On high-volume deliveries this collapses hundreds of thousands
+The entitlement team added `ETag` [^etag] caching on top to make the solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
+`304 Not Modified` and the `Data API` used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
 of round-trips down to a handful.
 
 The timestamp makes consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
@@ -102,14 +104,14 @@ it's much simpler to reason about when something goes wrong.[^asOf]
 
 Internal services often rely on implicit network trust: if a caller is inside the perimeter, it is assumed safe. Zero-trust rejects that assumption — every caller must authenticate, regardless of where the call originates.
 
-The entitlement service holds authorization state for every user in the system. Treating it as implicitly trusted because it lives on an internal network is a design gap. As more services need entitlements, an API gateway is introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer has a client certificate — mutual TLS.
+The entitlement service held authorization state for every user in the system. Treating it as implicitly trusted because it lives on an internal network was a design gap. As more services needed entitlements, an API gateway was introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer had a client certificate — mutual TLS.
 
 mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduces a boundary in its own right.
 
-Every caller now needs a client certificate. Certificate rotation, expiry, and provisioning become their own
-operational surface. The gateway introduces failure modes distinct from the `Entitlement API` itself.
+Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
+operational surface. The gateway introduced failure modes distinct from the `Entitlement API` itself.
 
-Those failure modes require explicit retry logic with exponential backoff and jitter. The boundary doesn't disappear — it transforms into a more complex one.
+Those failure modes required explicit retry logic with exponential backoff and jitter. The boundary didn't disappear — it transformed into a more complex one.
 
 ```
 ┌──────────────────┐  mTLS   ┌─────────────────┐  HTTPS   ┌─────────────────────┐
@@ -119,16 +121,16 @@ Those failure modes require explicit retry logic with exponential backoff and ji
                              └─────────────────┘
 ```
 
-The API Gateway is operated by yet another team.
+The API Gateway was operated by yet another team.
 Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit
 contract. The cost of leaving it implicit shows up later as another incident.
 
 ## Taming the boundary in the client code
 
-The operational complexity outside the process is only half the story. Inside the `Data API`, the `Entitlement API`
-integration also needs to be isolated and composable.
+The operational complexity outside the process was only half the story. Inside the `Data API`, the `Entitlement API`
+integration also needed to be isolated and composable.
 
-The starting point is a plain interface — [Fowler's Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
+The starting point was a plain interface — [Fowler's Gateway pattern](https://martinfowler.com/eaaCatalog/gateway.html):
 
 ```java
 /**
@@ -141,8 +143,8 @@ interface EntitlementApi {
 }
 ```
 
-Everything behind that interface is hidden from the callers. They don't know whether the backing
-implementation is HTTP, cached, or in-memory. That isolation is what makes the rest possible. The Javadoc `@see` is also where
+Everything behind that interface was hidden from the callers. They didn't know whether the backing
+implementation was HTTP, cached, or in-memory. That isolation was what made the rest possible. The Javadoc `@see` is also where
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
 
 ```java
@@ -157,7 +159,7 @@ class InMemoryEntitlementApi implements EntitlementApi {
 
 ```
 
-From there, each concern becomes a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
+From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
 
 ```java
 // cache keyed on (user, timestamp) — avoids redundant calls within a delivery
@@ -183,7 +185,7 @@ class LoggingEntitlementApi implements EntitlementApi {
 
 ```
 
-The production stack composes them, innermost to outermost:
+The production stack composed them, innermost to outermost:
 
 ```
    Data API caller
@@ -214,9 +216,9 @@ EntitlementApi api =
 						retryPolicy));
 ```
 
-In local development or system tests, `InMemoryEntitlementApi` replaces the whole stack. It can be programmed
+In local development or system tests, `InMemoryEntitlementApi` replaced the whole stack. It could be programmed
 dynamically per test case — return this set of entitlements for this user, revoke them after a timestamp — without any
-HTTP involved. This is what makes testing the point-in-time behavior tractable: you can inject precise state changes
+HTTP involved. This was what made testing the point-in-time behavior tractable: precise state changes could be injected
 without standing up the entitlement service.
 
 The pattern works because the interface boundary is narrow and stable. Each decorator does one thing. The
@@ -224,9 +226,9 @@ composition is explicit and visible at the wiring point, not scattered across th
 
 ## The full picture
 
-The entitlement integration doesn't stay unique for long. Once the interface-plus-decorators pattern proves itself, it
-becomes the standard approach for every external dependency as the `Data API` grows.
-Every new integration gets the same treatment: a narrow "Gateway" interface, an HTTP implementation,
+The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it
+became the standard approach for every external dependency as the `Data API` grew.
+Every new integration got the same treatment: a narrow "Gateway" interface, an HTTP implementation,
 a caching layer, a retry wrapper, and an in-memory fake for testing.
 
 ```
@@ -320,7 +322,6 @@ Deploying through integration, preprod, and production in sequence is what keeps
 
 The strategy that runs through all of this is the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above is an instance of that: a versioned endpoint makes the migration path explicit, a timestamp makes the consistency boundary explicit, an interface makes the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
-*"Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
 
 ---
 
