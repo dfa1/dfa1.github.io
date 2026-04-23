@@ -73,8 +73,8 @@ wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't repla
 
 ## Point-in-time queries
 
-In load testing, a delivery using the `Data API` completed with half its data fields missing. No errors in the logs — the entitlement service responded correctly
-every time. The problem was that two calls in the middle of a thousand-request delivery landed after an entitlement
+In load testing, a delivery using the `Data API` completed with fields missing from the latter records. No errors in the logs — the entitlement service responded correctly
+every time. The problem was that calls in the latter half of a thousand-request delivery landed after an entitlement
 update was applied. The result was a delivery that reflected two different authorization states.
 
 The root cause was the delivery model. A package delivery wasn't a single `Data API` call — it was hundreds, sometimes
@@ -85,15 +85,13 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returned the state *as of that moment*. One timestamp anchored the entire delivery to a consistent
 view.
 
-The entitlement team added `ETag` [^etag] caching on top to make the solution scalable. If the entitlement snapshot hadn't changed since the last call, the service returned
-`304 Not Modified` and the `Data API` used its cached copy. On high-volume deliveries this collapsed hundreds of thousands
-of round-trips down to a handful.
+The entitlement team added `ETag` [^etag] support on top. Each entitlement change produces a new immutable snapshot; the ETag is the content hash of that snapshot. The `Data API` sends `If-None-Match` on subsequent calls — if the snapshot selected by `asOf` hasn't changed, the server returns `304 Not Modified` and the `Data API` uses its cached copy, skipping deserialization entirely.
 
 The timestamp makes consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
 it's much simpler to reason about when something goes wrong.[^asOf]
 
 ```
-┌──────────────────┐  GET /entitlements/{user}?asOf={T}   ┌─────────────────────┐
+┌──────────────────┐  GET /v1/entitlements/{user}?asOf={T}  ┌─────────────────────┐
 │    Data API      │ ───────────────────────────────────► │   Entitlement API   │
 │                  │ ◄─────────────────────────────────── │                     │
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
@@ -147,7 +145,7 @@ implementation was HTTP, cached, or in-memory. That isolation was what made the 
 the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
 
 ```java
-// Real HTTP call to /v1/entitlements/{user}?asOf={T}
+// Real HTTP call to /v2/entitlements/{user}?asOf={T}
 class HttpEntitlementApi implements EntitlementApi {
     HttpEntitlementApi(URI baseUri) { /* ... */ }
 }
@@ -163,7 +161,7 @@ From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Deco
 ```java
 // cache keyed on (user, timestamp) — avoids redundant calls within a delivery
 // the retention policy is to keep the cache as long as it is used:
-// if the key (userId/timestamp) is not used for 5 minutes, it is dropped
+// if the key (userId/timestamp) is not used for 10 minutes, it is dropped
 // (see https://github.com/ben-manes/caffeine)
 class CachingEntitlementApi implements EntitlementApi {
     CachingEntitlementApi(EntitlementApi delegate) { /* ... */ }
@@ -199,7 +197,7 @@ FailsafeEntitlementApi      ← retry with backoff on failure
  CachingEntitlementApi      ← cache keyed on userId + asOf
          │  (cache miss)
          ▼
-  HttpEntitlementApi        ← GET /v1/entitlements/...
+  HttpEntitlementApi        ← GET /v2/entitlements/...
          │
          ▼
    Entitlement API
@@ -247,13 +245,11 @@ a caching layer, a retry wrapper, and an in-memory fake for testing.
                │    limiting)     │   └──────────────────┘   └──────────────────────┘
                └────────┬─────────┘
                         │
-           ┌────────────┴─────────────┐
-           │                          │
-           ▼                          ▼
-┌─────────────────────┐    ┌─────────────────────┐
-│   Entitlement API   │    │    Entitlement API  │
-│         /v1         │    │        /v2          │
-└─────────────────────┘    └─────────────────────┘
+                        ▼
+             ┌─────────────────────┐
+             │   Entitlement API   │
+             │         /v2         │
+             └─────────────────────┘
 ```
 
 ## What good boundary design looks like
@@ -292,12 +288,11 @@ than something to patch over.
 Two teams shipped on independent schedules, with no coordinated rollbacks.
 
 The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API
-calls completed with a single coherent authorization state. The `ETag` cache on the `Entitlement API`
-proved quite effective, since user entitlements changed rarely.
+calls completed with a single coherent authorization state.
 
 On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call was a
 cache hit. This matched exactly how the `Data API` was used: when a downstream application started a delivery, it used
-the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node.
+the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. On those misses, the `ETag`/`304` path further reduced overhead — since user entitlements changed rarely, most cache-cold calls still returned `304 Not Modified`.
 
 Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching prod. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
@@ -307,6 +302,6 @@ Software breaks at boundaries because that's where assumptions accumulate.
 
 ---
 
-[^etag]: every change in the entitlements produces a new snapshot, which is used to build the `ETag` in the `Entitlement API`. The `Data API` sends requests with the `If-None-Match` header, as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
+[^etag]: each entitlement change produces a new immutable snapshot; the `ETag` is the content hash of that snapshot. The `asOf` timestamp selects the snapshot that was current at a given moment. The `Data API` sends requests with the `If-None-Match: <etag>` header — if the selected snapshot hasn't changed, the server returns `304 Not Modified`. See [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
 
-[^asOf]: every snapshot is kept for a short period of time (slightly more than 24h). After that it expires and frees the underlying storage, and it is referenced by id as the `ETag`.
+[^asOf]: snapshots are kept for slightly more than 24h before expiring and freeing the underlying storage. Within a delivery, the `CachingEntitlementApi` decorator handles repetition at the in-process level — same `userId`/`asOf` key hits the local cache without any HTTP call. The `ETag`/`304` path kicks in only on cache misses, avoiding unnecessary deserialization when the snapshot hasn't changed between deliveries.
