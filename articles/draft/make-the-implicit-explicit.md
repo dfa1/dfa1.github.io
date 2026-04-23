@@ -4,8 +4,7 @@
 
 *A `Data API` with per-request authorization. A series of forced decisions — versioned contracts, point-in-time
 consistency, decorator-based composition — each driven by a different problem.
-The patterns that emerge are the blueprint for every external
-integration that follows.*
+The patterns that emerge apply to any external integration — independent of language or stack.*
 
 ## The starting point
 
@@ -222,7 +221,7 @@ dynamically per test case — return this set of entitlements for this user, rev
 HTTP involved. This is what makes testing the point-in-time behavior tractable: you can inject precise state changes
 without standing up the entitlement service.
 
-The pattern works because the interface boundary is narrow and consistent. Each decorator does one thing. The
+The pattern works because the interface boundary is narrow and stable. Each decorator does one thing. The
 composition is explicit and visible at the wiring point, not scattered across the codebase.
 
 ## The full picture
@@ -276,7 +275,7 @@ that work for one team only. Teams need to see beyond their own service boundary
 operate in and accept changes that make the *overall* system better, even when those changes add friction locally.
 That's not an engineering problem; it's a sociotechnical one.
 
-## Architecture is the art of shaping boundaries
+## What good boundary design looks like
 
 The first version is operationally simple: one HTTP call, no versioning, no decorators. And yet, it is also the hardest to
 operate — a response shape change means a coordinated rollback across two teams, and a consistency bug mid-delivery is
@@ -319,10 +318,9 @@ On the `Data API` side, the `CachingEntitlementApi` decorator cuts entitlement c
 cache hit. This matches exactly how the `Data API` is used: when a downstream application starts a delivery, it uses
 the same `userId`/`asOf` repeatedly until all data is delivered. When the delivery ends, it stops. The 0.5% misses represent only the first call per delivery, when the cache is cold. The cache entry expires 10 minutes after last use in each `Data API` node.
 
-The three-stage pipeline — integration, preprod, production — is what keeps these failures contained. Issues that slip past contract tests surface in integration or preprod, never in prod. The technical patterns make failures *visible*; the pipeline ensures visibility comes early enough to act on.
+Deploying through integration, preprod, and production in sequence is what keeps these failures contained. Issues that slip past contract tests surface before reaching prod. The technical patterns make failures *visible*; the deployment pipeline ensures visibility comes early enough to act on.
 
-Distributed systems fail at the boundaries because that’s where assumptions accumulate
-faster than feedback. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
+The strategy that runs through all of this is the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above is an instance of that: a versioned endpoint makes the migration path explicit, a timestamp makes the consistency boundary explicit, an interface makes the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
 ---
 
