@@ -6,8 +6,6 @@
 A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each
 driven by a different problem. This is a retrospective on a real system — each of these problems surfaced in production.*
 
-*The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
-
 > **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code.
 
 ## The starting point
@@ -335,3 +333,8 @@ Software breaks at boundaries because that's where assumptions accumulate.
 [^etag]: The `asOf` timestamp selects the snapshot that was current at a given moment. See [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
 
 [^asOf]: snapshots are kept for slightly more than 24h before expiring and freeing the underlying storage. Within a delivery, the `CachingEntitlementApi` decorator handles repetition at the in-process level — same `userId`/`asOf` key hits the local cache without any HTTP call. The `ETag`/`304` path kicks in only on cache misses, avoiding unnecessary deserialization when the snapshot hasn't changed between deliveries.
+
+---
+
+*The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
+
