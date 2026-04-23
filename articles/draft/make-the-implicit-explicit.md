@@ -1,4 +1,4 @@
-# Distributed systems fail at the boundaries
+# Make the Implicit Explicit
 
 *10 June 2021*
 
