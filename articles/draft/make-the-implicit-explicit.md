@@ -320,6 +320,8 @@ Deploying through integration, preprod, and production in sequence is what keeps
 
 The strategy that runs through all of this is the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above is an instance of that: a versioned endpoint makes the migration path explicit, a timestamp makes the consistency boundary explicit, an interface makes the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
+*"Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
+
 ---
 
 [^etag]: every change in the entitlements produces a new snapshot, which is used to build the `ETag` in the `Entitlement API`. The `Data API` sends requests with the `If-None-Match` header, as described [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
