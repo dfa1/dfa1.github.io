@@ -11,7 +11,7 @@ driven by a different problem. This is a retrospective on a real system.*
 ## The starting point
 
 Before returning data, each request had to check whether the caller was entitled to see it. A dedicated entitlement
-service held that information, exposed over a REST API.
+service held that information, exposed over a REST API. Changes deployed through integration, preprod, and production in sequence — so failures that slipped past contract tests surfaced before reaching production.
 
 Two teams, one endpoint, one shared understanding:
 
@@ -321,8 +321,6 @@ cache hit. This matched exactly how the `Data API` was used: when a downstream a
 the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. On those misses, the `ETag`/`304` path further reduced overhead — since user entitlements changed rarely, most cache-cold calls still returned `304 Not Modified`.
 
 These gains weren't optimizations — they were the side-effects of making boundaries explicit.
-
-Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching production. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
 The strategy that ran through all of this was the same: make the implicit explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
