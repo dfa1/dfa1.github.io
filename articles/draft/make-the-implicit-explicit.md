@@ -63,7 +63,7 @@ and on the staging environment
 
 ```
 
-Later, Once the migration to v2 was complete, v1 was removed without any coordinated deployment.
+Later, once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -288,13 +288,13 @@ eventual consistency                     ?asOf= timestamp, ETag / 304
 flat HTTP call                           decorator stack (cache, retry, logging)
 ```
 
-- **Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a system-wide pattern — it
+- **The decorator stack scaled because someone named it early.** It wasn't invented as a system-wide pattern — it
   emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
   product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
   of generalization required someone to notice the pattern and name it explicitly — before the second integration, not
   after the fifth.
 
-- **The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
+- **Nobody owned the seam, and that was the root cause.** The early pain — coordinated rollbacks, no
   versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned
   endpoints and isolated DTOs only became possible once both teams accepted responsibility for the contract itself.
 
@@ -324,7 +324,7 @@ These gains weren't optimizations — they were the side-effects of making bound
 
 Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching production. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
-The strategy that ran through all of this was the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above was an instance of that: a versioned endpoint made the migration path explicit, a timestamp made the consistency boundary explicit, an interface made the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
+The strategy that ran through all of this was the same: make the implicit explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
 Software breaks at boundaries because that's where assumptions accumulate faster than feedback.
 
