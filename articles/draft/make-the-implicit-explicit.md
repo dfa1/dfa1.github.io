@@ -4,14 +4,14 @@
 
 *A `Data API` with per-request authorization — entitlements delegated to an `Entitlement API` owned by a separate team.
 A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each
-driven by a different problem. This is a retrospective on a real system — each of these problems surfaced in production.*
+driven by a different problem. This is a retrospective on a real system.*
 
 > **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code.
 
 ## The starting point
 
 Before returning data, each request had to check whether the caller was entitled to see it. A dedicated entitlement
-service held that information, exposed over HTTP/REST.
+service held that information, exposed over a REST API.
 
 Two teams, one endpoint, one shared understanding:
 
@@ -26,9 +26,9 @@ Two teams, one endpoint, one shared understanding:
 
 ## Versioned endpoints
 
-That held until a field rename in the entitlement service hit the staging environment — the deserializer started throwing errors on every call.
+That held until a field rename in the `Entitlement API` hit the staging environment — the deserializer started throwing errors on every call.
 
-The entitlement team needed to restructure the response format to support a new authorization model. Under the existing
+The `Entitlement API` needed to restructure the response format to support a new authorization model. Under the existing
 setup, every consumer had to migrate simultaneously — the `Data API` shared the same DTO, so any field change required a
 coordinated deployment.
 
@@ -39,7 +39,7 @@ and if either side needed to roll back, the other was dragged along. Every relea
 The solution was to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
 route at the gateway level. An [OpenAPI](https://www.openapis.org/) spec was published per version — a
 machine-readable contract that makes the boundary explicit to any new consumer — alongside contract testing with [Pact](https://pact.io).
-The discipline that mattered was keeping the DTOs fully isolated between versions. No shared types, no inheritance
+The discipline that mattered was keeping the DTOs, both in the server and in the client, fully isolated between versions. No shared types, no inheritance
 between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly
 identical. But it meant the `Data API` team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
@@ -48,7 +48,7 @@ Isolated DTOs are what an independent release cycle looks like in practice, in t
 of breaking changes. The duplication is the solution.
 
 ```
-┌──────────────────┐   GET /v1/entitlements/...   ┌─────────────────────┐
+┌──────────────────┐   GET /v1/entitlements/...         ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
 │                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
@@ -56,14 +56,14 @@ of breaking changes. The duplication is the solution.
 
 and on the staging environment
 
-┌──────────────────┐   GET /v2/entitlements/...   ┌─────────────────────┐
+┌──────────────────┐   GET /v2/entitlements/...         ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
 │                  │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
 
 ```
 
-Once the migration to v2 was complete, v1 was removed without any coordinated deployment.
+Later, Once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -87,18 +87,18 @@ The fix was to treat the entitlement snapshot as part of the request contract. T
 entitlement service returned the state *as of that moment*. One timestamp anchored the entire delivery to a consistent
 view.
 
-The entitlement team added `ETag` [^etag] support on top. Each entitlement change produces a new immutable snapshot; the ETag is the content hash of that snapshot. The `Data API` sends `If-None-Match` on subsequent calls — if the snapshot selected by `asOf` hasn't changed, the server returns `304 Not Modified` and the `Data API` uses its cached copy, skipping deserialization entirely.
+The entitlement team added `ETag` [^etag] support on top. Each entitlement change produces a new immutable snapshot; the ETag is the content hash of that snapshot. The `Data API` sends `If-None-Match` on subsequent calls — if the snapshot selected by `asOf` hasn't changed, the server returns `304 Not Modified` and the `Data API` uses its cached copy, skipping deserialization entirely:
 
-The timestamp makes consistency *explicit*. That's harder to implement than pretending eventual consistency is fine, but
-it's much simpler to reason about when something goes wrong.[^asOf]
 
 ```
-┌──────────────────┐  GET /v1/entitlements/{user}?asOf={T}  ┌─────────────────────┐
+┌──────────────────┐  GET /v1/entitlements/{user}?asOf=T  ┌─────────────────────┐
 │    Data API      │ ───────────────────────────────────► │   Entitlement API   │
 │                  │ ◄─────────────────────────────────── │                     │
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
 ```
 
+That's harder to implement than pretending eventual consistency is fine, but
+it's much simpler to reason about when something goes wrong.[^asOf]
 The timestamp parameter made the consistency boundary explicit — instead of assuming eventual consistency was acceptable, the delivery contract acknowledged the problem and gave both sides a way to work around it.
 
 ## Zero-trust at the transport layer
@@ -124,7 +124,7 @@ Those failure modes required explicit retry logic with exponential backoff and j
 
 The API Gateway was operated by yet another team.
 Every boundary crossing — between services, between teams, between release lifecycles — carries an implicit
-contract. The cost of leaving it implicit shows up later as another incident.
+contract.
 
 ## Taming the boundary in the client code
 
@@ -260,9 +260,9 @@ a caching layer, a retry wrapper, and an in-memory fake for testing.
 
 ## What good boundary design looks like
 
-The first version looks simple to write: one HTTP call, no versioning, no decorators. But it's the hardest to
+The first version was trivial to write: one HTTP call, no versioning, no decorators. But it's the hardest to
 operate — a response shape change means a coordinated rollback across two teams, and a consistency bug mid-delivery is
-nearly invisible until it surfaces as wrong data in production.
+nearly invisible until it surfaces as wrong data.
 
 The current version is the opposite. More moving parts in code: versioned endpoints, isolated DTOs, a decorator stack, a
 timestamp parameter, mTLS, retries, etc. But operationally it's predictable: each team ships independently, failures are isolated,
@@ -288,7 +288,7 @@ eventual consistency                     ?asOf= timestamp, ETag / 304
 flat HTTP call                           decorator stack (cache, retry, logging)
 ```
 
-- **Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a company-wide pattern — it
+- **Local solutions that generalize are worth naming.** The decorator stack wasn't invented as a system-wide pattern — it
   emerged from one problem. What made it durable was treating it as the standard rather than a one-off, so when the
   product-data integration came, and then the calculation service, and then Elasticsearch, nobody reinvented it. That kind
   of generalization required someone to notice the pattern and name it explicitly — before the second integration, not
@@ -296,7 +296,7 @@ flat HTTP call                           decorator stack (cache, retry, logging)
 
 - **The contract and the why need to be shared.** The early pain — coordinated rollbacks, no
   versioning — came from two teams each owning their own service but nobody owning the seam between them. Versioned
-  endpoints and isolated DTOs only became possible once someone accepted responsibility for the contract itself.
+  endpoints and isolated DTOs only became possible once both teams accepted responsibility for the contract itself.
 
 - **Isolated DTOs are what independent deployment actually looks like.** They felt like over-engineering at first. In
   practice, they were what made it possible for two teams to ship on different schedules. The duplication is the point.
@@ -322,11 +322,11 @@ the same `userId`/`asOf` repeatedly until all data was delivered. When the deliv
 
 These gains weren't optimizations — they were the side-effects of making boundaries explicit.
 
-Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching prod. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
+Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching production. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
 The strategy that ran through all of this was the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above was an instance of that: a versioned endpoint made the migration path explicit, a timestamp made the consistency boundary explicit, an interface made the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
 
-Software breaks at boundaries because that's where assumptions accumulate.
+Software breaks at boundaries because that's where assumptions accumulate faster than feedback.
 
 ---
 
