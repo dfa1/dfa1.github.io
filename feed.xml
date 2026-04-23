@@ -3,12 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-04-17T00:00:00Z</updated>
+  <updated>2026-04-23T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>urn:uuid:dfa1.github.io</id>
 
+  <entry>
+    <title>Make the Implicit Explicit</title>
+    <link href="https://dfa1.github.io/articles/make-the-implicit-explicit"/>
+    <id>urn:uuid:make-the-implicit-explicit</id>
+    <updated>2026-04-23T00:00:00Z</updated>
+    <published>2022-06-10T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>A Data API with per-request authorization delegated to an Entitlement API owned by a separate team. A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each driven by a different problem. A retrospective on making service boundaries explicit.</summary>
+  </entry>
   <entry>
     <title>Java + RocksDB - JNI</title>
     <link href="https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni"/>
