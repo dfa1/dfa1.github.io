@@ -8,6 +8,8 @@ driven by a different problem. This is a retrospective on a real system — each
 
 *The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
 
+**TL;DR:** Every incident here had the same root cause: an implicit assumption at a service boundary — in the contract, in the consistency model, in the client code. Making each assumption explicit — through versioned endpoints, a timestamp parameter, mTLS, and a narrow interface — turned coordination problems into engineering problems.
+
 ## The starting point
 
 Before returning data, each request had to check whether the caller was entitled to see it. A dedicated entitlement
@@ -71,9 +73,11 @@ changes (new fields) are invisible to existing consumers and don't require coord
 is still a breaking change, and silently mapping a missing field to null makes it worse — the system keeps running, just
 wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't replace a contract.
 
+The versioned endpoint made the migration path explicit — the boundary stopped being a shared assumption and became a contract.
+
 ## Point-in-time queries
 
-In load testing, a delivery using the `Data API` completed with fields missing from the latter records. No errors in the logs — the entitlement service responded correctly
+In load testing, a delivery using the `Data API` completed with fields missing from the later records. No errors in the logs — the entitlement service responded correctly
 every time. The problem was that calls in the latter half of a thousand-request delivery landed after an entitlement
 update was applied. The result was a delivery that reflected two different authorization states.
 
@@ -97,6 +101,8 @@ it's much simpler to reason about when something goes wrong.[^asOf]
 └──────────────────┘     200 + ETag  /  304 Not Modified  └─────────────────────┘
 ```
 
+The timestamp parameter made the consistency boundary explicit — instead of assuming eventual consistency was acceptable, the delivery contract acknowledged the problem and gave both sides a way to work around it.
+
 ## Zero-trust at the transport layer
 
 Internal services often rely on implicit network trust: if a caller is inside the perimeter, it is assumed safe. Zero-trust rejects that assumption — every caller must authenticate, regardless of where the call originates.
@@ -119,7 +125,7 @@ Those failure modes required explicit retry logic with exponential backoff and j
 ```
 
 The API Gateway was operated by yet another team.
-Each time you cross a boundary — between services, between teams, between release lifecycles — you're making an implicit
+Every boundary crossing — between services, between teams, between release lifecycles — carries an implicit
 contract. The cost of leaving it implicit shows up later as another incident.
 
 ## Taming the boundary in the client code
@@ -221,6 +227,8 @@ without standing up the entitlement service.
 The pattern works because the interface boundary is narrow and stable. Each decorator does one thing. The
 composition is explicit and visible at the wiring point, not scattered across the codebase.
 
+The interface made the integration point explicit — every cross-boundary call, regardless of what sat behind it, had a single visible seam.
+
 ## The full picture
 
 The entitlement integration didn't stay unique for long. Once the interface-plus-decorators pattern proved itself, it
@@ -294,6 +302,8 @@ On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement ca
 cache hit. This matched exactly how the `Data API` was used: when a downstream application started a delivery, it used
 the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. On those misses, the `ETag`/`304` path further reduced overhead — since user entitlements changed rarely, most cache-cold calls still returned `304 Not Modified`.
 
+These gains weren't optimizations — they were the side-effects of making boundaries explicit.
+
 Deploying through integration, preprod, and production in sequence was what kept these failures contained. Issues that slipped past contract tests surfaced before reaching prod. The technical patterns made failures *visible*; the deployment pipeline ensured visibility came early enough to act on.
 
 The strategy that ran through all of this was the same: make the implicit explicit — in the contract, in the consistency model, in the code structure. Each of the decisions above was an instance of that: a versioned endpoint made the migration path explicit, a timestamp made the consistency boundary explicit, an interface made the integration point explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
@@ -302,6 +312,6 @@ Software breaks at boundaries because that's where assumptions accumulate.
 
 ---
 
-[^etag]: each entitlement change produces a new immutable snapshot; the `ETag` is the content hash of that snapshot. The `asOf` timestamp selects the snapshot that was current at a given moment. The `Data API` sends requests with the `If-None-Match: <etag>` header — if the selected snapshot hasn't changed, the server returns `304 Not Modified`. See [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
+[^etag]: The `asOf` timestamp selects the snapshot that was current at a given moment. See [ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/ETag).
 
 [^asOf]: snapshots are kept for slightly more than 24h before expiring and freeing the underlying storage. Within a delivery, the `CachingEntitlementApi` decorator handles repetition at the in-process level — same `userId`/`asOf` key hits the local cache without any HTTP call. The `ETag`/`304` path kicks in only on cache misses, avoiding unnecessary deserialization when the snapshot hasn't changed between deliveries.
