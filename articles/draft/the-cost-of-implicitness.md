@@ -33,13 +33,21 @@ the CI pipeline can verify.
 Same move — encode the assumption in a representation the build can check — applied at
 process, code, and boundary. The layer changes; the principle does not.
 
+## What TDD and DDD gave us
+
+TDD and DDD didn't just introduce disciplines — they made the codebase safe to change. A
+suite of requirement-backed tests means a refactor has a safety net; a regression is a red
+test, not a support ticket. A domain model expressed in types means a renamed concept
+propagates as a compile error, not a grep across twelve services. Both disciplines reduce
+the cost of being wrong and increase the confidence to move.
+
+That is what makes iterative work tractable: not velocity, but reversibility. You can take
+the next step because the previous one is verified.
+
 ## The chain
 
-TDD tells you to wire requirements to tests. DDD tells you to wire the domain model to the
-code. This post is about finishing the job.
-
-The discipline, taken seriously, connects every artifact in the system. Requirements point
-to tests — a failing test means a violated requirement, not an implementation detail.
+The discipline doesn't stop at tests and types. It connects every artifact in the system.
+Requirements point to tests — a failing test means a violated requirement, not an implementation detail.
 Tests point to the code they exercise — coverage is not a vanity metric, it is a
 map of what is and isn't verified. Code encodes domain invariants in types — not as
 comments, not as runtime checks buried in service logic, but as constraints the compiler
