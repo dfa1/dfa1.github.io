@@ -6,7 +6,7 @@
 A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each
 driven by a different problem. This is a retrospective on a real system.*
 
-> **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code.
+> **Principle:** Software breaks at boundaries. Every implicit assumption at a boundary becomes an incident. The fix is always the same: make the boundary explicit — in the contract, in the consistency model, in the transport, in the code[^zen].
 
 ## The starting point
 
@@ -36,11 +36,10 @@ The problem was also release cadence. The `Entitlement API` and the `Data API` e
 *deployed* independently. A response shape change in the entitlement service meant coordinating with the `Data API` team —
 and if either side needed to roll back, the other was dragged along. Every release became a negotiation.
 
-The solution was to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible, easy to
-route at the gateway level. An [OpenAPI](https://www.openapis.org/) spec was published per version — a
+The solution was to add path-based versioning to the `Entitlement API`: `/v1/entitlements`, `/v2/entitlements`. Simple, visible and explicit. An [OpenAPI](https://www.openapis.org/) spec was published per version — a
 machine-readable contract that makes the boundary explicit to any new consumer — alongside contract testing with [Pact](https://pact.io).
 The discipline that mattered was keeping the DTOs, both in the server and in the client, fully isolated between versions. No shared types, no inheritance
-between `v1.EntitlementResponse` and `v2.EntitlementResponse`. At first this felt redundant — the fields were nearly
+between `v1.Entitlements` and `v2.Entitlements`. At first this felt redundant — the fields were nearly
 identical. But it meant the `Data API` team could migrate to v2 on their own schedule: test it in parallel, roll back to
 v1 without touching the entitlement service, and ship independently.
 
@@ -50,20 +49,16 @@ of breaking changes. The duplication is the solution.
 ```
 ┌──────────────────┐   GET /v1/entitlements/...         ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
-│                  │                                    │                     │
+│  (production)    │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
 
-
-and on the staging environment
 
 ┌──────────────────┐   GET /v2/entitlements/...         ┌─────────────────────┐
 │    Data API      │ ─────────────────────────────────► │   Entitlement API   │
-│                  │                                    │                     │
+│    (staging)     │                                    │                     │
 └──────────────────┘                                    └─────────────────────┘
 
 ```
-
-Later, once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 [Postel's law](https://en.wikipedia.org/wiki/Robustness_principle) — *be conservative in what you send, be liberal in
 what you accept* — offers partial protection here: configuring the deserializer to ignore unknown fields means additive
@@ -71,7 +66,7 @@ changes (new fields) are invisible to existing consumers and don't require coord
 is still a breaking change, and silently mapping a missing field to null makes it worse — the system keeps running, just
 wrong. Ignoring unknown fields is necessary but not sufficient; it doesn't replace a contract.
 
-The versioned endpoint made the migration path explicit — the boundary stopped being a shared assumption and became a contract.
+The versioned endpoint made the migration path explicit — the boundary stopped being a shared assumption and became a contract. Later, once the migration to v2 was complete, v1 was removed without any coordinated deployment.
 
 ## Point-in-time queries
 
@@ -83,11 +78,11 @@ The root cause was the delivery model. A package delivery wasn't a single `Data 
 thousands of them, each checking entitlements independently. Under eventual consistency, the entitlement state could
 shift mid-delivery: a field authorized on request 1 might be denied by request 800.
 
-The fix was to treat the entitlement snapshot as part of the request contract. The client sent a timestamp; the
+The solution was to treat the entitlement snapshot as part of the request contract. The client sent a timestamp; the
 entitlement service returned the state *as of that moment*. One timestamp anchored the entire delivery to a consistent
-view.
+view and it was actually useful to reproduce bugs or explain certain data issues to customers.
 
-The entitlement team added `ETag` [^etag] support on top. Each entitlement change produces a new immutable snapshot; the ETag is the content hash of that snapshot. The `Data API` sends `If-None-Match` on subsequent calls — if the snapshot selected by `asOf` hasn't changed, the server returns `304 Not Modified` and the `Data API` uses its cached copy, skipping deserialization entirely:
+After some discussions between the two teams, the `Entitlement API` added `ETag` [^etag] support on top. Each entitlement change produces a new immutable snapshot; the ETag is the content hash of that snapshot. The `Data API` sends `If-None-Match` on subsequent calls — if the snapshot selected by `asOf` hasn't changed, the server returns `304 Not Modified` and the `Data API` uses its cached copy, skipping deserialization entirely:
 
 
 ```
@@ -98,19 +93,21 @@ The entitlement team added `ETag` [^etag] support on top. Each entitlement chang
 ```
 
 That's harder to implement than pretending eventual consistency is fine, but
-it's much simpler to reason about when something goes wrong.[^asOf]
+it's much simpler to reason about when something goes wrong[^asOf].
+
 The timestamp parameter made the consistency boundary explicit — instead of assuming eventual consistency was acceptable, the delivery contract acknowledged the problem and gave both sides a way to work around it.
 
 ## Zero-trust at the transport layer
 
 Internal services often rely on implicit network trust: if a caller is inside the perimeter, it is assumed safe. Zero-trust rejects that assumption — every caller must authenticate, regardless of where the call originates.
 
-The entitlement service held authorization state for every user in the system. Treating it as implicitly trusted because it lives on an internal network was a design gap. As more services needed entitlements, an API gateway was introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer had a client certificate — mutual TLS.
+The entitlement service held authorization state for every user in the system. Treating it as implicitly trusted because it lives on an internal network was an issue waiting to be discovered by an audit. As more services needed entitlements, an API gateway was introduced to enforce identity and policy at the transport layer: routing, rate limiting, and — once each consumer had a client certificate — mutual TLS.
 
 mTLS is the concrete implementation of zero-trust at the service boundary: the server authenticates the client, the client authenticates the server, and neither trusts the network between them. But the gateway introduced a boundary in its own right.
 
 Every caller now needed a client certificate. Certificate rotation, expiry, and provisioning became their own
-operational surface. The gateway introduced failure modes distinct from the `Entitlement API` itself.
+operational surface. The API Gateway introduced failure modes distinct from the `Entitlement API` itself and it
+was operated by yet another team.
 
 Those failure modes required explicit retry logic with exponential backoff and jitter. The boundary didn't disappear — it transformed into a more complex one.
 
@@ -122,7 +119,6 @@ Those failure modes required explicit retry logic with exponential backoff and j
                              └─────────────────┘
 ```
 
-The API Gateway was operated by yet another team.
 Every boundary crossing — between services, between teams, between release lifecycles — carries an implicit
 contract.
 
@@ -145,9 +141,7 @@ interface EntitlementApi {
 ```
 
 Everything behind that interface was hidden from the callers. They didn't know whether the backing
-implementation was HTTP, cached, or in-memory. That isolation was what made the rest possible. The Javadoc `@see` is also where
-the *why* lives — a direct link back to the pattern that motivated the design, for whoever reads this six months later.
-
+implementation was the real one or a stub. That isolation was what made the rest possible:
 ```java
 // Real HTTP call to /v2/entitlements/{user}?asOf={T}
 class HttpEntitlementApi implements EntitlementApi {
@@ -160,7 +154,13 @@ class InMemoryEntitlementApi implements EntitlementApi {
 
 ```
 
-From there, each concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
+
+In local development or system tests, `InMemoryEntitlementApi` replaced the whole stack. It could be programmed
+dynamically per test case — return this set of entitlements for this user, revoke them after a timestamp — without any
+HTTP involved. This was what made testing the point-in-time behavior tractable: precise state changes could be injected
+without standing up the entitlement service.
+
+From there, each non-functional concern became a [Decorator](https://en.wikipedia.org/wiki/Decorator_pattern) layered on top:
 
 ```java
 // cache keyed on (user, timestamp) — avoids redundant calls within a delivery
@@ -181,9 +181,7 @@ class LoggingEntitlementApi implements EntitlementApi {
     LoggingEntitlementApi(EntitlementApi delegate) { /* ... */ }
 }
 
-// DistributedTracing adds the X-RequestId header
 // other decorators can be added anytime: this is an extension point of the system
-
 ```
 
 The production stack composed them, innermost to outermost:
@@ -217,13 +215,12 @@ EntitlementApi api =
             retryPolicy));
 ```
 
-In local development or system tests, `InMemoryEntitlementApi` replaced the whole stack. It could be programmed
-dynamically per test case — return this set of entitlements for this user, revoke them after a timestamp — without any
-HTTP involved. This was what made testing the point-in-time behavior tractable: precise state changes could be injected
-without standing up the entitlement service.
-
 The pattern works because the interface boundary is narrow and stable. Each decorator does one thing. The
 composition is explicit and visible at the wiring point, not scattered across the codebase.
+
+After this, two libraries quickly became the de-facto standards:
+- [failsafe](https://failsafe.dev) for retries/bulkhead
+- [caffeine](https://github.com/ben-manes/caffeine) for any local cache
 
 The interface made the integration point explicit — every cross-boundary call, regardless of what sat behind it, had a single visible seam.
 
@@ -303,26 +300,29 @@ flat HTTP call                           decorator stack (cache, retry, logging)
 
 ## When to apply this
 
-The incidents here were all predictable in hindsight. The signal is usually a deployment that required more coordination than it should have, or a bug that only appeared under load because an assumption about consistency was never written down.
+The signal is usually a deployment that required more coordination than it should have, or a bug that only appeared under
+load because an assumption about consistency was never written down.
 
 The pattern applies wherever two teams share a boundary without anyone owning the seam between them. The cost of leaving it implicit scales with how often either side changes and how many consumers sit downstream. A single team, a single consumer, infrequent change: the informal contract probably survives. Two teams, multiple consumers, frequent change: it won't.
 
-A useful test: can either team deploy today without coordinating with the other? If not, the boundary is implicit. The incident is deferred, not avoided.
+A useful test: can either team deploy today without coordinating with the other? If not, the boundary is implicit.
 
 ## Outcome
 
-Two teams shipped on independent schedules, with no coordinated rollbacks.
+The outcome is that two teams shipped on independent schedules, with no coordinated rollbacks.
 
-The point-in-time contract eliminated an entire class of consistency incidents: deliveries spanning thousands of API
+The point-in-time contract eliminated an entire class of consistency problems: deliveries spanning thousands of API
 calls completed with a single coherent authorization state.
 
 On the `Data API` side, the `CachingEntitlementApi` decorator cut entitlement calls by 99.5% (5K out of every 1M forwarded to the `Entitlement API`) — almost every call was a
 cache hit. This matched exactly how the `Data API` was used: when a downstream application started a delivery, it used
-the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expired 10 minutes after last use in each `Data API` node. On those misses, the `ETag`/`304` path further reduced overhead — since user entitlements changed rarely, most cache-cold calls still returned `304 Not Modified`.
+the same `userId`/`asOf` repeatedly until all data was delivered. When the delivery ended, it stopped. The 0.5% misses represented only the first call per delivery, when the cache was cold. The cache entry expires 10 minutes after last use in each `Data API` node. On those misses, the `ETag`/`304` path further reduced overhead — since user entitlements changed rarely, most cache-cold calls still returned `304 Not Modified`.
 
 These gains weren't optimizations — they were the side-effects of making boundaries explicit.
 
-The strategy that ran through all of this was the same: make the implicit explicit. The rest follows from [writing down the why](https://dfa1.github.io/articles/write-down-the-why).
+The strategy that ran through all of this was the same: make the implicit explicit and
+[writing down the why](https://dfa1.github.io/articles/write-down-the-why) to share the problem/solution pair with
+other teams.
 
 Software breaks at boundaries because that's where assumptions accumulate faster than feedback.
 
@@ -332,7 +332,5 @@ Software breaks at boundaries because that's where assumptions accumulate faster
 
 [^asOf]: snapshots are kept for slightly more than 24h before expiring and freeing the underlying storage. Within a delivery, the `CachingEntitlementApi` decorator handles repetition at the in-process level — same `userId`/`asOf` key hits the local cache without any HTTP call. The `ETag`/`304` path kicks in only on cache misses, avoiding unnecessary deserialization when the snapshot hasn't changed between deliveries.
 
----
-
-*The title is a tribute to "Explicit is better than implicit."* — [The Zen of Python](https://peps.python.org/pep-0020/)
+[^zen]: the title is a tribute to "Explicit is better than implicit." — [The Zen of Python](https://peps.python.org/pep-0020/).
 
