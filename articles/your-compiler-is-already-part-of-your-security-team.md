@@ -23,7 +23,7 @@ one int from the other. Your safety net was discipline only... but that scaled p
 
 ---
 
-## Make Illegal State Unrepresentable
+## Make Illegal State Unrepresentable[^minsky]
 
 This is the starting point: encode the domain of the value in your type.
 `MarketId` could be a 3-digit non-negative number (representable as `short`);
@@ -107,7 +107,7 @@ Isin isin = new Isin(request.getParam("isin"));
 instrumentService.lookup(isin);
 ```
 
-This is **[parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)**. You don't pass a string and check it repeatedly; you
+This is **[parse, don't validate](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/)**[^parse-dont-validate]. You don't pass a string and check it repeatedly; you
 transform it into a type that is its own proof of validity.
 
 ---
@@ -226,7 +226,7 @@ publish(marketId + 1, instrumentId - 1, closePrice);
 
 ---
 
-## Security is built-in
+## Security is built-in[^oracle-guidelines]
 
 The first line of defense is the domain primitives: they prevent bad inputs from leaking deep
 into the business logic and they help document how data flows.
@@ -294,7 +294,7 @@ A few deliberate choices here:
   an attacker with control over a serialized stream could reconstruct an `ApiToken`
   without passing any validation. This one method closes that path entirely.
 
-Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly once the object exists. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design** closes that gap:
+Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly once the object exists. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design**[^secure-by-design] closes that gap:
 
 ```java
 public final class Password {
@@ -495,18 +495,11 @@ In other words: the more AI you use, the more your compiler matters as you itera
 
 ---
 
-If you want to go deeper, read [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano —
-Manning, 2019). It is one of the few books that treats security as a design discipline
-rather than a bolt-on concern. Highly recommended.
+[^minsky]: The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/) — is worth reading even if you never write a line of OCaml. The insight transfers cleanly to any language with a strong type system.
 
-Another great resource is [Secure Coding Guidelines for Java SE](https://www.oracle.com/java/technologies/javase/seccodeguide.html).
+[^parse-dont-validate]: The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post [*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/). It is the clearest statement of the boundary-parsing idea I know of.
 
-The phrase "make illegal states unrepresentable" was coined by **Yaron Minsky** in the
-context of OCaml. His original post — [*Effective ML*](https://blog.janestreet.com/effective-ml/)
-— is worth reading even if you never write a line of OCaml. The insight transfers cleanly
-to any language with a strong type system.
+[^secure-by-design]: [**Secure by Design**](https://www.manning.com/books/secure-by-design) (Bergh Johnsson, Deogun, Sawano — Manning, 2019). One of the few books that treats security as a design discipline rather than a bolt-on concern. Highly recommended.
 
-The phrase "parse, don't validate" comes from **Alexis King**'s 2019 post
-[*Parse, Don't Validate*](https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/).
-It is the clearest statement of the boundary-parsing idea I know of.
+[^oracle-guidelines]: [Secure Coding Guidelines for Java SE](https://www.oracle.com/java/technologies/javase/seccodeguide.html) — Oracle's official reference for Java-specific security concerns.
 

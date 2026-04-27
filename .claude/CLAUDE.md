@@ -39,6 +39,13 @@ When a file path is given without explicit instruction, treat it as a review req
 - Warns about dogmatic positions and lecture style
 - **Titles**: prefer actionable/imperative over descriptive observations (e.g. "Make the Implicit Explicit" not "Distributed Systems Fail at Boundaries"); when proposing titles, cross-check tone and style against existing articles
 
+## Footnotes
+
+- Use named Markdown footnotes (`[^name]`) not numbered ones (`[^1]`) — easier to track and reorder
+- Anchor the footnote at the **point of use** in the body, not in a trailing end-note paragraph
+- End-note paragraphs (attribution, further reading, phrase coinage) are missed footnote opportunities — convert them; do not leave them unanchored at the bottom
+- Dated update sections (`### Update on ...`) are a different pattern — leave them as-is
+
 ## Repository layout
 
 ```
