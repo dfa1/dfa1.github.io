@@ -43,7 +43,6 @@ When I joined that team, it was backend developers and one frontend developer. N
 The first instinct when inheriting a system like this is to rewrite everything. That instinct is wrong. Joel Spolsky called it "the single worst strategic mistake that any software company can make"[^spolsky] — and the reasoning holds: the old system contains years of accumulated domain knowledge. Bugs that turned into features. Edge cases silently handled. Compensations for upstream failures. Throwing it away means losing all of that, and you won't know what you lost until it's missing in production.
 
 
-
 Instead, the approach was cultural before technical. Empower the developers to make changes. Replace fear with a process: if something breaks, understand why, fix it, and share what you learned. Every bug is an opportunity to understand the system better, not a sign that someone should have been more careful.[^motto] Over time, this shift mattered more than any individual refactoring.
 
 On the technical side: fail fast on broken invariants, add post-condition checks, and when in doubt, do less. Complexity was already the enemy — every change that added more of it made the next change harder.
@@ -52,10 +51,10 @@ This was evident with the overlapping frameworks and the volume of custom, undoc
 
 ## Months 0–3: First steps
 
+At this point we had one environment: production. One EC2 instance for the web app, then a
+primary MySQL with daily backups in S3 and a MySQL replica for data-warehouse queries.
+
 The first concrete change was removing Struts and consolidating on Spring MVC. This was already started before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stop for a while.
-
-At this point we had one environment: production. One EC2 instance for the web app, then a primary MySQL with daily backups in S3 and a MySQL replica for data-warehouse queries.
-
 
 ## Months 4–6
 
@@ -69,6 +68,12 @@ The data-warehouse job, which ran weekly and reliably died with out-of-memory er
 
 The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept data-warehouse data fresh. It also freed the team to focus on other problems.
 
+Other minor (as effort) but important fixes:
+- improved backup/restore tooling => a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
+- the collation of all tables to be utf8 as the same time
+- addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks: it was causing random bugs in production and it was easy enough to fix;
+
+
 ## Months 9–12
 
 Infrastructure started getting attention. We introduced Puppet for AWS EC2 provisioning and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable. We could create a new environment with a single `puppet apply`, pulling all dependencies — JRE, Apache Tomcat, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysops. We also started deploying smaller releases more often — instead of once every three months, we shipped regularly.
@@ -79,6 +84,11 @@ Drools, a rules engine used for a small part of the business logic, was removed 
 
 We also started forward-compatibility work for Java 8, already mainstream elsewhere but not yet adopted here. The migration ran in two phases: first, use Java 8 as the compiler target; then migrate the codebase to embrace new language features — notably lambdas and the new date/time API (the codebase still used `Calendar` and `Date`). The second phase ran in parallel with other ongoing work.
 
+The application was supposed to produce a documents for Words/Excel by using OpenOffice and ODT templates: the openoffice process was a bit unstable because of some memory leaks. First we tried to fix
+the issue but it was happening inside the process. What worked was:
+- restart of the service every day (the memory leak was really small, few KB per invocation)
+- but the real fix was to start openoffice *per request*: it was a bit slower but operationally it was way better.
+
 The milestone that stood out most: the team started treating bugs as opportunities to understand the system rather than fires to extinguish. The rule was: bug → failing test case → fix → deploy. We started modifying core parts of the system with less fear. The boy scout rule — leave the code better than you found it — had become a team habit.
 
 ## Months 12-18
@@ -86,6 +96,9 @@ The milestone that stood out most: the team started treating bugs as opportuniti
 We started to run.
 
 Continuous integration arrived, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to actually use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
+At this point was possible to run a complete build without any custom library (previously we had
+forked versions of some libraries deployed locally) => this taught me always try to collaborate
+upstream to fix the issue, forking is not viable solution.
 
 Flyway was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
 
@@ -99,8 +112,13 @@ We introduced Sonar and IntelliJ IDEA inspections for static analysis; the numbe
 
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. [TODO: expand this]
 
+At this point, the database was still holding password in cleartext => we discussed internally to use
+Apache Shiro but ultimately settled to Spring Security (as the project was already using Spring and most of the other devs were comfortable with that). Few hours later, the password were stored as BCRYPT with a lazy pattern: the system was able to read both way, as new users and old password were expiring, we were migrating the users on the way.
+
 Another important point was to publish AWS metrics on a dashboard to check various part of the system,
 using some Python scripts and AWS cloudwatch.
+
+
 
 ## Months 19-22
 
@@ -122,6 +140,11 @@ Integration tests and automated acceptance tests replaced a purely manual QA pro
 Let's Encrypt certificates replaced manual certificate management, which had been adding overhead as the number of environments grew — by this point we had production, pre-production, UAT, and CI.
 
 Load testing ran for the first time, giving numbers instead of guesses when discussing performance. We used JMeter to simulate load and surface issues.
+
+At the time we completed the "Excel over HTTP" integration: the Apache POI version was holding the
+whole excel file in memory causing Out Of Memory exceptions. After an internal discussion, I proposed
+to avoid Apache POI for this part and directly manipulate the XML on the file (ODT format is just excel) => this was faster and consumed less memory. The trade off was another small internal library but
+this time was clearly documented and covered with lot of unit/integration tests.
 
 By this point the system looked almost nothing like what we had inherited. The WAR file was down to 60 MB. The codebase was at 180,000 lines — 70,000 fewer than when we started, despite three years of new features. There were over 200 database migrations in Flyway, every schema change tracked and repeatable. Production outages had been absent for months.
 
@@ -190,19 +213,6 @@ deliver value to customers;
 **Read books** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
 **Find your motto**: example from Picard engineering tip[^picard]: Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it.
-
-
-list of refactorings
---
-
-8. improved database backup/restore
-16. fixed encoding of database
-17. openoffice cleanups
-18. new document generation using ODT templates
-21. BCRYPT for password storage
-25. build without custom maven repository
-26. thread safety in cocoon
-29. fast XSLX parser/writer
 
 ---
 
