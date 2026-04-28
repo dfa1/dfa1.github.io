@@ -10,7 +10,7 @@
 
 ## Context
 
-The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, Apache Tomcat in this case, running a custom-packaged distribution — and a production system going down roughly once a day. Apache Cocoon, Apache Struts, Spring MVC, Hibernate, Drools, jBPM — a decade of framework in late 2000's choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
+The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, Apache Tomcat in this case, running a custom-packaged distribution — and a production system going down roughly once a day. Apache Cocoon, Apache Struts, Spring MVC, Hibernate, Drools, jBPM — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
 
 The database was MySQL, with a mix of MyISAM and InnoDB tables. MyISAM does not support transactions. Any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
 
@@ -35,7 +35,7 @@ Not everything was broken. The team was already on AWS, which gave us flexibilit
 
 ### Team
 
-When I joined that team, it was backend developers and one frontend developer. No QA, no sysadmins.
+When I joined that team, there were backend developers and one frontend developer. No QA, no sysadmins.
 
 
 ## Strategic vs. Tactical
@@ -51,10 +51,9 @@ This was evident with the overlapping frameworks and the volume of custom, undoc
 
 ## Months 0–3: First steps
 
-At this point we had one environment: production. One EC2 instance for the web app, then a
-primary MySQL with daily backups in S3 and a MySQL replica for data-warehouse queries.
+At this point we had one environment: production. One EC2 instance for the web app, a primary MySQL with daily backups in S3, and a MySQL replica for data-warehouse queries.
 
-The first concrete change was removing Struts and consolidating on Spring MVC. This was already started before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stop for a while.
+The first concrete change was removing Struts and consolidating on Spring MVC. This was already started before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stopping for a while.
 
 ## Months 4–6
 
@@ -69,8 +68,8 @@ The data-warehouse job, which ran weekly and reliably died with out-of-memory er
 The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept data-warehouse data fresh. It also freed the team to focus on other problems.
 
 Other minor (as effort) but important fixes:
-- improved backup/restore tooling => a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
-- the collation of all tables to be utf8 as the same time
+- improved backup/restore tooling — a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
+- the collation of all tables to utf8 at the same time
 - addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks: it was causing random bugs in production and it was easy enough to fix;
 
 
@@ -84,7 +83,7 @@ Drools, a rules engine used for a small part of the business logic, was removed 
 
 We also started forward-compatibility work for Java 8, already mainstream elsewhere but not yet adopted here. The migration ran in two phases: first, use Java 8 as the compiler target; then migrate the codebase to embrace new language features — notably lambdas and the new date/time API (the codebase still used `Calendar` and `Date`). The second phase ran in parallel with other ongoing work.
 
-The application was supposed to produce a documents for Words/Excel by using OpenOffice and ODT templates: the openoffice process was a bit unstable because of some memory leaks. First we tried to fix
+The application was supposed to produce documents for Word/Excel by using OpenOffice and ODT templates: the OpenOffice process was a bit unstable because of some memory leaks. First we tried to fix
 the issue but it was happening inside the process. What worked was:
 - restart of the service every day (the memory leak was really small, few KB per invocation)
 - but the real fix was to start openoffice *per request*: it was a bit slower but operationally it was way better.
@@ -96,13 +95,11 @@ The milestone that stood out most: the team started treating bugs as opportuniti
 We started to run.
 
 Continuous integration arrived, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to actually use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
-At this point was possible to run a complete build without any custom library (previously we had
-forked versions of some libraries deployed locally) => this taught me always try to collaborate
-upstream to fix the issue, forking is not viable solution.
+At this point it was possible to run a complete build without any custom library (previously we had forked versions of some libraries deployed locally) — this taught me to always try to collaborate upstream to fix the issue; forking is not a viable solution.
 
 Flyway was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
 
-I remember setting up a Jenkins job to gamify the Java 8 migration: every morning we tracked how many files remained to migrate. We dropped a custom library that emulated lambdas in Java using reflection and bytecode rewriting [TODO: add link], and all uses of the Joda-Time library.
+I remember setting up a Jenkins job to gamify the Java 8 migration: every morning we tracked how many files remained to migrate. We dropped a custom library that emulated lambdas in Java using reflection and bytecode rewriting — essentially a home-grown version of [Lambdaj](https://code.google.com/archive/p/lambdaj/) — and all uses of the Joda-Time library.
 
 One day we deployed JDK 8 to production with no vestigial dependency on `Calendar`, Joda-Time, or the custom lambda library.
 
@@ -110,13 +107,11 @@ All new code required unit tests — not as a rule handed down, but as a shared 
 
 We introduced Sonar and IntelliJ IDEA inspections for static analysis; the number of subtle bugs they surfaced was striking. JavaMelody went in for runtime monitoring.
 
-Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. [TODO: expand this]
+Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. The DAOs were duplicating what the Hibernate `Session` already provides: identity map, dirty tracking, first-level cache. Except they did it with bugs. The fix was to delete the custom state management and rely on the `Session` directly.
 
-At this point, the database was still holding password in cleartext => we discussed internally to use
-Apache Shiro but ultimately settled to Spring Security (as the project was already using Spring and most of the other devs were comfortable with that). Few hours later, the password were stored as BCRYPT with a lazy pattern: the system was able to read both way, as new users and old password were expiring, we were migrating the users on the way.
+At this point, the database was still holding passwords in cleartext — we discussed using Apache Shiro internally but ultimately settled on Spring Security (the project was already using Spring and most developers were comfortable with it). A few hours later, passwords were stored as [BCrypt][^bcrypt] with a lazy migration pattern: the system could read both formats, and as users authenticated, their passwords were migrated on the fly.
 
-Another important point was to publish AWS metrics on a dashboard to check various part of the system,
-using some Python scripts and AWS cloudwatch.
+Another important point was publishing AWS metrics on a dashboard to check various parts of the system, using some Python scripts and AWS CloudWatch.
 
 
 
@@ -128,7 +123,7 @@ Hibernate was upgraded from 3.2 to 5. The migration was tricky: the codebase had
 
 Since the system was growing in usage, we added a second application node to share the load. Puppet made this straightforward. Hazelcast came in for distributed locking across the cluster and as a second-level cache for Hibernate.
 
-Around this time, the second frontend developer left — taking with him some knowledge about a custom build solution for minifying JS and CSS files. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to wro4j [TODO: add link] to build minified assets automatically during the Maven build, making it impossible to forget.
+Around this time, the second frontend developer left — taking with him some knowledge about a custom build solution for minifying JS and CSS files. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to [wro4j](https://github.com/wro4j/wro4j) to build minified assets automatically during the Maven build, making it impossible to forget.
 
 
 ## Months 23-24
@@ -143,7 +138,7 @@ Load testing ran for the first time, giving numbers instead of guesses when disc
 
 At the time we completed the "Excel over HTTP" integration: the Apache POI version was holding the
 whole excel file in memory causing Out Of Memory exceptions. After an internal discussion, I proposed
-to avoid Apache POI for this part and directly manipulate the XML on the file (ODT format is just excel) => this was faster and consumed less memory. The trade off was another small internal library but
+to avoid Apache POI for this part and directly manipulate the XML inside the file (XLSX is a ZIP archive of XML files, so direct manipulation was straightforward) — this was faster and consumed less memory. The trade off was another small internal library but
 this time was clearly documented and covered with lot of unit/integration tests.
 
 By this point the system looked almost nothing like what we had inherited. The WAR file was down to 60 MB. The codebase was at 180,000 lines — 70,000 fewer than when we started, despite three years of new features. There were over 200 database migrations in Flyway, every schema change tracked and repeatable. Production outages had been absent for months.
@@ -158,14 +153,14 @@ The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs —
 
 The team was in good shape: confident, autonomous, and shipping regularly. The remaining stretch had been quieter:
 - blob-handling cleanups (moved outside database to S3);
-- several new integrations with external services (SOAP, REST, and a funny one I call "Excel over HTTP", users were uploading empty excel files with a template and the webapp was filling up the cells);
+- several new integrations with external services (SOAP and REST);
 - infrastructure scaled to 24 machines across 3 clusters with MySQL primary/replica;
 - and the first zero-downtime production deployment;
 - Work toward Java 9+ compatibility was also underway.
 
 What I found on day one and what I left behind were barely recognizable as the same system.
 
-This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the other less senior developers grow.
+This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the less senior developers grow.
 They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
 
 
@@ -205,14 +200,13 @@ These are the practices that moved the needle most over three years:
 
 **Automate deploy and provision** — manual steps are where environments diverge and where outages start.
 
-**Deploy checklist always up to date**: threat infrastructure as code and tests as production code. They delivers value and they deserve same attention and engineering effort: everything is important to
-deliver value to customers;
+**Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
 
-**Automate**: database migration, infrastructure, boring load tests, etc
+**Automate** — database migrations, infrastructure provisioning, load tests.
 
 **Read books** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
-**Find your motto**: example from Picard engineering tip[^picard]: Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it.
+**Find your motto** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it."
 
 ---
 
@@ -222,4 +216,6 @@ deliver value to customers;
 
 [^motto]: "Every bug is an opportunity" — a personal motto that stuck. Developers who have worked with me since will recognize it. The phrase does real work: it reframes a problem as a chance to learn, and that shift in mindset changes how a team responds under pressure.
 
-[^picard]: https://x.com/PicardTips
+[^picard]: Picard Engineering Tips (@PicardTips on X) — fictional engineering advice in the voice of Jean-Luc Picard. https://x.com/PicardTips
+
+[^bcrypt]: Spring Security `BCrypt` — https://docs.spring.io/spring-security/site/docs/current/api/org/springframework/security/crypto/bcrypt/BCrypt.html
