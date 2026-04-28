@@ -1,6 +1,6 @@
 # The Slow Fix
 
-*22 Decembrer 2017*
+*22 December 2017*
 
 *This is a success story when I was working as a consultant in the early 2010s. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
@@ -8,7 +8,7 @@
 
 The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, [Apache Tomcat](https://tomcat.apache.org/) in this case, running a custom-packaged distribution — and a production system going down roughly once a day. [Apache Cocoon](https://cocoon.apache.org/), [Apache Struts](https://struts.apache.org/), [Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc.html), [Hibernate](https://hibernate.org/), [Drools](https://www.drools.org/), [jBPM](https://www.jbpm.org/) — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
 
-**databasée*: the database was [MySQL](https://www.mysql.com/), with a mix of MyISAM[^myisam] and InnoDB[^innodb] tables. MyISAM does not support transactions and any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
+**database**: the database was [MySQL](https://www.mysql.com/), with a mix of MyISAM[^myisam] and InnoDB[^innodb] tables. MyISAM does not support transactions and any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
 
 **too much magic**: a significant portion of the framework layer was built on Java reflection and dynamic proxies. The code was hard to follow statically and harder to debug at runtime. Proxied objects masked their actual types; reflective calls bypassed IDE navigation and static analysis. Bugs in this layer produced failures with no obvious connection to the triggering code.
 
@@ -26,9 +26,7 @@ Not everything was broken. The team was already on [AWS](https://aws.amazon.com/
 
 When I joined the team, there were two backend developers and one frontend developer. No QA, no sysadmins.
 
-The problems weren't just technical: we had committed feature to deliver within certain dates. So
-every stabilization work had to compete against other priorities (this is normal but in our cases
-was really hard to focus on new feature with production going down often).
+The problems weren't just technical: we had committed to features with delivery dates. Every stabilization effort had to compete against other priorities — normal in itself, but hard to navigate when production went down daily.
 
 ## Months 0–3: First steps
 
@@ -40,9 +38,9 @@ The first concrete change was removing Struts and consolidating on Spring MVC. T
 
 ## Months 4–6: Hard choices
 With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?"
-But we also had to decide what to keep in our stabilization effort. So we decided to always prioritizerefactoring with:
-- trivial to prove they are right but move the code in the direction (I call these "mechanical refactorings");
-- and around feature we were touching in that release.
+But we also had to decide what to keep in our stabilization effort. So we decided to always prioritize refactoring that was:
+- trivial to prove correct but moves the code in the right direction (I call these "mechanical refactorings");
+- and around features we were touching in that release.
 
 Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate.
 
@@ -62,12 +60,12 @@ on new features.
 
 ## Months 7–9: Infra as code
 
-Infrastructure started getting attention. In my previous consultant work, I was exposed to [Puppet](https://www.puppet.com/) for on premise infra. So I proposed that in a dev meeting for AWS EC2 and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable (the release was built on a developer machine, hoping it has everything committed).
-After few days of setup, we could create a new environment with a single `puppet apply`, pulling all packages — JRE, Apache Tomcat + custom jars, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysop. We also started deploying smaller releases more often — instead of once every 3 months, we shipped every 3 weeks.
+Infrastructure started getting attention. In my previous consultant work, I was exposed to [Puppet](https://www.puppet.com/) for on-premises infrastructure. I proposed it in a dev meeting for AWS EC2 and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable (the release was built on a developer machine, hoping it has everything committed).
+After a few days of setup, we could create a new environment with a single `puppet apply`, pulling all packages — JRE, Apache Tomcat + custom jars, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysop. We also started deploying smaller releases more often — instead of once every 3 months, we shipped every 3 weeks.
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes without blocking pre-production, usually reserved for hot fixes.
 
-[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. So the weigth was not justified: so this was a clear tension with previous refactoring. Until that point we were replacing custom libs with external libs but in this case was really trivial "if conditions":
+[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. The weight was not justified — a clear tension with the previous refactoring direction. Until that point we were replacing custom libs with external libs but in this case was really trivial "if conditions":
 
 ```
 rule "No Gold Customers"
@@ -85,7 +83,7 @@ The application produced documents for Word/Excel using [OpenOffice](https://www
 
 We also started forward-compatibility work for Java 8, already mainstream elsewhere but not yet adopted here. The migration ran in two phases: first, use Java 8 as the compiler target; then migrate the codebase to embrace new language features — notably lambdas and the new date/time API (the codebase still used `Calendar` and `Date`). The second phase ran in parallel with other ongoing work.
 
-The milestone that stood out most: the team started treating bugs as opportunities to understand the system rather than fires to extinguish. The rule was: bug → failing test case → fix → deploy. We started modifying core parts of the system with less fear. The boy scout rule — leave the code better than you found it — had become a team habit. At that time I knew that leading by example is
+The milestone that stood out most: the team started treating bugs as opportunities to understand the system rather than fires to extinguish. The rule was: bug → failing test case → fix → deploy. We started modifying core parts of the system with less fear. The boy scout rule — leave the code better than you found it — had become a team habit. At that point, leading by example had proven to be the most effective lever.
 
 ## Months 10–12: More confidence
 
@@ -153,8 +151,7 @@ Around this time, the second frontend developer left — taking with him some kn
 
 ## Months 19–24: Ready to scale
 
-At this time also business started to see the benefits of our invisible work. So they started to
-onboard more internal users and with that, more opportunities for us :-)
+By this point, the business had started to see the benefits of our invisible work. They began onboarding more internal users — and with that came more opportunities for the team.
 
 The continuous-improvement cycle was fully in place. Integration tests and automated acceptance tests replaced a purely manual QA process. jBPM, the workflow engine, was removed — its use case didn't require it. A straightforward state machine, written from scratch and fully covered by integration tests, replaced it with a fraction of the complexity.
 
@@ -266,6 +263,12 @@ These are the practices that moved the needle most over three years:
 ---
 
 [^phoenix]: Gene Kim, Kevin Behr, George Spafford — *The Phoenix Project* (2013).
+
+[^myisam]: MyISAM — the original MySQL storage engine; no support for transactions, foreign keys, or row-level locking.
+
+[^innodb]: InnoDB — the transactional MySQL storage engine; supports ACID transactions, row-level locking, and foreign keys.
+
+[^odt]: ODT (Open Document Text) — the XML-based document format used by OpenOffice and LibreOffice.
 
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
 
