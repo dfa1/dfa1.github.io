@@ -1,12 +1,10 @@
-# Out of the Tar Pit
-
-<!-- TODO: rework title — kept as original from 2017 Notes.app import -->
+# The Slow Fix
 
 *2 May 2026*
 
 ## Why?
 
-*This is a success story. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
+*This is a success story when I was a working as consulatant in early 2010's. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
 ## Context
 
