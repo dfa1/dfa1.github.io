@@ -2,18 +2,15 @@
 
 <!-- TODO: rework title — kept as original from 2017 Notes.app import -->
 
-<!-- TODO: add date (italic) and short italic intro — required structure -->
+*2 May 2026*
 
 ## Why?
 
-This is a success story. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is *The Phoenix Project*[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.
-
-[^phoenix]: Gene Kim, Kevin Behr, George Spafford — *The Phoenix Project* (2013).
-
+*This is a success story. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
 ## Context
 
-The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, Apache Tomcat in this case, running a custom-packaged distribution — and a production system going down roughly once a day. Apache Cocoon, Apache Struts, Spring MVC, Hibernate 3.2, Drools, jBPM — a decade of framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
+The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, Apache Tomcat in this case, running a custom-packaged distribution — and a production system going down roughly once a day. Apache Cocoon, Apache Struts, Spring MVC, Hibernate, Drools, jBPM — a decade of framework in late 2000's choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
 
 The database was MySQL, with a mix of MyISAM and InnoDB tables. MyISAM does not support transactions. Any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
 
@@ -45,9 +42,7 @@ When I joined that team, it was backend developers and one frontend developer. N
 
 The first instinct when inheriting a system like this is to rewrite everything. That instinct is wrong. Joel Spolsky called it "the single worst strategic mistake that any software company can make"[^spolsky] — and the reasoning holds: the old system contains years of accumulated domain knowledge. Bugs that turned into features. Edge cases silently handled. Compensations for upstream failures. Throwing it away means losing all of that, and you won't know what you lost until it's missing in production.
 
-[^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
 
-[^motto]: "Every bug is an opportunity" — a personal motto that stuck. Developers who have worked with me since will recognize it. The phrase does real work: it reframes a problem as a chance to learn, and that shift in mindset changes how a team responds under pressure.
 
 Instead, the approach was cultural before technical. Empower the developers to make changes. Replace fear with a process: if something breaks, understand why, fix it, and share what you learned. Every bug is an opportunity to understand the system better, not a sign that someone should have been more careful.[^motto] Over time, this shift mattered more than any individual refactoring.
 
@@ -55,14 +50,14 @@ On the technical side: fail fast on broken invariants, add post-condition checks
 
 This was evident with the overlapping frameworks and the volume of custom, undocumented internal libraries. At that time I proposed to the team to use only open-source libraries with a suitable license — to have documentation, benefit from code already tested by others, and maintain dependencies as a separate concern — but libraries had to be self-contained: no libraries using libraries using libraries.
 
-## Months 0–6: First steps
+## Months 0–3: First steps
 
 The first concrete change was removing Struts and consolidating on Spring MVC. This was already started before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stop for a while.
 
 At this point we had one environment: production. One EC2 instance for the web app, then a primary MySQL with daily backups in S3 and a MySQL replica for data-warehouse queries.
 
 
-## Months 6–12
+## Months 4–6
 
 With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?"
 
@@ -74,7 +69,7 @@ The data-warehouse job, which ran weekly and reliably died with out-of-memory er
 
 The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept data-warehouse data fresh. It also freed the team to focus on other problems.
 
-## Months 12–18
+## Months 9–12
 
 Infrastructure started getting attention. We introduced Puppet for AWS EC2 provisioning and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable. We could create a new environment with a single `puppet apply`, pulling all dependencies — JRE, Apache Tomcat, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysops. We also started deploying smaller releases more often — instead of once every three months, we shipped regularly.
 
@@ -86,7 +81,7 @@ We also started forward-compatibility work for Java 8, already mainstream elsewh
 
 The milestone that stood out most: the team started treating bugs as opportunities to understand the system rather than fires to extinguish. The rule was: bug → failing test case → fix → deploy. We started modifying core parts of the system with less fear. The boy scout rule — leave the code better than you found it — had become a team habit.
 
-## Months 18–24
+## Months 12-18
 
 We started to run.
 
@@ -104,7 +99,10 @@ We introduced Sonar and IntelliJ IDEA inspections for static analysis; the numbe
 
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. [TODO: expand this]
 
-## Months 24–30
+Another important point was to publish AWS metrics on a dashboard to check various part of the system,
+using some Python scripts and AWS cloudwatch.
+
+## Months 19-22
 
 The infrastructure side caught up with the application side. CentOS 7 replaced CentOS 6; `systemctl` replaced the handwritten bash scripts managing services. We switched to the upstream Apache Tomcat 7 package, dropping the custom distribution we had inherited.
 
@@ -115,7 +113,7 @@ Since the system was growing in usage, we added a second application node to sha
 Around this time, the second frontend developer left — taking with him some knowledge about a custom build solution for minifying JS and CSS files. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to wro4j [TODO: add link] to build minified assets automatically during the Maven build, making it impossible to forget.
 
 
-## Months 30–36
+## Months 23-24
 
 The continuous-improvement cycle was fully operative.
 
@@ -129,22 +127,31 @@ By this point the system looked almost nothing like what we had inherited. The W
 
 We were deploying several times a week — sometimes twice in a day.
 
-## Month 36+
+## Month 24+
 
-After three years, I left the company. The team had grown to five backend developers, two frontend, and two QA — still no sysadmins.
+After 2 years, I left the company.
 
-The team was in good shape: confident, autonomous, and shipping regularly. The remaining stretch had been quieter: blob-handling cleanups, several integrations with external services (SOAP, REST, Excel over HTTP), infrastructure scaling to twenty-four machines across three clusters with two primary/replica pairs, and the first zero-downtime production deployment. Work toward Java 9 compatibility was also underway.
+The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs — still no sysadmins.
+
+The team was in good shape: confident, autonomous, and shipping regularly. The remaining stretch had been quieter:
+- blob-handling cleanups (moved outside database to S3);
+- several new integrations with external services (SOAP, REST, and a funny one I call "Excel over HTTP", users were uploading empty excel files with a template and the webapp was filling up the cells);
+- infrastructure scaled to 24 machines across 3 clusters with MySQL primary/replica;
+- and the first zero-downtime production deployment;
+- Work toward Java 9+ compatibility was also underway.
 
 What I found on day one and what I left behind were barely recognizable as the same system.
 
-This wasn't my first lead role. But in retrospect it was one of the most satisfying — not because of the technical work, but because of watching the junior developers grow. They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
+This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the other less senior developers grow.
+They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
 
 
 ## Closing
 
 ### Bad patterns
 
-These appeared constantly across the codebase and are worth naming explicitly, because they recur in most legacy codebases:
+These appeared constantly across the codebase and are worth naming explicitly, because they recur
+in most legacy codebases:
 
 **Log and rethrow** — catching an exception, logging it, and re-throwing it produces duplicate stack traces and obscures the origin of the error. Either handle it or let it propagate.
 
@@ -175,44 +182,34 @@ These are the practices that moved the needle most over three years:
 
 **Automate deploy and provision** — manual steps are where environments diverge and where outages start.
 
-**Deploy checklist always up to date**
+**Deploy checklist always up to date**: threat infrastructure as code and tests as production code. They delivers value and they deserve same attention and engineering effort: everything is important to
+deliver value to customers;
 
-**Automate**: database migration, infrastructure
+**Automate**: database migration, infrastructure, boring load tests, etc
 
 **Read books** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
-**Find your motto**: example from Picard engineering tip: Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it.
+**Find your motto**: example from Picard engineering tip[^picard]: Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it.
 
 
 list of refactorings
 --
 
-1. svn -> git migration
-2. release script
-3. RPM build
-4. puppet deploy
-5. version in login page
-6. let's encrypt
-7. dashboard for AWS metrics
 8. improved database backup/restore
-9. improved logging (SLF4J)
-10. removed lambdaj (rename as "custom pseudo functional library")
-11. removed stateful DAOs + fixed unit-of-work problems
-12. removed JBPM
-13. hibernate migration 3.x -> 5.x
-14. flyway + automatic db patches
-15. fixed mysql myisam tables
 16. fixed encoding of database
 17. openoffice cleanups
 18. new document generation using ODT templates
-19. malta -> wro4j migration
-20. DWH redesign (eventually consistent)
 21. BCRYPT for password storage
-22. removal of unused jars and classes
-23. unit vs integration vs acceptance tests
-24. java6 -> java7 -> java8 migration
 25. build without custom maven repository
 26. thread safety in cocoon
-27. code quality (e.g. sonar)
-28. hazelcast
 29. fast XSLX parser/writer
+
+---
+
+[^phoenix]: Gene Kim, Kevin Behr, George Spafford — *The Phoenix Project* (2013).
+
+[^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
+
+[^motto]: "Every bug is an opportunity" — a personal motto that stuck. Developers who have worked with me since will recognize it. The phrase does real work: it reframes a problem as a chance to learn, and that shift in mindset changes how a team responds under pressure.
+
+[^picard]: https://x.com/PicardTips
