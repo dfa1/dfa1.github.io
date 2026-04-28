@@ -8,9 +8,9 @@
 
 ## Context
 
-The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, Apache Tomcat in this case, running a custom-packaged distribution — and a production system going down roughly once a day. Apache Cocoon, Apache Struts, Spring MVC, Hibernate, Drools, jBPM — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
+The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, [Apache Tomcat](https://tomcat.apache.org/) in this case, running a custom-packaged distribution — and a production system going down roughly once a day. [Apache Cocoon](https://cocoon.apache.org/), [Apache Struts](https://struts.apache.org/), [Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc.html), [Hibernate](https://hibernate.org/), [Drools](https://www.drools.org/), [jBPM](https://www.jbpm.org/) — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
 
-The database was MySQL, with a mix of MyISAM and InnoDB tables. MyISAM does not support transactions. Any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
+The database was [MySQL](https://www.mysql.com/), with a mix of MyISAM[^myisam] and InnoDB[^innodb] tables. MyISAM does not support transactions. Any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
 
 ### Custom libraries
 
@@ -21,35 +21,26 @@ The system relied on several in-house libraries with no documentation and no ori
 A significant portion of the framework layer was built on Java reflection and dynamic proxies. The code was hard to follow statically and harder to debug at runtime. Proxied objects masked their actual types; reflective calls bypassed IDE navigation and static analysis. Bugs in this layer produced failures with no obvious connection to the triggering code.
 
 
-### Bad points
+### What was broken
 
 The problems weren't just technical. Passwords were stored in plain text, protected by a custom security framework that was itself undocumented. Releases were done manually — deploy, then copy-paste SQL patches directly into the database console, hope nothing breaks, and hope the same patch hadn't already been applied in a previous release. The build process required tribal knowledge that lived only in people's heads, and those people had left. Unit tests existed in the Maven configuration but were disabled. There was no CI, no integration tests, no structured logging — the codebase mixed Logback configuration with a custom `Logger` wrapper class of uncertain provenance, and errors surfaced through `ex.printStackTrace()` or, worse, by email. Empty `catch` blocks were everywhere. Apache Maven and Ant JARs had somehow ended up on the production classpath. Onboarding a new developer meant days of undocumented setup rituals. The team wasn't incompetent — they were paralyzed by a system that punished curiosity.
 
 
-### Good points
+### What was working
 
-Not everything was broken. The team was already on AWS, which gave us flexibility without needing physical infrastructure. SVN was in use with sane branching defaults — at least history was preserved. There was a backup/restore culture, which meant the database wasn't a gamble. And someone, at some point, had started splitting the monolith into separate modules — incomplete, but a direction worth continuing.
+Not everything was broken. The team was already on [AWS](https://aws.amazon.com/), which gave us flexibility without needing physical infrastructure. [SVN](https://subversion.apache.org/) was in use with sane branching defaults — at least history was preserved. There was a backup/restore culture, which meant the database wasn't a gamble. And someone, at some point, had started splitting the monolith into separate modules — incomplete, but a direction worth continuing.
 
 
 ### Team
 
-When I joined the team, there were backend developers and one frontend developer. No QA, no sysadmins.
+When I joined the team, there were two backend developers and one frontend developer. No QA, no sysadmins.
 
-
-## Strategic vs. Tactical
-
-The first instinct when inheriting a system like this is to rewrite everything. That instinct is wrong. Joel Spolsky called it "the single worst strategic mistake that any software company can make"[^spolsky] — and the reasoning holds: the old system contains years of accumulated domain knowledge. Bugs that turned into features. Edge cases silently handled. Compensations for upstream failures. Throwing it away means losing all of that, and you won't know what you lost until it's missing in production.
-
-
-Instead, the approach was cultural before technical. Empower the developers to make changes. Replace fear with a process: if something breaks, understand why, fix it, and share what you learned. Every bug is an opportunity to understand the system better, not a sign that someone should have been more careful.[^motto] Over time, this shift mattered more than any individual refactoring.
-
-On the technical side: fail fast on broken invariants, add post-condition checks, and when in doubt, do less. Complexity was already the enemy — every change that added more of it made the next change harder.
-
-This was evident with the overlapping frameworks and the volume of custom, undocumented internal libraries. At that time I proposed that the team use only open-source libraries with a suitable license — to have documentation, benefit from code already tested by others, and maintain dependencies as a separate concern — but libraries had to be self-contained: no libraries using libraries using libraries.
 
 ## Months 0–3: First steps
 
 At this point we had two environments: production and pre-production. Pre-production received fixes with a copy of the previous day's production data — which meant hotfixes and new-feature testing could not happen simultaneously without manually syncing the databases. One EC2 instance for the web app, a primary MySQL instance with daily backups in S3, and a MySQL replica for data-warehouse queries.
+
+The first months were the hardest. Daily outages meant the team was in constant firefighting mode — no space to think, no focus, no sense of direction. Every morning started with a post-mortem and ended with a workaround. Building anything durable in that environment required stopping the bleeding first.
 
 The first concrete change was removing Struts and consolidating on Spring MVC. This was already underway before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stopping for a while.
 
@@ -57,7 +48,7 @@ The first concrete change was removing Struts and consolidating on Spring MVC. T
 
 With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?"
 
-Logging moved from `printStackTrace` and email alerts to SLF4J with Logback: this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate.
+Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate.
 
 The build became a single command: `mvn package`, with unit tests re-enabled to cover the new parts of the system.
 
@@ -67,31 +58,33 @@ The fix was simple: track which entities changed during the OLTP workload in a s
 
 Other minor (as effort) but important fixes:
 - improved backup/restore tooling — a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
-- the collation of all tables to utf8 at the same time
+- migrated the collation of all tables to utf8
 - addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks: it was causing random bugs in production and it was easy enough to fix;
 
+This was the first moment the system became predictably stable.
 
-## Months 7-9
+## Months 7–9
 
-Infrastructure started getting attention. We introduced Puppet for AWS EC2 provisioning and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable. We could create a new environment with a single `puppet apply`, pulling all dependencies — JRE, Apache Tomcat, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysops. We also started deploying smaller releases more often — instead of once every three months, we shipped regularly.
+Infrastructure started getting attention. We introduced [Puppet](https://www.puppet.com/) for AWS EC2 provisioning and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable. We could create a new environment with a single `puppet apply`, pulling all dependencies — JRE, Apache Tomcat, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysop. We also started deploying smaller releases more often — instead of once every three months, we shipped regularly.
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes before they hit production.
 
-Drools, a rules engine used for a small part of the business logic, was removed and replaced with Java validation logic. It was an experiment that had reached production but was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case it was already handling.
+[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with Java validation logic. It was an experiment that had reached production but was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case it was already handling.
 
 We also started forward-compatibility work for Java 8, already mainstream elsewhere but not yet adopted here. The migration ran in two phases: first, use Java 8 as the compiler target; then migrate the codebase to embrace new language features — notably lambdas and the new date/time API (the codebase still used `Calendar` and `Date`). The second phase ran in parallel with other ongoing work.
 
-The application produced documents for Word/Excel using OpenOffice and ODT templates: the OpenOffice process was unstable due to memory leaks inside the process itself, which couldn't be fixed directly. What worked was:
+The application produced documents for Word/Excel using [OpenOffice](https://www.openoffice.org/) and ODT templates[^odt]: the OpenOffice process was unstable due to memory leaks inside the process itself, which couldn't be fixed directly. What worked was:
 - restarting the service daily (the leak was small — a few KB per invocation)
 - but the real fix was starting OpenOffice *per request*: slower per request but far more stable operationally.
 
 The milestone that stood out most: the team started treating bugs as opportunities to understand the system rather than fires to extinguish. The rule was: bug → failing test case → fix → deploy. We started modifying core parts of the system with less fear. The boy scout rule — leave the code better than you found it — had become a team habit.
 
-## Months 10-12
+## Months 10–12
 
 We started to run.
 
 Continuous integration arrived, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to actually use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
+
 At this point it was possible to run a complete build without any custom library (previously we had forked versions of some libraries deployed locally) — this taught me to always try to collaborate upstream to fix the issue; forking is not a viable solution.
 
 Flyway was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
@@ -106,13 +99,13 @@ We introduced Sonar and IntelliJ IDEA inspections for static analysis; the numbe
 
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. The DAOs were duplicating what the Hibernate `Session` already provides: identity map, dirty tracking, first-level cache. Except they did it with bugs. The fix was to delete the custom state management and rely on the `Session` directly.
 
-At this point, the database was still holding passwords in cleartext — we discussed using Apache Shiro internally but ultimately settled on Spring Security (the project was already using Spring and most developers were comfortable with it). A few hours later, passwords were stored as BCrypt[^bcrypt] with a lazy migration pattern: the system could read both formats, and as users authenticated, their passwords were migrated on the fly.
+At this point, the database was still holding passwords in cleartext — we had an internal discussion about using Apache Shiro but ultimately settled on Spring Security (the project was already using Spring and most developers were comfortable with it). A few hours later, passwords were stored as BCrypt[^bcrypt] with a lazy migration pattern: the system could read both formats, and as users authenticated, their passwords were migrated on the fly.
 
 Another important point was publishing AWS metrics on a dashboard to check various parts of the system, using some Python scripts and AWS CloudWatch.
 
 
 
-## Months 13-18
+## Months 13–18
 
 The infrastructure side caught up with the application side. CentOS 7 replaced CentOS 6; `systemctl` replaced the handwritten bash scripts managing services. We switched to the upstream Apache Tomcat 7 package, dropping the custom distribution we had inherited.
 
@@ -151,7 +144,7 @@ Since the system was growing in usage, we added a second application node to sha
 Around this time, the second frontend developer left — taking with him some knowledge about a custom build solution for minifying JS and CSS files. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to [wro4j](https://github.com/wro4j/wro4j) to build minified assets automatically during the Maven build, making it impossible to forget.
 
 
-## Months 19-24
+## Months 19–24
 
 The continuous-improvement cycle was fully in place.
 
@@ -178,11 +171,12 @@ The team was in good shape: confident, autonomous, and shipping regularly. The r
 - several new integrations with external services (SOAP and REST);
 - infrastructure scaled to 24 machines across 3 clusters with MySQL primary/replica;
 - and the first zero-downtime production deployment;
-- Work toward Java 9+ compatibility was also underway.
+- work toward Java 9+ compatibility was also underway.
 
 What I found on day one and what I left behind were barely recognizable as the same system.
 
 This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the junior developers grow.
+
 They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
 
 
@@ -200,9 +194,17 @@ They went from being afraid to touch anything to taking ownership of the system,
 
 ## Tactical and Strategic
 
-Tactical fixes buy time and reduce pain immediately. Strategic bets change the system's trajectory — they compound over time and enable things that were previously impossible.
+Early on, one of the developers proposed a full rewrite. The reasoning was understandable — the codebase was a mess, the framework stack was a decade old, and the system was going down every day. Starting clean felt like the obvious answer.
 
-The key distinction: tactical work has an immediate, visible payoff. Strategic work often looks like overhead until suddenly it doesn't.
+It wasn't. Joel Spolsky called it "the single worst strategic mistake that any software company can make"[^spolsky] — and the reasoning holds: the old system contains years of accumulated domain knowledge. Bugs that turned into features. Edge cases silently handled. Compensations for upstream failures. Throwing it away means losing all of that, and you won't know what you lost until it's missing in production.
+
+Instead, the approach was cultural before technical. Empower the developers to make changes. Replace fear with a process: if something breaks, understand why, fix it, and share what you learned. Every bug is an opportunity to understand the system better, not a sign that someone should have been more careful.[^motto] Over time, this shift mattered more than any individual refactoring.
+
+On the technical side: fail fast on broken invariants, add post-condition checks, and when in doubt, do less. Complexity was already the enemy — every change that added more of it made the next change harder.
+
+This was evident with the overlapping frameworks and the volume of custom, undocumented internal libraries. At that time I proposed that the team use only open-source libraries with a suitable license — to have documentation, benefit from code already tested by others, and maintain dependencies as a separate concern — but libraries had to be self-contained: no libraries using libraries using libraries.
+
+Tactical fixes buy time and reduce pain immediately. Strategic bets change the system's trajectory — they compound over time and enable things that were previously impossible. The key distinction: tactical work has an immediate, visible payoff. Strategic work often looks like overhead until suddenly it doesn't.
 
 The clearest examples from this project:
 
@@ -211,17 +213,19 @@ The clearest examples from this project:
 - **A UAT environment** looked like a nice-to-have. It was the precondition for deploying multiple times per week.
 - **Flyway migrations** eliminated an operational annoyance. They also made database divergence between environments structurally impossible.
 - **Puppet provisioning** seemed like infrastructure housekeeping. When we needed to scale to 24 machines, it was a non-event.
+- **The Java 8 migration** looked like a compiler upgrade. It eliminated an entire class of custom libraries — the home-grown lambda emulator, Joda-Time — and aligned the codebase with the ecosystem, making every future library upgrade easier.
 
-There's a useful negative example too. At some point the conversation about migrating to PostgreSQL came up — the manager pushed for it. The call was to defer it. Not because it was wrong in principle, but because the preconditions weren't there: no reproducible migrations, no stable environments, no test coverage to verify behavior across a different database. It would have been high-cost, high-risk work with questionable strategic payoff given where the system was. Sequencing matters as much as choosing.
+There's a useful negative example too. At some point the manager asked what it would cost to migrate to PostgreSQL — a reasonable question, given Oracle's acquisition of MySQL and the uncertainty it raised about licensing. The call was to defer it. Not because it was wrong in principle, but because the preconditions weren't there: no reproducible migrations, no stable environments, no test coverage to verify behavior across a different database. It would have been high-cost, high-risk work with questionable strategic payoff given where the system was. Sequencing matters as much as choosing.
 
 The judgment isn't "fix the most painful thing." It's "fix the thing that opens the next door."
+
+One thing this account doesn't show: the constant tension between technical migrations and feature delivery. The calls above are the ones that worked out. In practice, migrations were regularly paused, deferred, or split to make room for product work — and not every trade-off was clean. The happy path is easier to write about than the negotiation.
 
 ## Closing
 
 ### Bad patterns
 
-These appeared constantly across the codebase and are worth naming explicitly, because they recur
-in most legacy codebases:
+These appeared constantly across the codebase and are worth naming explicitly, because they recur in most legacy codebases:
 
 **Log and rethrow** — catching an exception, logging it, and re-throwing it produces duplicate stack traces and obscures the origin of the error. Either handle it or let it propagate.
 
@@ -250,11 +254,9 @@ These are the practices that moved the needle most over three years:
 
 **Mutation testing** — use it to find tests that don't actually verify anything.
 
-**Automate deploy and provision** — manual steps are where environments diverge and where outages start.
+**Automate deploy and provision** — manual steps are where environments diverge and where outages start: database migrations, infrastructure provisioning, load tests.
 
 **Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
-
-**Automate** — database migrations, infrastructure provisioning, load tests.
 
 **Read books:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
