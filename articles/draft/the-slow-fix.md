@@ -1,8 +1,9 @@
 # The Slow Fix
 
-*22 December 2017*
+*29 April 2026*
 
-*This is a success story when I was working as a consultant in the early 2010s. Not a triumphant one — more the kind where you keep your head down for two years, make one small improvement at a time, and eventually look up to find the system actually works. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
+*This is a success story when I was working as a consultant in the early 2010s. This is an
+extract from a notes from that time. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
 ## Context
 
@@ -189,20 +190,6 @@ The judgment isn't "fix the most painful thing." It's "fix the thing that opens 
 One thing this account doesn't show: the constant tension between technical migrations and feature delivery. The calls above are the ones that worked out. In practice, migrations were regularly paused, deferred, or split to make room for product work — and not every trade-off was clean.
 
 
-## Anti-patterns
-
-These appeared constantly across the codebase and are worth naming explicitly, because they recur in most legacy codebases:
-
-**Log and rethrow** — catching an exception, logging it, and re-throwing it produces duplicate stack traces and obscures the origin of the error. Either handle it or let it propagate.
-
-**Swallowed exceptions** — empty `catch` blocks, or catches that only log a message without preserving the exception, hide failures silently. Sonar was particularly effective at surfacing these.
-
-**Resource leaks** — streams, connections, and other resources not closed in `finally` blocks or try-with-resources. Java 7's try-with-resources statement exists precisely for this.
-
-**Unnecessary complexity** — overly generic solutions, deep inheritance hierarchies, abuse of reflection and proxies. Simple code that is easy to read and verify is worth more than clever code that is hard to debug. Use big frameworks like Drools or jBPM only where a simple implementation won't suffice.
-
-**Write good tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior should be avoided. Use mocks to test hard to reproduce conditions like "email send failed" or "openoffice creation failed".
-
 ## Recommended techniques
 
 These are the practices that moved the needle most over three years:
@@ -221,32 +208,14 @@ These are the practices that moved the needle most over three years:
 
 **Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
 
-**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them `are we crazy doing this like that?`;
+**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them `are we crazy doing this like that?`.
 
 **Read:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
-**Discuss and share principles** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it." Or something like these rules[^kamira]:
-0. You WILL regret complexity when on-call
-1. Stop falling in love with your own code
-2. Every single thing is a trade-off - no "best"
-3. Every line of code you wrote is a liability
-4. Document your designs and decisions
-5. Everyone hates code they didn’t write
-6. Don't use unnecessary dependencies
-7. Coding standards prevent arguments
-8. Write meaningful commit descriptions
-9. Never ever stop learning new things
-10. Code reviews are to spread context
-11. Always build for maintainability
-12. Always ask for help when stuck
-13. Fix root causes, not symptoms
-14. Software is never finished
-15. Estimates are not promises
-16. Ship early, iterate often
-17. Keep. It. Simple.
+**Discuss and share principles** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it." Or something like these rules[^kamira].
 
-For example, dropping `Drools` from the list above is `17.` + `6.` + `2.` whereas most of other
-points are covered `13.` and `16.`.
+**Write good tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior should be avoided. Use mocks to test hard to reproduce conditions like "email send failed" or "openoffice creation failed".
+
 
 ## By the Numbers
 
