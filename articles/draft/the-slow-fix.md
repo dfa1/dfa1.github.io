@@ -152,40 +152,30 @@ By this point, the business had started to see the benefits of our invisible wor
 
 The continuous-improvement cycle was fully in place. Integration tests and automated acceptance tests replaced a purely manual QA process. jBPM, the workflow engine, was removed — its use case didn't require it. A straightforward state machine, written from scratch and fully covered by integration tests, replaced it with a fraction of the complexity.
 
-Let's Encrypt certificates replaced manual certificate management, which had been adding overhead as the number of environments grew — by this point we had production, pre-production, UAT, and CI.
+`Let's Encrypt` certificates replaced manual certificate management, which had been adding overhead as the number of environments grew — by this point we had production, pre-production, UAT, and CI.
 
-Load testing ran for the first time, giving numbers instead of guesses when discussing performance. We used JMeter to simulate load and surface issues.
+Load testing ran for the first time, giving numbers instead of guesses when discussing performance. We used `JMeter` to simulate load and surface issues.
 
 At the time we completed the "Excel over HTTP" integration: the Apache POI version was holding the entire Excel file in memory, causing out-of-memory errors. After an internal discussion, I proposed avoiding Apache POI for this part and directly manipulating the XML inside the file (XLSX is a ZIP archive of XML files, so direct manipulation was straightforward) — this was faster and consumed less memory. The trade-off was another small internal library, but this time it was clearly documented and covered by unit and integration tests.
 
 By this point the system looked almost nothing like what we had inherited. The WAR file was down to 60 MB. The codebase was at 180,000 lines — 70,000 fewer than when we started, despite three years of new features. There were over 200 database migrations in Flyway, every schema change tracked and repeatable. Production outages had been absent for months.
 
-We were deploying several times a week — sometimes twice in a day.
+We were deploying several times a week.
 
-## Month 24+
-
-Around that time, I left the company to move to another city.
-The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs — still no sysadmins. And it was in good shape: confident, autonomous, and shipping regularly. The remaining stretch had been quieter:
+The remaining stretch had been quieter:
 - blob-handling cleanups (moved outside database to S3, with another incremental migration);
 - several new integrations with external services (SOAP and REST);
 - work toward Java 9+ compatibility was also underway.
 
+
+## Month 24+
+
+Around that time, I left the company to move to another city.
+The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs — still no sysadmins. And it was in good shape: confident, autonomous, and shipping regularly.
 What I found on day one and what I left behind were barely recognizable as the same system.
 
 This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the junior developers grow.
 They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
-
-## By the Numbers
-
-|                  | Start          | End                          |
-|------------------|----------------|------------------------------|
-| Team             | 2 backend, 1 frontend | 5 backend, 2 frontend, 2 QA |
-| Production outages | ~1/day       | 0 for months                 |
-| Deploy frequency | ~1/quarter     | Several/week                 |
-| Codebase         | 250,000 LOC    | 180,000 LOC                  |
-| WAR size         | 90 MB          | 60 MB                        |
-| DB migrations    | 0 tracked      | 200+ in Flyway               |
-| Environments     | 2 (pre-prod, production) | 4 (CI, UAT, pre-prod, production) |
 
 ## Tactical and Strategic
 
@@ -208,7 +198,7 @@ The clearest examples from this project:
 - **A UAT environment** looked like a nice-to-have. It was the precondition for deploying multiple times per week.
 - **Flyway migrations** eliminated an operational annoyance. They also made database divergence between environments structurally impossible.
 - **Puppet provisioning** seemed like infrastructure housekeeping. When we needed to scale to 24 machines, it was a non-event.
-- **The Java 8 migration** looked like a compiler upgrade. It eliminated an entire class of custom libraries — the home-grown lambda emulator, Joda-Time — and aligned the codebase with the ecosystem, making every future library upgrade easier.
+- **The Java 8 migration** looked like a compiler upgrade. It eliminated some extra libraries — the home-grown lambda emulator, Joda-Time — and aligned the codebase with the ecosystem, making every future library upgrade easier.
 
 There's a useful negative example too. At some point the manager asked what it would cost to migrate to PostgreSQL — a reasonable question, given Oracle's acquisition of MySQL and the uncertainty it raised about licensing. The call was to defer it. Not because it was wrong in principle, but because the preconditions weren't there: no reproducible migrations, no stable environments, no test coverage to verify behavior across a different database. It would have been high-cost, high-risk work with questionable strategic payoff given where the system was. Sequencing matters as much as choosing.
 
@@ -230,8 +220,8 @@ These appeared constantly across the codebase and are worth naming explicitly, b
 
 **Unnecessary complexity** — overly generic solutions, deep inheritance hierarchies, abuse of reflection and proxies. Simple code that is easy to read and verify is worth more than clever code that is hard to debug. Use big frameworks like Drools or jBPM only where a simple implementation won't suffice.
 
-**Useless tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior. Mutation testing is a useful tool for finding them.
-
+**Useless tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior. Mutation testing is a useful tool to spot real unit test coverage (unfortunately is
+also quite expensive).
 
 ### Recommended techniques
 
@@ -253,9 +243,44 @@ These are the practices that moved the needle most over three years:
 
 **Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
 
-**Read books:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
+**Read:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
-**Find your motto** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it."
+**Discuss and share principles** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it." Or something like "The Rules of Softwre Enginering"[^kamira]:
+0. You WILL regret complexity when on-call
+1. Stop falling in love with your own code
+2. Every single thing is a trade-off - no "best"
+3. Every line of code you wrote is a liability
+4. Document your designs and decisions
+5. Everyone hates code they didn’t write
+6. Don't use unnecessary dependencies
+7. Coding standards prevent arguments
+8. Write meaningful commit descriptions
+9. Never ever stop learning new things
+10. Code reviews are to spread context
+11. Always build for maintainability
+12. Always ask for help when stuck
+13. Fix root causes, not symptoms
+14. Software is never finished
+15. Estimates are not promises
+16. Ship early, iterate often
+17. Keep. It. Simple.
+
+For example, dropping `Drools` from the list above is `17.` + `6.` + `2.` whereas most of other
+points are covered `13.` and `16.`.
+
+## By the Numbers
+
+|                  | Start          | End                          |
+|------------------|----------------|------------------------------|
+| Team             | 2 backend, 1 frontend | 5 backend, 2 frontend, 2 QA |
+| Production outages | 2-3/week       | 0 for months                 |
+| Deploy frequency | ~1/quarter     | Several/week                 |
+| Codebase         | 250,000 LOC    | 180,000 LOC                  |
+| WAR size         | 90 MB          | 60 MB                        |
+| DB migrations    | 0 tracked      | 200+ in Flyway               |
+| Environments     | 2 (pre-prod, production) | 4 (CI, UAT, pre-prod, production) |
+| Language         | Java 5          | Java 8                      |
+
 
 ---
 
@@ -274,3 +299,5 @@ These are the practices that moved the needle most over three years:
 [^picard]: Picard Engineering Tips (@PicardTips on X) — fictional engineering advice in the voice of Jean-Luc Picard. https://x.com/PicardTips
 
 [^bcrypt]: Spring Security `BCrypt` — https://docs.spring.io/spring-security/site/docs/current/api/org/springframework/security/crypto/bcrypt/BCrypt.html
+
+[^kamira] [source](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/)
