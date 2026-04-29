@@ -6,7 +6,9 @@
 
 ## Context
 
-The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, [Apache Tomcat](https://tomcat.apache.org/) in this case, running a custom-packaged distribution — and a production system going down roughly once a day. [Apache Cocoon](https://cocoon.apache.org/), [Apache Struts](https://struts.apache.org/), [Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc.html), [Hibernate](https://hibernate.org/), [Drools](https://www.drools.org/), [jBPM](https://www.jbpm.org/) — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
+The project had been handed over to two developers with some knowledge transfer. The original authors were gone. Senior developers at the company knew about it and kept their distance — the project had a reputation. What remained was 250,000 lines of Java, a 90 MB WAR file — a Java web application packaged for deployment into a servlet container, [Apache Tomcat](https://tomcat.apache.org/) in this case, running a custom-packaged distribution — and a production system going down roughly once a day — from unsynchronized access to shared mutable state, connection leaks exhausting the database pool, and out-of-memory errors from unbounded in-memory accumulation. [Apache Cocoon](https://cocoon.apache.org/), [Apache Struts](https://struts.apache.org/), [Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc.html), [Hibernate](https://hibernate.org/), [Drools](https://www.drools.org/), [jBPM](https://www.jbpm.org/) — a decade of late-2000s framework choices stacked on top of each other. Getting it running locally took me a week. The developers had learned, through experience, that the safest move was to touch as little as possible.
+
+The team wasn't incompetent — they were paralyzed by a system that punished curiosity.
 
 **database**: the database was [MySQL](https://www.mysql.com/), with a mix of MyISAM[^myisam] and InnoDB[^innodb] tables. MyISAM does not support transactions and any operation that touched both table types had no atomicity guarantee — a failure mid-write could leave data partially committed with no rollback possible. This had gone unaddressed long enough that compensating logic had accumulated throughout the codebase.
 
@@ -15,8 +17,6 @@ The project had been handed over to two developers with some knowledge transfer.
 **undocumented internal libraries**: the system relied on several in-house libraries with no documentation and no original authors left to ask. The libraries covered areas that standard frameworks already handled — serialization, HTTP communication, data transformation — but with custom behavior that deviated in undocumented ways. Every interaction with them required reverse-engineering from usage in the codebase. We had custom libraries for logging, JDBC utils, a couple of SQL DSLs, XML, and JSON.
 
 **insecure and unreliable processes** passwords were stored in plain text, protected by a custom security framework that was itself undocumented. Releases were done manually — copy-paste SQL patches directly into the database console, deploy and hope nothing breaks, and hope the same patch hadn't already been applied in a previous release. The build process required tribal knowledge that lived only in people's heads, and those people had left. Unit tests existed in the Maven configuration but were disabled. There was no CI, no integration tests, no structured logging — the codebase mixed Logback configuration with a custom `Logger` wrapper class of uncertain provenance, and errors surfaced through `ex.printStackTrace()` or, worse, by email. Empty `catch` blocks were everywhere. Apache Maven and Ant JARs had somehow ended up on the production classpath. Onboarding a new developer meant days of undocumented setup rituals.
-
-In short, the team wasn't incompetent — they were paralyzed by a system that punished curiosity.
 
 ### What was working
 
@@ -37,10 +37,7 @@ The first months were the hardest. Daily outages meant the team was in constant 
 The first concrete change was removing Struts and consolidating on Spring MVC. This was already underway before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes. The system stayed in production throughout: but like a bonsai, a small cut there, another small one there, and stopping for a while.
 
 ## Months 4–6: Hard choices
-With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?"
-But we also had to decide what to keep in our stabilization effort. So we decided to always prioritize refactoring that was:
-- trivial to prove correct but moves the code in the right direction (I call these "mechanical refactorings");
-- and around features we were touching in that release.
+With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?" The rule of thumb: only touch what we can prove correct, and only around features we were already changing in that release.
 
 Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate.
 
@@ -53,7 +50,7 @@ The fix was simple: track which entities changed during the OLTP workload in a s
 Other minor (as effort) but important fixes:
 - improved backup/restore tooling — a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
 - migrated the collation of all tables to utf8
-- addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks: it was causing random bugs in production and it was easy enough to fix;
+- addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks — one of the primary drivers of the daily outages, and straightforward to fix once identified;
 
 This was the first moment the system became visibly more stable. So the team was able to focus more
 on new features.
@@ -91,7 +88,7 @@ We started to run.
 
 Continuous integration started to pay dividends, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to actually use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
 
-At this point it was possible to run a complete build without any custom library (previously we had forked versions of some libraries deployed locally) — this taught me to always try to collaborate upstream to fix the issue; forking is not a viable solution.
+At this point it was possible to run a complete build without any custom library. The internal libraries listed at the start had each been retired: the custom logger replaced by SLF4J/Logback, the JDBC utilities by Hibernate's own session management, the XML and JSON libraries by standard alternatives. Forked OSS dependencies were pushed upstream or dropped. Forking is not a viable solution — this taught me to always try to collaborate upstream to fix the issue.
 
 Flyway was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
 
@@ -114,9 +111,9 @@ Another important point was publishing AWS metrics on a dashboard to check vario
 
 The infrastructure side caught up with the application side. CentOS 7 replaced CentOS 6; `systemctl` replaced the handwritten bash scripts managing services. We switched to the upstream Apache Tomcat 7 package, dropping the custom jars we inherited.
 
-Hibernate was upgraded from 3.2 to 5. The migration was tricky: the codebase had custom code hooking into Hibernate callbacks to handle dynamic proxies and entitlements, and JAR conflicts kept the upgrade stuck. We moved incrementally: 3.2 → 3.3 → 3.4 → latest 3.x → 4.x → 5. At the end, the code around that layer was cleaner and more explicit than anything it replaced — a good case for bottom-up design.
+Hibernate was upgraded from 3.2 to 5. The migration was tricky: the codebase had custom code hooking into Hibernate callbacks to handle dynamic proxies and entitlements, and JAR conflicts kept the upgrade stuck. We moved incrementally: 3.2 → 3.3 → 3.4 → latest 3.x → 4.x → 5. The jump from 3.x to 4.x produced one rollback — our custom lifecycle listeners for dynamic proxies silently stopped firing, causing entitlement checks to pass unconditionally in UAT. Integration tests caught it before production. We extracted the listener logic into an explicit wrapper, re-attempted, and moved on. At the end, the code around that layer was cleaner and more explicit than anything it replaced — a good case for bottom-up design.
 
-Since the system was growing in usage, we added a second application node to share the load. Puppet made this straightforward. Hazelcast came in for distributed locking across the cluster and as a second-level cache for Hibernate.
+Since the system was growing in usage, we added a second application node to share the load. Puppet made this straightforward. Hazelcast came in for distributed locking across the cluster and as a second-level cache for Hibernate. Adding a distributed in-memory cluster was a deliberate reversal of our complexity-reduction principle — but the alternative, coordinating locks through the database, was slower and more fragile at the write volumes we were seeing. We treated it as a bounded trade-off: one new component with a clear scope, not a new platform.
 
 ```
                        ┌─────────────────┐
@@ -198,7 +195,7 @@ It wasn't. Joel Spolsky called it "the single worst strategic mistake that any s
 
 Instead, the approach was cultural before technical. Empower the developers to make changes. Replace fear with a process: if something breaks, understand why, fix it, and share what you learned. Every bug is an opportunity to understand the system better, not a sign that someone should have been more careful.[^motto] Over time, this shift mattered more than any individual refactoring.
 
-On the technical side: fail fast on broken invariants, add post-condition checks, and when in doubt, do less. Complexity was already the enemy — every change that added more of it made the next change harder.
+On the technical side: fail fast on broken invariants, add post-condition checks, and when in doubt, do less. Complexity was already the enemy — every change that added more of it made the next change harder. A practical heuristic emerged early: prioritize what I call mechanical refactorings — changes trivial to prove correct that move the code in the right direction, scoped to what we were already touching in that release. Safe, bounded, and compounding.
 
 This was evident with the overlapping frameworks and the volume of custom, undocumented internal libraries. At that time I proposed that the team use only open-source libraries with a suitable license — to have documentation, benefit from code already tested by others, and maintain dependencies as a separate concern — but libraries had to be self-contained: no libraries using libraries using libraries.
 
