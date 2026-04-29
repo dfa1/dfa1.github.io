@@ -34,11 +34,11 @@ The first concrete change was removing Struts and consolidating on Spring MVC. T
 ## Months 4–6: Hard choices
 With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?" The rule of thumb: only touch what we can prove correct, and only around features we were already changing in that release.
 
-Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate / hide the real issue.
+Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate for or hide the real issue.
 
 The build became a single command: `mvn package`, with unit tests re-enabled to cover the new parts of the system.
 
-The data-warehouse job, which ran weekly and reliably died with out-of-memory errors, got its first real attention. It had been built to simulate materialized views in MySQL: the primary node accepted OLTP reads and writes, while a replica received WAL changes and served read-only queries. Hibernate, combined with some reflection hacks and connection-pooling issues, made it unstable — it frequently failed, and we had to manually restart it the following day.
+The data-warehouse job, which ran weekly and reliably died with out-of-memory errors, got its first real attention. It had been built to simulate materialized views in MySQL: the primary node accepted OLTP reads and writes, while a replica received binary log changes and served read-only queries. Hibernate, combined with some reflection hacks and connection-pooling issues, made it unstable — it frequently failed, and we had to manually restart it the following day.
 
 The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept warehouse data current. It also freed the team to focus on other problems.
 
@@ -47,17 +47,16 @@ Other minor (as effort) but important fixes:
 - migrated the collation of all tables to utf8;
 - addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks — one of the primary drivers of the daily outages.
 
-This was the first moment the system became visibly more stable. So the team was able to focus more
-on new features.
+This was the first moment the system became visibly more stable. The team could focus more on new features.
 
 ## Months 7–9: Infra as code
 
-Infrastructure started getting attention. In my previous consultant work, I was exposed to [Puppet](https://www.puppet.com/) for on-premises infrastructure. I proposed it in a dev meeting for AWS EC2 and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable (the release was built on a developer machine, hoping it has everything committed).
+Infrastructure started getting attention. In my previous consultant work, I was exposed to [Puppet](https://www.puppet.com/) for on-premises infrastructure. I proposed it in a dev meeting for AWS EC2 and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable (the release was built on a developer machine, hoping it had everything committed).
 After a few days of setup, we could create a new environment with a single `puppet apply`, pulling all packages — JRE, Apache Tomcat + custom jars, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysop. We also started deploying smaller releases more often — instead of once every 3 months, we shipped every 3 weeks.
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes without blocking pre-production, usually reserved for hot fixes.
 
-[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. The weight was not justified — a clear tension with the previous refactoring direction. Until that point we were replacing custom libs with external libs but in this case was really trivial "if conditions":
+[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. The weight was not justified — a clear tension with the previous refactoring direction. Until that point we were replacing custom libs with external libs, but in this case the logic was trivial conditions:
 
 ```
 rule "No Gold Customers"
@@ -93,7 +92,7 @@ All new code required unit tests — not as a rule handed down, but as a shared 
 
 We introduced Sonar and IntelliJ IDEA inspections for static analysis; the number of subtle bugs they surfaced was striking.
 
-At certain point, we started to monitor the `JavaMelody`[^javamelody] went in for runtime monitoring.
+We introduced `JavaMelody`[^javamelody] for runtime monitoring.
 
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. The DAOs were duplicating what the Hibernate `Session` already provides: identity map, dirty tracking, first-level cache. Except they did it with bugs. The fix was to delete the custom state management and rely on the `Session` directly.
 
@@ -134,12 +133,12 @@ Since the system was growing in usage, we added a second application node to sha
                   │                         │
            ┌──────▼──────┐          ┌───────▼──────┐
            │   MySQL     │          │    MySQL      │
-           │   Primary   │──WAL────►│   Replica     │
+           │   Primary   │─binlog──►│   Replica     │
            │  (R/W OLTP) │          │  (read-only)  │
            └─────────────┘          └──────────────┘
 ```
 
-Around this time, a frontend developer left — taking with him some knowledge about his custom solution for minifying JS and CSS files in Java. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to [wro4j](https://github.com/wro4j/wro4j) to build minified assets automatically during the Maven build, making it impossible to forget (it took few hours of work and a couple of bad errors caught in UAT before full stability).
+Around this time, a frontend developer left — taking with him some knowledge about his custom solution for minifying JS and CSS files in Java. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to [wro4j](https://github.com/wro4j/wro4j) to build minified assets automatically during the Maven build, making it impossible to forget (it took a few hours of work and a couple of bad errors caught in UAT before full stability).
 
 
 ## Months 19–24: Stability
@@ -160,9 +159,7 @@ Around that time, I left the company to move to another city.
 The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs — still no sysadmins. And it was in good shape: confident, autonomous, and shipping regularly.
 What I found on day one and what I left behind were barely recognizable as the same system.
 
-This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the team growing. They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
-
-## Closing
+This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the team grow. They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
 
 ## Tactical and Strategic
 
@@ -192,7 +189,7 @@ The judgment isn't "fix the most painful thing." It's "fix the thing that opens 
 One thing this account doesn't show: the constant tension between technical migrations and feature delivery. The calls above are the ones that worked out. In practice, migrations were regularly paused, deferred, or split to make room for product work — and not every trade-off was clean.
 
 
-### Anti-patterns
+## Anti-patterns
 
 These appeared constantly across the codebase and are worth naming explicitly, because they recur in most legacy codebases:
 
@@ -206,7 +203,7 @@ These appeared constantly across the codebase and are worth naming explicitly, b
 
 **Write good tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior should be avoided. Use mocks to test hard to reproduce conditions like "email send failed" or "openoffice creation failed".
 
-### Recommended techniques
+## Recommended techniques
 
 These are the practices that moved the needle most over three years:
 
@@ -224,11 +221,11 @@ These are the practices that moved the needle most over three years:
 
 **Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
 
-**Make it easy to onboard new developers** document it in the repository, remove manual steps and listen to new joiners, ask them `are we crazy doing this like that?`;
+**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them `are we crazy doing this like that?`;
 
 **Read:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
-**Discuss and share principles** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it." Or something like "The Rules of Softwre Enginering"[^kamira]:
+**Discuss and share principles** — a guiding principle shapes how the team approaches the system. A good example[^picard]: "Make it so every subsystem can be found and repaired manually, even if you need to crawl to reach it." Or something like these rules[^kamira]:
 0. You WILL regret complexity when on-call
 1. Stop falling in love with your own code
 2. Every single thing is a trade-off - no "best"
@@ -284,6 +281,6 @@ points are covered `13.` and `16.`.
 
 [^bcrypt]: Spring Security `BCrypt` — https://docs.spring.io/spring-security/site/docs/current/api/org/springframework/security/crypto/bcrypt/BCrypt.html
 
-[^kamira]: [source](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/)
+[^kamira]: "18 Subtle Rules of Software Engineering", [source](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/)
 
 [^javamelody]: a monitoring tool for Java / Java EE, [source](https://github.com/javamelody/javamelody)
