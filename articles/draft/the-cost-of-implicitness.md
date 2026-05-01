@@ -86,19 +86,13 @@ Implicitness was always expensive. Now the cost scales.
 
 ---
 
-[^tdd]: Kent Beck, *Test-Driven Development: By Example* (2002). The discipline of writing
-a failing test before the implementation is precisely what keeps the requirement-to-test
-pointer intact.
+[^tdd]: Kent Beck, *Test-Driven Development: By Example* (2002). The discipline of writing a failing test before the implementation is precisely what keeps the requirement-to-test pointer intact.
 
-[^ddd]: Eric Evans, *Domain-Driven Design* (2003). Value objects and aggregates are the
-canonical form of the "encode the invariant in a type" move.
+[^ddd]: Eric Evans, *Domain-Driven Design* (2003). Value objects and aggregates are the canonical form of the "encode the invariant in a type" move.
 
-[^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC
-formalizes the same move: replace implicit assumptions with explicit, checkable contracts
-at every interface.
+[^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC formalizes the same move: replace implicit assumptions with explicit, checkable contracts at every interface.
 
-[^sbd]: Johnsson, Deogun & Sawano, *Secure by Design* (2019). The book frames security as
-a design property — domain primitives, value objects, and type constraints that make
-insecure states unrepresentable rather than detectable.
+[^sbd]: Johnsson, Deogun & Sawano, *Secure by Design* (2019). The book frames security as a design property — domain primitives, value objects, and type constraints that make insecure states unrepresentable rather than detectable.
+
 
 
