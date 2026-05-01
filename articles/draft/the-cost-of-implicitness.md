@@ -35,8 +35,12 @@ the CI pipeline can verify.
 
 Same move — encode the assumption in a representation the build can check — applied at
 process, code, and boundary. The layer changes; the principle does not. The move is not
-new — it runs through *The Pragmatic Programmer* and *Secure by Design* — but it gains
+new — it runs through *The Pragmatic Programmer*[^tpp] and *Secure by Design* — but it gains
 force when applied consistently across all three layers at once.
+
+[^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC
+formalizes the same move: replace implicit assumptions with explicit, checkable contracts
+at every interface.
 
 ## The chain
 
