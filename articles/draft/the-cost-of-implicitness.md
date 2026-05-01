@@ -8,7 +8,7 @@ shared understanding was never shared, when a hotfix swaps two `int` arguments t
 two different things and the compiler had no opinion. The cost is deferred, invisible, and
 always larger than expected.*
 
-## Three posts
+## Three Posts
 
 Each of the three posts below explores the same pattern at a different layer of the stack.
 
@@ -35,12 +35,8 @@ the CI pipeline can verify.
 
 Same move — encode the assumption in a representation the build can check — applied at
 process, code, and boundary. The layer changes; the principle does not. The move is not
-new — it runs through *The Pragmatic Programmer*[^tpp] and *Secure by Design* — but it gains
+new — it runs through *The Pragmatic Programmer*[^tpp] and *Secure by Design*[^sbd] — but it gains
 force when applied consistently across all three layers at once.
-
-[^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC
-formalizes the same move: replace implicit assumptions with explicit, checkable contracts
-at every interface.
 
 ## The chain
 
@@ -48,7 +44,7 @@ What makes this tractable is not velocity, but reversibility: you can take the n
 because the previous one is verified. It connects every artifact in the system.
 
 Requirements point to tests — a failing test means a violated requirement, not an implementation detail.
-Tests point to the code they exercise — coverage is not a vanity metric, it is a
+Tests point to the code they exercise — coverage is not a vanity metric; it is a
 map of what is and isn't verified. Code encodes domain invariants in types — not as
 comments, not as runtime checks buried in service logic, but as constraints the compiler
 enforces at every call site. The architecture follows rules that a tool like
@@ -64,20 +60,13 @@ someone is in a hurry.
 The goal is a system where a new reader can enter at any point — a type, a test, a
 service boundary — and trace outward without asking anyone. Not because the documentation
 is thorough, but because the structure of the system makes the connections traversable.
-This is what explorable means in practice: not an IDE feature, not a style preference —
+This is what *explorable* means in practice: not an IDE feature, not a style preference —
 a property of the design that holds when the team is moving fast, or doesn't.
 
-TDD draws the requirements-to-tests link explicitly.[^tdd] DDD names the practice of
+TDD draws the requirements-to-tests link explicitly.[^tdd] DDD formalizes the practice of
 encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
 disciplines converge on the same principle — made stronger when applied together, across
 all three layers.
-
-[^tdd]: Kent Beck, *Test-Driven Development: By Example* (2002). The discipline of writing
-a failing test before the implementation is precisely what keeps the requirement-to-test
-pointer intact.
-
-[^ddd]: Eric Evans, *Domain-Driven Design* (2003). Value objects and aggregates are the
-canonical form of the "encode the invariant in a type" move.
 
 ## 2026: the cost doubles
 
@@ -94,3 +83,22 @@ make the agent smarter — it makes the dangerous path the hard one to write, re
 who is writing it.
 
 Implicitness was always expensive. Now the cost scales.
+
+---
+
+[^tdd]: Kent Beck, *Test-Driven Development: By Example* (2002). The discipline of writing
+a failing test before the implementation is precisely what keeps the requirement-to-test
+pointer intact.
+
+[^ddd]: Eric Evans, *Domain-Driven Design* (2003). Value objects and aggregates are the
+canonical form of the "encode the invariant in a type" move.
+
+[^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC
+formalizes the same move: replace implicit assumptions with explicit, checkable contracts
+at every interface.
+
+[^sbd]: Johnsson, Deogun & Sawano, *Secure by Design* (2019). The book frames security as
+a design property — domain primitives, value objects, and type constraints that make
+insecure states unrepresentable rather than detectable.
+
+
