@@ -18,7 +18,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>How a consultant inherited a 250,000-line Java system going down daily — no tests, no CI, no docs, plain-text passwords — and over two years turned it into a system the team was proud to ship. A retrospective on incremental stabilization, cultural change, and the difference between tactical fixes and strategic bets.</summary>
+    <summary>This is a success story from when I was working as a consultant in the mid 2010s. This is an extract from notes I took at that time. The inspiration is "The Phoenix Project" — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.</summary>
   </entry>
   <entry>
     <title>Make the Implicit Explicit</title>
@@ -29,7 +29,18 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>A Data API with per-request authorization delegated to an Entitlement API owned by a separate team. A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each driven by a different problem. A retrospective on making service boundaries explicit.</summary>
+    <summary>A Data API with per-request authorization — entitlements delegated to an Entitlement API owned by a separate team. A series of forced decisions — versioned contracts, point-in-time consistency, decorator-based composition — each driven by a different problem. This is a retrospective on a real system.</summary>
+  </entry>
+  <entry>
+    <title>From BPF to eBPF, Twenty Years Later</title>
+    <link href="https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later"/>
+    <id>urn:uuid:from-bpf-to-ebpf-twenty-years-later</id>
+    <updated>2026-04-19T00:00:00Z</updated>
+    <published>2026-04-19T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>In 2004, I wrote a packet sniffer called pangolin. It filtered network traffic using BPF — Berkeley Packet Filter. Raw bytecode. No compiler, no abstraction. Instructions for a virtual machine running inside the Linux kernel, written by hand. Twenty years later, I compiled pangolin on kernel 6.17 on ARM64. One type fix — size_t → socklen_t — and it ran. The bytecode in filters.c was untouched. That got me curious. The bytecode survived twenty years unchanged — what did the tooling around it become? Brendan Gregg's eBPF overview was the map I used to find out.</summary>
   </entry>
   <entry>
     <title>Java + RocksDB - JNI</title>
@@ -40,7 +51,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Building an experimental RocksDB wrapper for Java using the FFM API instead of JNI: how MemorySegment and Arena work, design choices behind the type-safe API, and lessons from building native bindings without a JNI glue layer.</summary>
+    <summary>The best way I know to learn something is to build something real with it. I wanted to understand Java's Foreign Function &amp; Memory (FFM) API properly — not just read the Javadoc, but actually use it. RocksDB was the obvious vehicle: I'm a long-time user of RocksDB and it has a well-defined C API and a problem space I already understood. The result is rocksdbffm: an experimental RocksDB wrapper for Java using FFM instead of JNI.</summary>
   </entry>
   <entry>
     <title>Coding with Claude Code: A Week on hosh</title>
@@ -51,7 +62,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>A week of pairing with Claude Code on a real Java project: what worked, what didn't, and why writing a CLAUDE.md is the highest-leverage first step before delegating anything to an AI agent.</summary>
+    <summary>I've been experimenting with Claude Code on my side project hosh, an experimental shell written in Java. After a few days of pairing with an AI agent on real tasks — adding features, fixing bugs, resolving SonarQube warnings — here's what I found.</summary>
   </entry>
   <entry>
     <title>Your Compiler is already part of your Security Team</title>
@@ -62,7 +73,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Domain primitives — types that encode validation into construction — eliminate entire vulnerability categories, make codebases explorable, and turn security from a checklist into a property of the design.</summary>
+    <summary>It's 3am. Your phone is ringing. A few hours earlier you deployed a hotfix — straightforward change, reviewed in a hurry, went out clean. Now some important data is being published under the wrong market. Instruments from exchange A showing up under exchange B. Clients are seeing it. Someone is already asking if it's a breach. It isn't. It's worse, in a way: the hotfix swapped two arguments. The method took a marketId and an instrumentId, both ints, and the caller got them the wrong way round. The compiler saw two ints, both positive, both in range. Code compiled, tests passed, CI was green.</summary>
   </entry>
   <entry>
     <title>Write Down the Why</title>
@@ -73,7 +84,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>How writing down the reasoning behind team decisions — testing philosophy, branching model — creates guidance that survives team turnover, scales better than procedures alone, and now serves as the prompt for AI agents too.</summary>
+    <summary>Late 2019, early 2020. A newly formed team, building the next generation of a financial reference data platform from scratch. Several developers who never worked together, a greenfield project, a deadline, and two problems we had not yet named: a testing approach that would take us a while to outgrow, and a branching model we had not agreed on yet. Every team has a moment where brute force stops working. Ours came on two fronts at once. Without a shared "why" every engineer filled in the gaps differently.</summary>
   </entry>
   <entry>
     <title>The Joy of Proper Encapsulation</title>
@@ -84,7 +95,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>A wrong fix for a JPMS encapsulation warning reveals what the module system is actually telling you: the story of signal handling in hosh and why visible technical debt beats hidden dependencies.</summary>
+    <summary>Today I pushed a commit to hosh. The commit message was innocent enough: fix: avoid usage of jdk.internal.Signal. The diff was 20 lines added, 31 removed. And it was wrong — not syntactically, but semantically. It changed the behavior of my program in a way I didn't fully appreciate until I sat down and thought about what the Java Platform Module System was actually telling me. This is a story about that mistake, and about why I think Java's module system, for all the grief it gets, is one of the best things that happened to the platform.</summary>
   </entry>
 
 </feed>

@@ -2,18 +2,18 @@
 
 *27 March 2026*
 
-Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
+*Today I pushed a commit to [hosh](https://github.com/hosh-shell/hosh). The
 [commit](https://github.com/hosh-shell/hosh/commit/7d51c4838faeb3ce42486e374c1eb45f395a5a49)
-message was innocent enough: *“fix: avoid usage of jdk.internal.Signal”*. The
-diff was 20 lines added, 31 removed.  And it was wrong — not syntactically, but
+message was innocent enough: `fix: avoid usage of jdk.internal.Signal`. The
+diff was 20 lines added, 31 removed. And it was wrong — not syntactically, but
 semantically. It changed the behavior of my program in a way I didn’t fully
 appreciate until I sat down and thought about what the
 [Java Platform Module System](https://openjdk.org/jeps/261)
-was actually telling me.
+was actually telling me.*
 
-This is a story about that mistake, and about why I think Java’s module system,
+*This is a story about that mistake, and about why I think Java’s module system,
 for all the grief it gets, is one of the best things that happened to the
-platform (and soon it will be even better with [JEP 500](https://openjdk.org/jeps/500)).
+platform (and soon it will be even better with [JEP 500](https://openjdk.org/jeps/500)).*
 
 ## The problem
 
