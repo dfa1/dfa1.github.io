@@ -2,7 +2,7 @@
 
 *30 April 2026*
 
-*This is a success story when I was working as a consultant in the early 2010s. This is an
+*This is a success story from when I was working as a consultant in the mid 2010s. This is an
 extract from notes I took at that time. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
 ## Context
@@ -80,11 +80,11 @@ The milestone that stood out most: the team started treating bugs as opportuniti
 
 We started to run.
 
-Our efforts started to pay dividends, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to actually use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
+Our efforts started to pay dividends, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
 
 `Flyway` was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
 
-I remember setting up a Jenkins job to gamify the `Java 8` migration: every morning we tracked how many files remained to migrate. We dropped a custom library that emulated lambdas using bytecode generation at runtime — [Lambdaj](https://code.google.com/archive/p/lambdaj/) — and all uses of the Joda-Time library (this caused few easy to fix regression but the team started to use Java 8 in production, that was a big selling point internally).
+I remember setting up a Jenkins job to gamify the `Java 8` migration: every morning we tracked how many files remained to migrate. We dropped a custom library that emulated lambdas using bytecode generation at runtime — [Lambdaj](https://code.google.com/archive/p/lambdaj/) — and all uses of the Joda-Time library (this caused a few easy-to-fix regressions, but the team started using Java 8 in production — a big selling point internally).
 
 All new code required unit tests — not as a rule handed down, but as a shared expectation the team had started to own.
 
@@ -149,7 +149,7 @@ We were deploying several times a week. By this point the system looked almost n
 
 The continuous-improvement cycle was fully in place. Integration tests and automated acceptance tests replaced a purely manual QA process. jBPM, the workflow engine, was removed — its use case didn't require it. A straightforward state machine, written from scratch and fully covered by integration tests, replaced it with a fraction of the complexity.
 
-After an incident dealing with expired SSL certificates, I proposed to use `Let's Encrypt` (at the time was really young company) certificates to replace manual certificate management, which had been adding overhead as the number of environments grew — by this point we had production, pre-production, UAT, and CI.
+After an incident dealing with expired SSL certificates, I proposed to use `Let's Encrypt` (at the time a very young company) certificates to replace manual certificate management, which had been adding overhead as the number of environments grew — by this point we had production, pre-production, UAT, and CI.
 
 At the time we completed the "Excel over HTTP" integration: the Apache POI version was holding the entire Excel file in memory, causing out-of-memory errors. After an internal discussion, I proposed avoiding Apache POI for this part and directly manipulating the XML inside the file (XLSX is a ZIP archive of XML files, so direct manipulation was straightforward) — this was faster and consumed less memory. The trade-off was another small internal library, but this time it was clearly documented *why* it was needed and all the options considered at that time and covered by unit and integration tests.
 
@@ -176,7 +176,7 @@ Tactical fixes buy time and reduce pain immediately. Strategic bets change the s
 The clearest examples from this project:
 
 - **Fixing daily outages** was the obvious urgent priority. The real strategic win was that the team stopped being afraid to touch the system.
-- **A single `mvn package` command** was a convenience fix. Few months later, it made CI possible.
+- **A single `mvn package` command** was a convenience fix. A few months later, it made CI possible.
 - **A UAT environment** looked like a nice-to-have. It was the precondition for deploying multiple times per week to iterate quickly on new features (without blocking pre-prod).
 - **Flyway migrations** eliminated an operational annoyance. They also made database divergence between environments structurally impossible.
 - **Puppet provisioning** seemed like infrastructure housekeeping. When we needed to scale, it was a non-event.
@@ -187,9 +187,9 @@ There's a useful negative example too. At some point the manager asked what it w
 
 ## Recommended techniques
 
-These are the techniques that enabled us to slowly fix an unstable system, I'm still using those today:
+These are the techniques that enabled us to slowly fix an unstable system — I still use them today:
 
-**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them `are we crazy doing this like that?`.
+**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them "are we crazy doing this like that?".
 
 **Bugs as opportunities** — reframe team culture: no drama; fix, learn, share, and move on.
 
