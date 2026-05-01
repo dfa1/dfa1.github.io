@@ -14,7 +14,7 @@ Each of the three posts below applies this discipline at a different layer of th
 process layer. A team without written rationale produces engineers who follow rules they
 don't understand — and override them the first time the rules are inconvenient. Writing
 down the *why* behind a testing philosophy or a branching model is not documentation; it
-is the machine-readable contract between the team and its future members.
+is the verifiable contract between the team and its future members.
 
 [Your Compiler Is Already Part of Your Security
 Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team)
@@ -80,4 +80,4 @@ An agent navigating a codebase of raw `String` and `long` has no map. An agent n
 a codebase of `InstrumentId`, `DataQuality`, and `ApiToken` — with architecture rules in
 the CI and rationale in the commit history — has the same map a senior engineer has.
 
-Implicitness was always expensive. Now it scales.
+Implicitness was always expensive. Now the cost scales.
