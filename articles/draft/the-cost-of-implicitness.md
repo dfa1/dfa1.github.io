@@ -20,10 +20,11 @@ is the verifiable contract between the team and its future members.
 
 [Your Compiler Is Already Part of Your Security
 Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team)
-is about the code layer. A domain primitive — `MarketId`, `InstrumentId`, `ApiToken` —
-encodes a constraint that a raw `int` or `String` cannot carry. The type system becomes
-the enforcement mechanism: the invalid operation does not compile, the secret does not
-print, the wrong-order argument is a build failure, not a 3am page.
+is about the code layer. Consider a method that accepts `(long instrumentId, long marketId)`:
+transpose the arguments and the compiler says nothing. Replace both with `InstrumentId`
+and `MarketId` and the wrong-order call is a build failure. A domain primitive encodes a
+constraint that a raw `int` or `String` cannot carry — the invalid operation does not
+compile, the secret does not print.
 
 [Make the Implicit
 Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) is about the
@@ -33,22 +34,15 @@ point-in-time contracts move the agreement out of both teams' heads and into som
 the CI pipeline can verify.
 
 Same move — encode the assumption in a representation the build can check — applied at
-process, code, and boundary. The layer changes; the principle does not.
-
-## What TDD and DDD gave us
-
-TDD and DDD didn't just introduce disciplines — they made the codebase safe to change. A
-suite of requirement-backed tests means a refactor has a safety net; a regression is a red
-test, not a support ticket. A domain model expressed in types means a renamed concept
-propagates as a compile error, not a grep across twelve services. Both disciplines reduce
-the cost of being wrong and increase the confidence to move.
-
-That is what makes iterative work tractable: not velocity, but reversibility. You can take
-the next step because the previous one is verified.
+process, code, and boundary. The layer changes; the principle does not. The move is not
+new — it runs through *The Pragmatic Programmer* and *Secure by Design* — but it gains
+force when applied consistently across all three layers at once.
 
 ## The chain
 
-The discipline doesn't stop at tests and types. It connects every artifact in the system.
+What makes this tractable is not velocity, but reversibility: you can take the next step
+because the previous one is verified. The discipline connects every artifact in the system.
+
 Requirements point to tests — a failing test means a violated requirement, not an implementation detail.
 Tests point to the code they exercise — coverage is not a vanity metric, it is a
 map of what is and isn't verified. Code encodes domain invariants in types — not as
@@ -71,15 +65,16 @@ a property of the design that either holds under load or doesn't.
 
 ## 2026: the cost doubles
 
-What was always true is now structurally more expensive to ignore. AI agents are routine
-contributors to codebases. They read your system the way a new joiner would — inferring
-intent from structure, filling gaps with plausible guesses, moving fast where the path is
-clear. In an implicit system, the guesses compound. In an explicit, wired system, the
-types constrain the agent the same way they constrain a human: the dangerous path is the
-hard one to write.
+What was always true is now structurally more expensive to ignore. AI agents write
+production code routinely, and they operate under ambiguity the same way junior engineers
+do: fill the gap with a plausible default and move on. The difference is speed, and the
+compounding of errors at speed.
 
-An agent navigating a codebase of raw `String` and `long` has no map. An agent navigating
-a codebase of `InstrumentId`, `DataQuality`, and `ApiToken` — with architecture rules in
-the CI and rationale in the commit history — has the same map a senior engineer has.
+The claim is not that agents fail on messy codebases — they don't, often impressively.
+The narrower claim is this: in an explicitly typed system, the variance of what an agent
+can generate is lower. `MarketId` and `InstrumentId` cannot be silently swapped. `ApiToken`
+cannot be logged. An ArchUnit rule cannot be quietly bypassed. The type system doesn't
+make the agent smarter — it makes the dangerous path the hard one to write, regardless of
+who is writing it.
 
 Implicitness was always expensive. Now the cost scales.
