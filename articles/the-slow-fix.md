@@ -31,20 +31,19 @@ At this point we had two environments: production and pre-production. Pre-produc
 The first concrete change was removing Struts and consolidating on Spring MVC. This was already underway before I joined the team and it was in good shape. Not because Struts was the biggest problem — it wasn't — but because having two web frameworks in the same application was unnecessary complexity with no payoff. Incremental changes from the start: no big-bang refactorings, no feature freezes.
 
 ## Months 4–6: Hard choices
+
 With a baseline of instability, we started clearing the underbrush. Unused classes, JAR conflicts, disabled tests. The JAR hell was particularly bad — Apache Maven and Ant artifacts on the production classpath, multiple copies of the same dependency under different group IDs, version conflicts surfacing as runtime errors with no clear cause. We untangled it incrementally, release by release, asking always: "Why do we need to keep this dependency?" The rule of thumb: only touch what we can prove correct, and only around features we were already changing in that release.
 
 Logging moved from `printStackTrace` and email alerts to [SLF4J](https://www.slf4j.org/) with [Logback](https://logback.qos.ch/): this was mostly grep-and-replace work across the codebase. Empty `catch` blocks were everywhere: many silently ignored exceptions, with extra code paths added throughout to compensate for or hide the real issue.
 
 The build became a single command: `mvn package`, with unit tests re-enabled to cover the new parts of the system.
 
-The data-warehouse job, which ran weekly and reliably died with out-of-memory errors, got its first real attention. It had been built to simulate materialized views in MySQL: the primary node accepted OLTP reads and writes, while a replica received binary log changes and served read-only queries. Hibernate, combined with some reflection hacks and connection-pooling issues, made it unstable — it frequently failed, and we had to manually restart it the following day.
-
-The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept warehouse data current. It also freed the team to focus on other problems.
+The data-warehouse job, which ran weekly and reliably died with out-of-memory errors, got its first real attention. It had been built to simulate materialized views in MySQL: the primary node accepted OLTP reads and writes, while a replica received binary log changes and served read-only queries. Hibernate, combined with some reflection hacks and connection-pooling issues, made it unstable — it frequently failed, and we had to manually restart it the following day. The fix was simple: track which entities changed during the OLTP workload in a separate table, then process those changes asynchronously with eventual consistency. Instead of refreshing all entities at midnight, the system updated only those that had actually changed — an incremental materialized view. This made the process reliable and kept warehouse data current. It also freed the team to focus on other problems.
 
 Other minor (as effort) but important fixes:
+- addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks — one of the primary drivers of the daily outages.
 - improved backup/restore tooling — a single script using SSH tunnel to avoid intermediate copies; this was the *same* script used to restore the database in AWS;
 - migrated the collation of all tables to utf8;
-- addressing some thread safety issues by protecting shared mutable parts with `synchronized` blocks — one of the primary drivers of the daily outages.
 
 This was the first moment the system became visibly more stable. The team could focus more on new features.
 
@@ -52,7 +51,6 @@ This was the first moment the system became visibly more stable. The team could 
 
 Infrastructure started getting attention. In my previous consultant work, I was exposed to [Puppet](https://www.puppet.com/) for on-premises infrastructure. I proposed it in a dev meeting for AWS EC2 and switched to RPM builds via a Maven plugin, replacing the manual deployment rituals with something repeatable (the release was built on a developer machine, hoping it had everything committed).
 After a few days of setup, we could create a new environment with a single `puppet apply`, pulling all packages — JRE, Apache Tomcat + custom jars, sshd with our SSH public keys, and all changes in `/etc`. It was a good moment for the team: everyone became a sysop. We also started deploying smaller releases more often — instead of once every 3 months, we shipped every 3 weeks.
-
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes without blocking pre-production, usually reserved for hot fixes.
 
@@ -88,19 +86,17 @@ I remember setting up a Jenkins job to gamify the `Java 8` migration: every morn
 
 All new code required unit tests — not as a rule handed down, but as a shared expectation the team had started to own.
 
-We introduced Sonar and IntelliJ IDEA inspections for static analysis; the number of subtle bugs they surfaced was striking.
-
-
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. The DAOs were duplicating what the Hibernate `Session` already provides: identity map, dirty tracking, first-level cache. Except they did it with bugs. The fix was to delete the custom state management and rely on the `Session` directly.
 
-At this point, the database was still holding passwords in cleartext — we had an internal discussion about using Apache Shiro but ultimately settled on Spring Security (the project was already using Spring and most developers were comfortable with it). A few hours later, passwords were stored as BCrypt[^bcrypt] with a lazy migration pattern: the system could read both formats, and as users authenticated, their passwords were migrated on the fly.
-
-Another important point was publishing AWS metrics on a dashboard to check various parts of the system, using some Python scripts and AWS CloudWatch.
 
 
 ## Months 13–18: Team maturity
 
 The infrastructure side caught up with the application side. CentOS 7 replaced CentOS 6; `systemctl` replaced the handwritten bash scripts managing services. We switched to the upstream Apache Tomcat 7 package, dropping the custom setup we inherited.
+
+We introduced Sonar and IntelliJ IDEA inspections for static analysis; the number of subtle bugs they surfaced was striking.
+
+At this point, the database was still holding passwords in cleartext — we had an internal discussion about using Apache Shiro but ultimately settled on Spring Security (the project was already using Spring and most developers were comfortable with it). A few hours later, passwords were stored as BCrypt[^bcrypt] with a lazy migration pattern: the system could read both formats, and as users authenticated, their passwords were migrated on the fly.
 
 Hibernate was upgraded from 3.2 to 4. The migration was tricky: the codebase had custom code hooking into Hibernate callbacks to handle dynamic proxies and entitlements, and JAR conflicts kept the upgrade stuck. We moved incrementally: 3.2 → 3.3 → 3.4 → latest 3.x → 4.x. The jump from 3.x to 4.x produced one rollback — our custom lifecycle listeners for dynamic proxies silently stopped firing, causing entitlement checks to pass unconditionally in UAT. Integration tests caught it before production. We extracted the listener logic into an explicit wrapper, re-attempted, and moved on. At the end, the code around that layer was cleaner and more explicit than anything it replaced — a good case for bottom-up design.
 
@@ -137,11 +133,13 @@ Since the system was growing in usage, we added a second application node to sha
 
 Around this time, a frontend developer left — taking with him some knowledge about his custom solution for minifying JS and CSS files in Java. The process had caused problems in the past: it was a manual step that had to be triggered every time a JS or CSS file changed, and it reliably broke in UAT even when it worked locally. I proposed switching to [wro4j](https://github.com/wro4j/wro4j) to build minified assets automatically during the Maven build, making it impossible to forget (it took a few hours of work and a couple of bad errors caught in UAT before full stability).
 
+Load testing ran for the first time, giving numbers instead of guesses when discussing performance. We used `JMeter` to simulate load and surface issues.
+
 We introduced `JavaMelody`[^javamelody] for runtime monitoring to give some visibility on
 what was going on. Some metrics were also exported to AWS CloudWatch using a setup configured
 in Puppet.
 
-Load testing ran for the first time, giving numbers instead of guesses when discussing performance. We used `JMeter` to simulate load and surface issues.
+Another important point was publishing AWS metrics on a dashboard to check various parts of the system, using some Python scripts and AWS CloudWatch.
 
 ## Months 19–24: Stability
 
@@ -181,7 +179,6 @@ The clearest examples from this project:
 - **Flyway migrations** eliminated an operational annoyance. They also made database divergence between environments structurally impossible.
 - **Puppet provisioning** seemed like infrastructure housekeeping. When we needed to scale, it was a non-event.
 - **The Java 8 migration** looked like a compiler upgrade. It eliminated some extra libraries and aligned the codebase with the ecosystem, unlocking more library upgrades. It also highlighted hidden areas of code that triggered more cleanup work.
-- **Be careful with build vs buy**: decide if a specific library is a core competitive advantage that must be built and maintained in house. Also document why the decision was made.
 
 There's a useful negative example too. At some point the manager asked what it would cost to migrate to PostgreSQL — a reasonable question, given Oracle's acquisition of MySQL and the uncertainty it raised about licensing. The call was to defer it. Not because it was wrong in principle, but because the preconditions weren't there: no reproducible migrations, no stable environments, no test coverage to verify behavior across a different database. It would have been high-cost, high-risk work with questionable strategic payoff given where the system was. Sequencing matters as much as choosing.
 
@@ -189,7 +186,7 @@ There's a useful negative example too. At some point the manager asked what it w
 
 These are the techniques that enabled us to slowly fix an unstable system — I still use them today:
 
-**Make it easy to onboard new developers**: document it in the repository, remove manual steps and listen to new joiners, ask them "are we crazy doing this like that?".
+**Make it easy to onboard new developers** — document it in the repository, remove manual steps and listen to new joiners, ask them "are we crazy doing this like that?".
 
 **Bugs as opportunities** — reframe team culture: no drama; fix, learn, share, and move on.
 
@@ -199,18 +196,17 @@ These are the techniques that enabled us to slowly fix an unstable system — I 
 
 **Test before replace** — before removing or replacing a component, write tests that capture its behavior. The tests become the specification for the replacement.
 
+**Write good tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior should be avoided. Use mocks to test hard to reproduce conditions like "email send failed" or "S3 upload failed".
+
 **Segregate subsystems** — keep transactions, logging, retry logic, and background jobs independent. Circular dependencies between subsystems make changes expensive.
 
 **Minimal design** — throw away what isn't needed and don't over generalize. The best code is the code that doesn't exist.
 
-**Automate deploy and provision** — manual steps are where environments diverge and where outages start: database migrations, infrastructure provisioning, monitoring, secrets management, etc.
+**Be careful with build vs buy**: decide if a specific library is a core competitive advantage that must be built and maintained in house. Also document why the decision was made.
 
-**Deploy checklist always up to date** — treat infrastructure as code and tests as production code. They deliver value and deserve the same attention and engineering effort: everything matters for delivering value to customers.
+**Automate deploy and provisiong** — manual steps are where environments diverge and where outages start: database migrations, infrastructure provisioning, secrets management, etc.
 
 **Read:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
-
-**Write good tests** — tests that only verify happy paths, or that duplicate implementation rather than testing behavior should be avoided. Use mocks to test hard to reproduce conditions like "email send failed" or "S3 upload failed".
-
 
 ## By the Numbers
 
@@ -224,7 +220,6 @@ These are the techniques that enabled us to slowly fix an unstable system — I 
 | Environments     | 2 (pre-prod, production) | 4 (CI, UAT, pre-prod, production) |
 | Language         | Java 5          | Java 8                      |
 | Onboarding time  | ~ 1 week | few minutes, git clone + database restore  |
-
 
 ---
 
