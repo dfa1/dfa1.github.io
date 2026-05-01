@@ -61,7 +61,19 @@ The goal is a system where a new reader can enter at any point — a type, a tes
 service boundary — and trace outward without asking anyone. Not because the documentation
 is thorough, but because the structure of the system makes the connections traversable.
 This is what explorable means in practice: not an IDE feature, not a style preference —
-a property of the design that either holds under load or doesn't.
+a property of the design that holds when the team is moving fast, or doesn't.
+
+TDD draws the requirements-to-tests link explicitly.[^tdd] DDD names the practice of
+encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
+disciplines converge on the same principle — made stronger when applied together, across
+all three layers.
+
+[^tdd]: Kent Beck, *Test-Driven Development: By Example* (2002). The discipline of writing
+a failing test before the implementation is precisely what keeps the requirement-to-test
+pointer intact.
+
+[^ddd]: Eric Evans, *Domain-Driven Design* (2003). Value objects and aggregates are the
+canonical form of the "encode the invariant in a type" move.
 
 ## 2026: the cost doubles
 
