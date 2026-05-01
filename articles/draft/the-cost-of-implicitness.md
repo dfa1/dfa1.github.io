@@ -1,5 +1,7 @@
 # The Cost of Implicitness
 
+*2026-05-01*
+
 *You don't pay for implicit assumptions when you write them. You pay when a new joiner
 interprets them differently, when two teams deploy on different schedules and discover the
 shared understanding was never shared, when a hotfix swaps two `int` arguments that meant
