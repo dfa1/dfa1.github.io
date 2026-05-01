@@ -8,9 +8,9 @@ shared understanding was never shared, when a hotfix swaps two `int` arguments t
 two different things and the compiler had no opinion. The cost is deferred, invisible, and
 always larger than expected.*
 
-## Three posts, one move
+## Three posts
 
-Each of the three posts below applies this discipline at a different layer of the stack.
+Each of the three posts below explores the same pattern at a different layer of the stack.
 
 [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) is about the
 process layer. A team without written rationale produces engineers who follow rules they
@@ -41,7 +41,7 @@ force when applied consistently across all three layers at once.
 ## The chain
 
 What makes this tractable is not velocity, but reversibility: you can take the next step
-because the previous one is verified. The discipline connects every artifact in the system.
+because the previous one is verified. It connects every artifact in the system.
 
 Requirements point to tests — a failing test means a violated requirement, not an implementation detail.
 Tests point to the code they exercise — coverage is not a vanity metric, it is a
