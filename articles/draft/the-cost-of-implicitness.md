@@ -1,6 +1,6 @@
 # The Cost of Implicitness
 
-*2026-05-01*
+*1 May 2026*
 
 *You don't pay for implicit assumptions when you write them. You pay when a new joiner
 interprets them differently, when two teams deploy on different schedules and discover the

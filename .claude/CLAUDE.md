@@ -29,7 +29,7 @@ When a file path is given without explicit instruction, treat it as a review req
 
 - Every article is formatted as markdown, has .md extension and the following a common structure
     - title
-    - date as *italic*
+    - date as *italic*, formatted as `D Month YYYY` (e.g. `1 May 2026`) — never ISO format
     - small intro in *italic* as well
 - Fix grammar and prose issues directly; do not add docstrings or comments to code that wasn't changed
 - Prefer precise word choice over hedging language
