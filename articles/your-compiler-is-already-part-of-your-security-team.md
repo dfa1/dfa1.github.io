@@ -242,6 +242,7 @@ But sensitive values require one extra step: **control what the type exposes**. 
 that cheerfully prints itself is a secret waiting to leak into a log file or exception stacktrace.
 
 ```java
+// Intentionally NOT Serializable — do not add the marker interface.
 public final class ApiToken {
     private static final int LENGTH = 128;
     private static final Pattern FORMAT = Pattern.compile("^[A-Za-z0-9_-]+$");
@@ -272,11 +273,6 @@ public final class ApiToken {
         );
     }
 
-    @Override public int hashCode() { return 0; } // intentionally constant — see prose below
-
-    private void readObject(ObjectInputStream in) throws IOException {
-        throw new NotSerializableException("ApiToken");
-    }
 }
 ```
 
@@ -290,9 +286,6 @@ A few deliberate choices here:
 - `hashCode()` returns a constant. A constant means the type cannot be used as a map key
   efficiently — a small, intentional friction that discourages using tokens as lookup keys
   in the first place.
-- `readObject()` throws unconditionally. Java deserialization bypasses constructors —
-  an attacker with control over a serialized stream could reconstruct an `ApiToken`
-  without passing any validation. This one method closes that path entirely.
 
 Even so, `value()` can be called multiple times — nothing stops the secret from being read repeatedly once the object exists. For credentials that should be consumed exactly once, the **read-once** pattern from **Secure by Design**[^secure-by-design] closes that gap:
 
