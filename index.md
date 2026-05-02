@@ -9,7 +9,7 @@ author: Davide Angelocola
 
 ## Who I am
 
-Technical Lead/Senior Software Engineer, currently based in Zürich, Switzerland.
+Technical Lead/Senior Software Engineer, focused on distributed systems, data pipelines, and operational reliability — with a strong emphasis on architecture and secure‑by‑design principles.
 
 My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
