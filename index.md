@@ -42,7 +42,7 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
-- [bpf-sensor](https://github.com/dfa1/ebpf-sensor), EBPF, Python + uv (2026)
+- [bpf-sensor](https://github.com/dfa1/ebpf-sensor), experimental eBPF sensor, Python/uv (2026)
 - [rocksdbffm](https://github.com/dfa1/rocksdbffm), experimenal RocksDB FFM bindings in Java (2026)
 - [hosh](https://github.com/hosh-shell/hosh), **H**uman **O**riented **SH**ell in Java (2018)
 - [fungoid](https://github.com/dfa1/fungoid.js), transducer library in Javascript (2016)
