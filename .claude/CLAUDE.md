@@ -46,6 +46,14 @@ When a file path is given without explicit instruction, treat it as a review req
 - End-note paragraphs (attribution, further reading, phrase coinage) are missed footnote opportunities — convert them; do not leave them unanchored at the bottom
 - Dated update sections (`### Update on ...`) are a different pattern — leave them as-is
 
+## feed.xml
+
+- Format: Atom 1.0
+- Feed `<id>`: `https://dfa1.github.io/feed.xml`
+- Entry `<id>`: full article URL, e.g. `https://dfa1.github.io/articles/the-slow-fix`
+- Do **not** use `urn:uuid:` prefix unless the value is an actual UUID — `urn:uuid:slug` is invalid and fails W3C feed validation, which causes Feedly and other readers to not show previews
+- Entry `<summary>`: plain text excerpt shown as preview in feed readers
+
 ## Repository layout
 
 ```

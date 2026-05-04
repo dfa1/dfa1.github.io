@@ -7,12 +7,12 @@
   <author>
     <name>Davide Angelocola</name>
   </author>
-  <id>urn:uuid:dfa1.github.io</id>
+  <id>https://dfa1.github.io/feed.xml</id>
 
   <entry>
     <title>The Slow Fix</title>
     <link href="https://dfa1.github.io/articles/the-slow-fix"/>
-    <id>urn:uuid:the-slow-fix</id>
+    <id>https://dfa1.github.io/articles/the-slow-fix</id>
     <updated>2026-04-30T00:00:00Z</updated>
     <published>2026-04-30T00:00:00Z</published>
     <author>
@@ -23,7 +23,7 @@
   <entry>
     <title>Make the Implicit Explicit</title>
     <link href="https://dfa1.github.io/articles/make-the-implicit-explicit"/>
-    <id>urn:uuid:make-the-implicit-explicit</id>
+    <id>https://dfa1.github.io/articles/make-the-implicit-explicit</id>
     <updated>2026-04-23T00:00:00Z</updated>
     <published>2022-06-10T00:00:00Z</published>
     <author>
@@ -34,7 +34,7 @@
   <entry>
     <title>From BPF to eBPF, Twenty Years Later</title>
     <link href="https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later"/>
-    <id>urn:uuid:from-bpf-to-ebpf-twenty-years-later</id>
+    <id>https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later</id>
     <updated>2026-04-19T00:00:00Z</updated>
     <published>2026-04-19T00:00:00Z</published>
     <author>
@@ -45,7 +45,7 @@
   <entry>
     <title>Java + RocksDB - JNI</title>
     <link href="https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni"/>
-    <id>urn:uuid:java-plus-rocksdb-minus-jni</id>
+    <id>https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni</id>
     <updated>2026-04-11T00:00:00Z</updated>
     <published>2026-04-11T00:00:00Z</published>
     <author>
@@ -56,7 +56,7 @@
   <entry>
     <title>Coding with Claude Code: A Week on hosh</title>
     <link href="https://dfa1.github.io/articles/coding-with-claude-code"/>
-    <id>urn:uuid:coding-with-claude-code</id>
+    <id>https://dfa1.github.io/articles/coding-with-claude-code</id>
     <updated>2026-03-29T00:00:00Z</updated>
     <published>2026-03-29T00:00:00Z</published>
     <author>
@@ -67,7 +67,7 @@
   <entry>
     <title>Your Compiler is already part of your Security Team</title>
     <link href="https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team"/>
-    <id>urn:uuid:your-compiler-is-already-part-of-your-security-team</id>
+    <id>https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team</id>
     <updated>2026-04-17T00:00:00Z</updated>
     <published>2021-01-04T00:00:00Z</published>
     <author>
@@ -78,7 +78,7 @@
   <entry>
     <title>Write Down the Why</title>
     <link href="https://dfa1.github.io/articles/write-down-the-why"/>
-    <id>urn:uuid:write-down-the-why</id>
+    <id>https://dfa1.github.io/articles/write-down-the-why</id>
     <updated>2020-10-01T00:00:00Z</updated>
     <published>2020-10-01T00:00:00Z</published>
     <author>
@@ -89,7 +89,7 @@
   <entry>
     <title>The Joy of Proper Encapsulation</title>
     <link href="https://dfa1.github.io/articles/the-joy-of-proper-encapsulation"/>
-    <id>urn:uuid:the-joy-of-proper-encapsulation</id>
+    <id>https://dfa1.github.io/articles/the-joy-of-proper-encapsulation</id>
     <updated>2026-03-27T00:00:00Z</updated>
     <published>2026-03-27T00:00:00Z</published>
     <author>
