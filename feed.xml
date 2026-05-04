@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>Davide Angelocola</title>
-  <link href="https://dfa1.github.io/feed.xml" rel="self"/>
+  <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
   <updated>2026-04-30T00:00:00Z</updated>
   <author>
