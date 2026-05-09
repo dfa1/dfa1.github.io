@@ -38,7 +38,7 @@ process, code, and boundary. The layer changes; the principle does not. The move
 new — it runs through *The Pragmatic Programmer*[^tpp] and *Secure by Design*[^sbd] — but it gains
 force when applied consistently across all three layers at once.
 
-## The chain
+## The Chain
 
 What makes this tractable is not velocity, but reversibility: you can take the next step
 because the previous one is verified. It connects every artifact in the system.
@@ -61,21 +61,20 @@ The goal is a system where a new reader can enter at any point — a type, a tes
 service boundary — and trace outward without asking anyone. Not because the documentation
 is thorough, but because the structure of the system makes the connections traversable.
 This is what *explorable* means in practice: not an IDE feature, not a style preference —
-a property of the design that holds when the team is moving fast, or doesn't.
+a property of the design that holds whether the team is moving fast or not.
 
 TDD draws the requirements-to-tests link explicitly.[^tdd] DDD formalizes the practice of
 encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
-disciplines converge on the same principle — made stronger when applied together, across
-all three layers.
+disciplines converge on the same principle, and the principle gains force when applied at all three layers together.
 
-## 2026: the cost doubles
+## 2026: The Cost Doubles
 
 What was always true is now structurally more expensive to ignore. AI agents write
 production code routinely, and they operate under ambiguity the same way junior engineers
 do: fill the gap with a plausible default and move on. The difference is speed, and the
 compounding of errors at speed.
 
-The claim is not that agents fail on messy codebases — they don't, often impressively.
+The claim is not that agents fail on messy codebases — they often handle them impressively well.
 The narrower claim is this: in an explicitly typed system, the variance of what an agent
 can generate is lower. `MarketId` and `InstrumentId` cannot be silently swapped. `ApiToken`
 cannot be logged. An ArchUnit rule cannot be quietly bypassed. The type system doesn't
