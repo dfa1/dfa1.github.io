@@ -1,6 +1,6 @@
 # The Cost of Implicitness
 
-*1 May 2026*
+*9 May 2026*
 
 *You don't pay for implicit assumptions when you write them. You pay when a new joiner
 interprets them differently, when two teams deploy on different schedules and discover the
@@ -10,7 +10,8 @@ always larger than expected.*
 
 ## Three Posts
 
-Each of the three posts below explores the same pattern at a different layer of the stack.
+This is a self-reflection post: each of the three posts
+below explores the same pattern at a different layer.
 
 [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) is about the
 process layer. A team without written rationale produces engineers who follow rules they
@@ -33,21 +34,23 @@ rename away from a coordinated rollback. Versioned endpoints, isolated DTOs, and
 point-in-time contracts move the agreement out of both teams' heads and into something
 the CI pipeline can verify.
 
-Same move — encode the assumption in a representation the build can check — applied at
+## The Chain
+
+The underlying idea is to encode assumptions in a representation the build can check — applied at
 process, code, and boundary. The layer changes; the principle does not. The move is not
 new — it runs through *The Pragmatic Programmer*[^tpp] and *Secure by Design*[^sbd] — but it gains
 force when applied consistently across all three layers at once.
 
-## The Chain
-
 What makes this tractable is not velocity, but reversibility: you can take the next step
-because the previous one is verified. It connects every artifact in the system.
+because the previous one is verified. The chain connects every artifact in the system.
 
-Requirements point to tests — a failing test means a violated requirement, not an implementation detail.
+Tests point to requirements — a failing test means a violated requirement, not an implementation detail.
 Tests point to the code they exercise — coverage is not a vanity metric; it is a
 map of what is and isn't verified. Code encodes domain invariants in types — not as
 comments, not as runtime checks buried in service logic, but as constraints the compiler
-enforces at every call site. The architecture follows rules that a tool like
+enforces at every call site.
+
+The application architecture follows rules that a tool like
 [ArchUnit](https://www.archunit.org) verifies on every build — if the dependency graph
 matters, it belongs in CI, not in a diagram that rots.
 
@@ -57,15 +60,15 @@ that stopped enforcing its invariant is a hole in the boundary. An architecture 
 lives in a document but not in the pipeline is a rule that will be violated the first time
 someone is in a hurry.
 
-The goal is a system where a new reader can enter at any point — a type, a test, a
+The goal is a system where a new reader, either human or AI, can enter at any point — a type, a test, a
 service boundary — and trace outward without asking anyone. Not because the documentation
 is thorough, but because the structure of the system makes the connections traversable.
 This is what *explorable* means in practice: not an IDE feature, not a style preference —
 a property of the design that holds whether the team is moving fast or not.
 
-TDD draws the requirements-to-tests link explicitly.[^tdd] DDD formalizes the practice of
+This is not new. TDD draws the requirements-to-tests link explicitly.[^tdd] DDD formalizes the practice of
 encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
-disciplines converge on the same principle, and the principle gains force when applied at all three layers together.
+disciplines converge on the same principle.
 
 ## 2026: The Cost Doubles
 
