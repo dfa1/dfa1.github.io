@@ -129,4 +129,4 @@ The type system is now affordable in the inner loop too.
 
 [^valhalla-jep]: [JEP 401: Value Classes and Objects (Preview)](https://openjdk.org/jeps/401). Tracks the syntax and semantics described here. The companion [JEP 402: Null-Restricted and Nullable Types](https://openjdk.org/jeps/402) covers the `Port!` form referenced below.
 
-[^capital-one]: [Capital One Cyber Incident](https://www.capitalone.com/about/newsroom/cyber-incident/). The attacker exploited a misconfigured WAF to reach `169.254.169.254` — the EC2 instance-metadata endpoint — and exfiltrate IAM credentials. A `HostName` type that rejects link-local addresses by construction would have closed that path.
+[^capital-one]: [Capital One hack highlights SSRF concerns for AWS](https://www.techtarget.com/searchsecurity/news/252467901/Capital-One-hack-highlights-SSRF-concerns-for-AWS) (TechTarget, 2019). The attacker exploited a misconfigured WAF to reach `169.254.169.254` — the EC2 instance-metadata endpoint — and exfiltrate IAM credentials. A `HostName` type that rejects link-local addresses by construction would have closed that path.
