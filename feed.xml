@@ -3,12 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-04-30T00:00:00Z</updated>
+  <updated>2026-05-09T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>https://dfa1.github.io/feed.xml</id>
 
+  <entry>
+    <title>The Cost of Implicitness</title>
+    <link href="https://dfa1.github.io/articles/the-cost-of-implicitness"/>
+    <id>https://dfa1.github.io/articles/the-cost-of-implicitness</id>
+    <updated>2026-05-09T00:00:00Z</updated>
+    <published>2026-05-09T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>You don't pay for implicit assumptions when you write them. You pay when a new joiner interprets them differently, when two teams deploy on different schedules and discover the shared understanding was never shared, when a hotfix swaps two int arguments that meant two different things and the compiler had no opinion. The cost is deferred, invisible, and always larger than expected.</summary>
+  </entry>
   <entry>
     <title>The Slow Fix</title>
     <link href="https://dfa1.github.io/articles/the-slow-fix"/>
