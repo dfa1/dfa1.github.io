@@ -13,8 +13,8 @@ throughput.*
 
 ## The Starting Point
 
-We started a POC to explore RocksDB for our business requirements. Having a lot to explore,
-the design was kept deliberately simple on the data fetching:
+We started a POC to explore RocksDB for our business requirements. With a lot
+of ground to cover, we kept the data-fetching path deliberately simple:
 
 ```java
 Key key = ...; // request from the caller
@@ -125,7 +125,7 @@ cost once at startup, reuse indefinitely.
 Essentially the pool is:
 
 ```java
-// auto-sized pool: concurrency level determine the number of buffers
+// unbounded pool: grows lazily to the high-water mark of concurrent borrows
 import java.nio.ByteBuffer;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -158,13 +158,13 @@ public final class DirectByteBufferPool {
 }
 ```
 
-`ConcurrentLinkedDeque` chosen because it's lock-free and `offerFirst`/`pollFirst` give you LIFO
-with cache-warm buffers.
-`clear()` only resets indices, not contents.
-The borrow/release contract is the caller's responsibility. Double-release is possible and it could
-be stopped by wrapping the `ByteBuffer` with a `Lease` object that avoid that (omitted for brevity here).
-The pool is unbounded by design — it grows to the high-water mark of concurrent borrows
-(the logic is interesting but deviates the point being made in this article).
+We chose `ConcurrentLinkedDeque` because it is lock-free, and
+`offerFirst`/`pollFirst` give LIFO ordering — recently-released buffers stay
+cache-warm. `clear()` only resets indices, not contents. The borrow/release
+contract is the caller's responsibility: double-release is possible, and a
+`Lease` wrapper around the `ByteBuffer` would prevent it (omitted for brevity).
+The pool is unbounded by design — it grows to the high-water mark of concurrent
+borrows; the sizing logic is out of scope here.
 
 The caller ended up like:
 ```java
@@ -180,7 +180,8 @@ try {
     pool.release(valueBuffer);
 }
 ```
-that is much more complex than the naive approach.
+
+This is noticeably more complex than the naive approach.
 
 Per-request cost becomes:
 - borrow a buffer;
@@ -192,8 +193,8 @@ Buffer allocations on the hot path are zero. Domain-object allocations (the
 deserialized `Value`) still happen on the heap — the pool eliminates the
 serialization scaffolding, not the result of deserialization.
 
-Migrating from `DataOutputStream` to `ByteBuffer` for serialize/deserialize was trivial
-(all corner cases were clearly documented and unit tested).
+Migrating from `DataOutputStream` to `ByteBuffer` for serialize/deserialize was
+trivial — all corner cases were documented and unit-tested.
 
 ## The Result
 
@@ -229,19 +230,21 @@ per_request_alloc = sizeof(Value)                # deserialized domain object
 fixed_cost        = pool_size × buffer_capacity  # paid once, at startup
 ```
 
-Buffers no longer scale with request rate; they scale with concurrency. The pool starts empty
-and buffers are created lazily, following the concurrency level of the instance.
+Buffers no longer scale with request rate; they scale with concurrency. The
+pool starts empty and grows lazily to the high-water mark of concurrent
+borrows.
 
 ## The Tradeoff
 
-The new design is more complex and has more moving parts (pool, monitoring, health checks, etc)
-but it is operationally cheaper to scale.
+The new design is more complex and has more moving parts — the pool itself,
+plus monitoring of borrow/release counters and pool-size health checks — but it
+is operationally cheaper to scale.
 
 With the naive design, scaling is simple: add nodes. Each node is stateless with
 respect to allocation — it allocates what it needs, the GC cleans up. Horizontal
-scaling is cheap to reason about..
+scaling is cheap to reason about.
 
-With the pool, each node carries a fixed memory reservation. `LinkedBlockingDeque`
+With the pool, each node carries a fixed memory reservation. `ConcurrentLinkedDeque`
 handles the concurrency itself; the real risk is the borrow/release lifecycle:
 a borrow without a matching release leaks a buffer permanently, double-release
 puts the same buffer in the pool twice (two callers will then mutate it
@@ -252,7 +255,5 @@ flags a leak before the pool drains.
 The payoff is that a single node can handle significantly more load efficiently.
 Horizontal scaling remains available, but is no longer forced by allocation
 pressure alone.
-
----
 
 [^rocksdb-jni-bench]: See also [RocksDB Java JNI benchmarks](https://rocksdb.org/blog/2023/11/06/java-jni-benchmarks.html).
