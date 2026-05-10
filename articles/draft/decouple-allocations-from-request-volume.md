@@ -6,10 +6,7 @@
 as the storage engine, returning variable-size values. Nothing about this load profile suggests
 a performance problem.*
 *The implementation has a structural flaw: allocation rate scales with
-request rate, when it should scale with concurrency. Each request churns fresh
-buffers and hands them to the GC. Pre-allocating a pool sized to concurrency
-breaks that coupling — allocation cost is paid once at startup, regardless of
-throughput.*
+request rate, when it should scale with concurrency.*
 
 ## The Starting Point
 
@@ -40,29 +37,11 @@ order**. RocksDB sorts keys lexicographically for iteration and prefix scans. If
 the binary encoding does not preserve the intended ordering, prefix scans
 return wrong results.
 
-The consequences are concrete:
-
-- Integer fields must be encoded as **fixed-width big-endian**. An ASCII or
-  decimal-string encoding of `2` and `10` sorts `10` before `2`
-  lexicographically. Fixed-width big-endian sorts unsigned values correctly.
-  The keys only use non-negative integers; signed values would need a sign-bit
-  flip (or a bias) so that negatives sort before positives.
-- Hierarchy levels must have fixed-width components so that a prefix of one
-  level cannot accidentally match the interior of another level's encoding.
-- Separators between levels become unnecessary when all components are
-  fixed-width — the parser always knows where each field ends.
-
-This is the constraint that rules out Java's default serialization, Protobuf,
-and most off-the-shelf encodings. They are not designed to produce
-lexicographically ordered keys. A custom encoding is not premature optimization — it
-is a correctness requirement.
-
 ## The Signal
 
-The signal was not a latency spike. It was cost. The service was small, the
-load was modest, but the infrastructure bill was higher than expected.
-GC pauses were frequent enough to require more headroom than the workload justified.
-
+Initially the service was receiving a few hundred requests per day,
+then a few thousand, and then, in a few more months, several million.
+The signal that something was not quite right was that throughput was never enough.
 The natural first response is to scale horizontally: add nodes. It works.
 Throughput goes up. Cost goes up proportionally. The structural problem remains,
 now running on more machines.
@@ -108,12 +87,7 @@ different: GC headroom and infrastructure cost, not throughput. The fix was
 sized for projected scale, not for the load already in production. The
 benchmark provided a reproducible target to measure against.
 
-The structural point holds at any rate: allocation volume scales with request
-rate, even though only a few requests are ever in flight at the same time.
-Under varying value sizes, the heap sees a continuous stream of short-lived
-objects of unpredictable size. Well-known problem, well-known solutions.
-
-## The Design
+## The Non-Naive Design
 
 A `DirectByteBuffer` backs its bytes with off-heap native memory. The wrapper
 object itself is still a heap object — reclaimed by the GC, which then triggers
@@ -132,7 +106,7 @@ the per-request copy.
 Essentially the pool is:
 
 ```java
-// unbounded pool: grows lazily to the high-water mark of concurrent borrows
+// unbounded pool: grows lazily to the number of concurrent borrows
 import java.nio.ByteBuffer;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -165,13 +139,13 @@ public final class DirectByteBufferPool {
 }
 ```
 
-`ConcurrentLinkedDeque` was chosen because it is lock-free, and
+`ConcurrentLinkedDeque` was chosen because it is non-blocking, and
 `offerFirst`/`pollFirst` give LIFO ordering — recently-released buffers stay
 cache-warm. `clear()` only resets indices, not contents. The borrow/release
 contract is the caller's responsibility: double-release is possible, and a
 `Lease` wrapper around the `ByteBuffer` would prevent it (omitted for brevity).
 The pool is unbounded by design — it grows to the high-water mark of concurrent
-borrows; the sizing logic is out of scope here.
+borrows. In production, extra instrumentation tracks that high-water mark.
 
 The caller ended up like:
 ```java
@@ -217,50 +191,45 @@ gc.churn.G1_Eden_Space                         ~10  MB/sec
 Heap allocations dropped from 4 GB/s to ~10 MB/s. The residual is the
 deserialized `Value` plus a few iterator and wrapper objects — buffer
 allocations are zero, domain-object allocations remain. The GC had almost
-nothing to do on the read path. Throughput stabilized. Latency variance
-dropped.
-
+nothing to do on the read path. Throughput stabilized.
 
 ## The Insight
 
-The allocation cost in the naive design is:
+In the naive design, allocation rate scales with request rate:
 
 ```
 per_request_alloc = avg_key_size + avg_value_size + serialization wrappers
 total_alloc_rate  = requests_per_second × per_request_alloc
 ```
 
-With a pool of pre-allocated `DirectByteBuffer`s:
+With a pool of pre-allocated `DirectByteBuffer`s, allocation rate scales with
+concurrency, and concurrency is bounded by the thread pool:
 
 ```
 per_request_alloc = sizeof(Value)                # deserialized domain object
 fixed_cost        = pool_size × buffer_capacity  # paid once, at startup
 ```
 
-Buffers no longer scale with request rate; they scale with concurrency. The
-pool starts empty and grows lazily to the high-water mark of concurrent
-borrows.
+Request rate can grow without bound; allocation rate cannot.
 
 ## The Tradeoff
-
-The new design is more complex and has more moving parts — the pool itself,
-plus monitoring of borrow/release counters and pool-size health checks — but it
-is operationally cheaper to scale.
 
 With the naive design, scaling is simple: add nodes. Each node is stateless with
 respect to allocation — it allocates what it needs, the GC cleans up. Horizontal
 scaling is cheap to reason about.
 
-With the pool, each node carries a fixed memory reservation. `ConcurrentLinkedDeque`
-handles the concurrency itself; the real risk is the borrow/release lifecycle:
-a borrow without a matching release leaks a buffer permanently, double-release
-puts the same buffer in the pool twice (two callers will then mutate it
-concurrently), and use-after-release corrupts whoever borrowed it next. A
-try-with-resources wrapper that owns the release call mitigates this, alongside
-a borrow/release counter exposed as a metric — a steadily growing delta flags
-a leak before the pool drains.
+With the pool, each node carries a fixed memory reservation. The design is more
+complex and has more moving parts — the pool itself,
+plus monitoring of borrow/release counters and pool-size health checks — but it
+is operationally cheaper to scale.
+
 The payoff is that a single node can handle significantly more load efficiently.
 Horizontal scaling remains available, but is no longer forced by allocation
 pressure alone.
+
+The pattern is familiar from database connection pools: pay a fixed cost once,
+then amortize it across every request. What changes here is the resource being
+pooled — native memory instead of sockets — and the property being decoupled —
+allocation rate from request rate.
 
 [^rocksdb-jni-bench]: See also [RocksDB Java JNI benchmarks](https://rocksdb.org/blog/2023/11/06/java-jni-benchmarks.html).
