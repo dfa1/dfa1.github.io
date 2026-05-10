@@ -78,11 +78,10 @@ do: fill the gap with a plausible default and move on. The difference is speed, 
 compounding of errors at speed.
 
 The claim is not that agents fail on messy codebases — they often handle them impressively well.
-The narrower claim is this: in an explicitly typed system, the variance of what an agent
-can generate is lower. `MarketId` and `InstrumentId` cannot be silently swapped. `ApiToken`
-cannot be logged. An ArchUnit rule cannot be quietly bypassed. The type system doesn't
-make the agent smarter — it makes the dangerous path the hard one to write, regardless of
-who is writing it.
+The narrower claim: in a system with explicit constraints, the agent has fewer ways to go
+wrong. [`MarketId` and `InstrumentId` cannot be silently swapped](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team).
+An ArchUnit rule cannot be quietly bypassed. The constraint system doesn't make the agent
+smarter — it makes the dangerous path the hard one to write, regardless of who is writing it.
 
 Implicitness was always expensive. Now the cost scales.
 
