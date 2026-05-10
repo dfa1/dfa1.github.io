@@ -13,8 +13,8 @@ throughput.*
 
 ## The Starting Point
 
-We started a POC to verify RocksDB for our business requirements. The design was
-kept deliberately simple:
+We started a POC to explore RocksDB for our business requirements. Having a lot to explore,
+the design was kept deliberately simple on the data fetching:
 
 ```java
 Key key = ...; // request from the caller
@@ -56,10 +56,9 @@ The consequences are concrete:
   fixed-width — the parser always knows where each field ends.
 
 This is the constraint that rules out Java's default serialization, Protobuf,
-and most off-the-shelf encodings. They are not designed to be
-lexicographically ordered. A custom encoding is not premature optimization — it
+and most off-the-shelf encodings. They are not designed to produce
+lexicographically ordered keys. A custom encoding is not premature optimization — it
 is a correctness requirement.
-
 
 ## The Signal
 
@@ -101,8 +100,8 @@ The output was unambiguous:
 ```
 Benchmark                              Mode  Cnt    Units
 RocksDbReadBenchmark.naiveGet         thrpt   10   ops/s
-·gc.alloc.rate                               ~4096  MB/sec
-·gc.churn.G1_Eden_Space                      ~4096  MB/sec
+gc.alloc.rate                               ~4096  MB/sec
+gc.churn.G1_Eden_Space                      ~4096  MB/sec
 ```
 
 ~4 GB/s of heap allocations under benchmark saturation. Production traffic of a
@@ -123,57 +122,51 @@ A `DirectByteBuffer` lives off-heap. It is not managed by the GC. Allocation
 is expensive (native memory call), which is exactly why we pool them: pay the
 cost once at startup, reuse indefinitely.
 
-The pool is simple:
+Essentially the pool is:
 
 ```java
+// auto-sized pool: concurrency level determine the number of buffers
+import java.nio.ByteBuffer;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
+
 public final class DirectByteBufferPool {
 
-    private final BlockingDeque<ByteBuffer> pool;
+    private final Deque<ByteBuffer> pool;
     private final int bufferCapacity;
 
-    public DirectByteBufferPool(int poolSize, int bufferCapacity) {
-        this.bufferCapacity = bufferCapacity;
-        this.pool = new LinkedBlockingDeque<>(poolSize);
-        for (int i = 0; i < poolSize; i++) {
-            pool.push(ByteBuffer.allocateDirect(bufferCapacity));
+    public DirectByteBufferPool(int bufferCapacity) {
+        if (bufferCapacity <= 0) {
+            throw new IllegalArgumentException("bufferCapacity must be > 0");
         }
+        this.pool = new ConcurrentLinkedDeque<>();
+        this.bufferCapacity = bufferCapacity;
     }
 
     public ByteBuffer borrow() {
-        ByteBuffer buffer = pool.poll();
-        if (buffer == null) {
-            // pool exhausted: allocate a temporary unpooled buffer
-            // rather than blocking the caller
-            return ByteBuffer.allocateDirect(bufferCapacity);
+        ByteBuffer b = pool.pollFirst();
+        if (b == null) {
+            b = ByteBuffer.allocateDirect(bufferCapacity);
         }
-        buffer.clear();
-        return buffer;
+        b.clear();
+        return b;
     }
 
-    public void release(ByteBuffer buffer) {
-        if (buffer.capacity() == bufferCapacity) {
-            pool.offerFirst(buffer);
-        }
-        // oversized temporary buffers are discarded
+    public void release(ByteBuffer b) {
+        pool.offerFirst(b);
     }
 }
 ```
 
-Pool exhaustion deserves a deliberate decision. Three options:
+`ConcurrentLinkedDeque` chosen because it's lock-free and `offerFirst`/`pollFirst` give you LIFO
+with cache-warm buffers.
+`clear()` only resets indices, not contents.
+The borrow/release contract is the caller's responsibility. Double-release is possible and it could
+be stopped by wrapping the `ByteBuffer` with a `Lease` object that avoid that (omitted for brevity here).
+The pool is unbounded by design — it grows to the high-water mark of concurrent borrows
+(the logic is interesting but deviates the point being made in this article).
 
-- **Block** — the caller waits until a buffer is available. Simple, backpressure
-  for free, but can cause latency spikes under burst load.
-- **Allocate temporarily** — as above, create an unpooled buffer and discard it
-  after use. Allocation pressure returns briefly, but the system never blocks.
-- **Fail fast** — throw immediately. Only appropriate if the pool size is tuned
-  to handle peak load with margin.
-
-We chose temporary allocation with monitoring on the fallback rate. In
-production we have not observed exhaustion; the fallback exists so a
-misjudged `poolSize` degrades gracefully instead of failing requests, and the
-metric tells us whether the assumption still holds.
-
-The code ended up like:
+The caller ended up like:
 ```java
 ByteBuffer keyBuffer = pool.borrow();
 ByteBuffer valueBuffer = pool.borrow();
@@ -187,29 +180,30 @@ try {
     pool.release(valueBuffer);
 }
 ```
+that is much more complex than the naive approach.
 
 Per-request cost becomes:
-- borrow a buffer
-- read into it
-- process
+- borrow a buffer;
+- read into it;
+- use it for serialize/deserialize;
 - return it to the pool.
 
 Buffer allocations on the hot path are zero. Domain-object allocations (the
 deserialized `Value`) still happen on the heap — the pool eliminates the
-serialization scaffolding, not the result of deserialization. Buffer
-allocations now scale with concurrency (the pool size), not with request rate.
+serialization scaffolding, not the result of deserialization.
 
-Migrating from `DataOutputStream` to `ByteBuffer` was trivial.
+Migrating from `DataOutputStream` to `ByteBuffer` for serialize/deserialize was trivial
+(all corner cases were clearly documented and unit tested).
 
 ## The Result
 
-After the pool was in place, the same JMH benchmark:
+With the pool in place, the same JMH benchmark:
 
 ```
 Benchmark                              Mode  Cnt    Units
 RocksDbReadBenchmark.pooledGet        thrpt   10   ops/s
-·gc.alloc.rate                                  ~10  MB/sec
-·gc.churn.G1_Eden_Space                         ~10  MB/sec
+gc.alloc.rate                                  ~10  MB/sec
+gc.churn.G1_Eden_Space                         ~10  MB/sec
 ```
 
 Heap allocations dropped from 4 GB/s to ~10 MB/s. The residual is the
@@ -228,11 +222,6 @@ per_request_alloc = avg_key_size + avg_value_size + serialization wrappers
 total_alloc_rate  = requests_per_second × per_request_alloc
 ```
 
-Request rate is what we are trying to scale. The product grows without bound.
-The fix is to decouple allocation from request rate. Buffer cost should be
-fixed at startup, with per-request allocations limited to the domain objects
-we actually return.
-
 With a pool of pre-allocated `DirectByteBuffer`s:
 
 ```
@@ -240,19 +229,19 @@ per_request_alloc = sizeof(Value)                # deserialized domain object
 fixed_cost        = pool_size × buffer_capacity  # paid once, at startup
 ```
 
-Buffers no longer scale with request rate; they scale with concurrency.
+Buffers no longer scale with request rate; they scale with concurrency. The pool starts empty
+and buffers are created lazily, following the concurrency level of the instance.
 
 ## The Tradeoff
 
-The new design is more complex but also much more efficient.
+The new design is more complex and has more moving parts (pool, monitoring, health checks, etc)
+but it is operationally cheaper to scale.
 
 With the naive design, scaling is simple: add nodes. Each node is stateless with
 respect to allocation — it allocates what it needs, the GC cleans up. Horizontal
-scaling is cheap to reason about.
+scaling is cheap to reason about..
 
-With the pool, each node carries a fixed memory reservation. Pool size and buffer
-capacity must be tuned to the workload — too small and we fall back to temporary
-allocation under load; too large and we waste native memory. `LinkedBlockingDeque`
+With the pool, each node carries a fixed memory reservation. `LinkedBlockingDeque`
 handles the concurrency itself; the real risk is the borrow/release lifecycle:
 a borrow without a matching release leaks a buffer permanently, double-release
 puts the same buffer in the pool twice (two callers will then mutate it
@@ -260,9 +249,10 @@ concurrently), and use-after-release corrupts whoever borrowed it next. We
 mitigate this with a try-with-resources wrapper that owns the release call,
 plus a borrow/release counter exposed as a metric — a steadily growing delta
 flags a leak before the pool drains.
-
 The payoff is that a single node can handle significantly more load efficiently.
 Horizontal scaling remains available, but is no longer forced by allocation
 pressure alone.
+
+---
 
 [^rocksdb-jni-bench]: See also [RocksDB Java JNI benchmarks](https://rocksdb.org/blog/2023/11/06/java-jni-benchmarks.html).
