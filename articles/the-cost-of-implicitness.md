@@ -54,6 +54,10 @@ The application architecture follows rules that a tool like
 [ArchUnit](https://www.archunit.org) verifies on every build — if the dependency graph
 matters, it belongs in CI, not in a diagram that rots.
 
+The same move extends past application code: Terraform plans, schema migrations, and
+runtime config are all places where CI can verify what would otherwise live in someone's
+head. This article focuses on the code path, but the principle does not stop there.
+
 Every link in this chain is a pointer. A broken pointer is not a documentation problem —
 it is a liability. A test that no longer covers its requirement is a false green. A type
 that stopped enforcing its invariant is a hole in the boundary. An architecture rule that
@@ -66,15 +70,31 @@ is thorough, but because the structure of the system makes the connections trave
 This is what *explorable* means in practice: not an IDE feature, not a style preference —
 a property of the design that holds whether the team is moving fast or not.
 
+None of this is free. Encoding invariants adds boilerplate, and ossifying an unstable
+domain too early makes it harder to change rather than easier. The move pays off once the
+domain has stabilized enough that the constraints reflect real invariants and not guesses.
+Prototypes and throwaway scripts are the wrong place to apply it; long-lived production
+boundaries are exactly the right one.
+
+With one notable exception: the prototype that survives. Most do. The shape of an
+experiment becomes the shape of the system that ships, and the implicit assumptions baked
+into the original sketch harden into the production design before anyone notices. The
+cheap insurance is to make the seams most likely to outlive the prototype — the public
+types, the service boundary — explicit from day one, even when the rest is throwaway.
+
 This is not new. TDD draws the requirements-to-tests link explicitly.[^tdd] DDD formalizes the practice of
 encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
-disciplines converge on the same principle.
+disciplines converge on the same principle. The C++ community has spent decades pushing
+the language toward more precise types — templates, C++20 concepts, strong-typedef
+libraries — for the same reason.[^cpp] Rust took the move further and made encoded
+invariants the language's defining feature; TypeScript was bolted onto JavaScript precisely
+because untyped boundaries had become too expensive at scale.[^ts]
 
-## 2026: The Cost Doubles
+## 2026: The Cost Scales
 
 What was always true is now structurally more expensive to ignore. AI agents write
-production code routinely, and they operate under ambiguity the same way junior engineers
-do: fill the gap with a plausible default and move on. The difference is speed, and the
+production code routinely, and under ambiguity they do what any author under time pressure
+does: fill the gap with a plausible default and move on. The difference is speed, and the
 compounding of errors at speed.
 
 The claim is not that agents fail on messy codebases — they often handle them impressively well.
@@ -94,6 +114,10 @@ Implicitness was always expensive. Now the cost scales.
 [^tpp]: Hunt & Thomas, *The Pragmatic Programmer* (1999), "Design by Contract." DbC formalizes the same move: replace implicit assumptions with explicit, checkable contracts at every interface.
 
 [^sbd]: Johnsson, Deogun & Sawano, *Secure by Design* (2019). The book frames security as a design property — domain primitives, value objects, and type constraints that make insecure states unrepresentable rather than detectable.
+
+[^cpp]: C++20 concepts (P0734) constrain template parameters at compile time; the Core Guidelines (Stroustrup & Sutter) recommend strong types and `gsl::not_null` to encode invariants directly.
+
+[^ts]: Gao, Bird & Barr, *"To Type or Not to Type: Quantifying Detectable Bugs in JavaScript"* (ICSE 2017), found that adding TypeScript or Flow type annotations would have caught ~15% of public bugs in the studied JavaScript projects.
 
 
 
