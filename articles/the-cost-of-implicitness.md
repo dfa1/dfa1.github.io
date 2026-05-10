@@ -86,9 +86,9 @@ This is not new. TDD draws the requirements-to-tests link explicitly.[^tdd] DDD 
 encoding domain invariants in types rather than in comments or runtime logic.[^ddd] Both
 disciplines converge on the same principle. The C++ community has spent decades pushing
 the language toward more precise types — templates, C++20 concepts, strong-typedef
-libraries — for the same reason.[^cpp] Rust took the move further and made encoded
-invariants the language's defining feature; TypeScript was bolted onto JavaScript precisely
-because untyped boundaries had become too expensive at scale.[^ts]
+libraries — for the same reason.[^cpp] The ML family — Haskell, OCaml, Standard ML — has
+treated this as the default for forty years: algebraic data types, exhaustive pattern
+matching, and a type system rich enough to make illegal states unrepresentable.[^ml]
 
 ## 2026: The Cost Scales
 
@@ -99,7 +99,7 @@ compounding of errors at speed.
 
 The claim is not that agents fail on messy codebases — they often handle them impressively well.
 The narrower claim: in a system with explicit constraints, the agent has fewer ways to go
-wrong. [`MarketId` and `InstrumentId` cannot be silently swapped](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team).
+wrong.[^ts] [`MarketId` and `InstrumentId` cannot be silently swapped](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team).
 An ArchUnit rule cannot be quietly bypassed. The constraint system doesn't make the agent
 smarter — it makes the dangerous path the hard one to write, regardless of who is writing it.
 
@@ -116,6 +116,8 @@ Implicitness was always expensive. Now the cost scales.
 [^sbd]: Johnsson, Deogun & Sawano, *Secure by Design* (2019). The book frames security as a design property — domain primitives, value objects, and type constraints that make insecure states unrepresentable rather than detectable.
 
 [^cpp]: C++20 concepts (P0734) constrain template parameters at compile time; the Core Guidelines (Stroustrup & Sutter) recommend strong types and `gsl::not_null` to encode invariants directly.
+
+[^ml]: Yaron Minsky, *Effective ML* (CUFP 2010), popularized the principle "make illegal states unrepresentable" as a design discipline that applies wherever the type system is rich enough to express it.
 
 [^ts]: Gao, Bird & Barr, *"To Type or Not to Type: Quantifying Detectable Bugs in JavaScript"* (ICSE 2017), found that adding TypeScript or Flow type annotations would have caught ~15% of public bugs in the studied JavaScript projects.
 
