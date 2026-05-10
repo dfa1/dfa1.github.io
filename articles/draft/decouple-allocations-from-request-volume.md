@@ -2,10 +2,10 @@
 
 *30 November 2023*
 
-*A few thousand requests per day. [RocksDB](https://rocksdb.org/)
+*Millions of requests per day. [RocksDB](https://rocksdb.org/)
 as the storage engine, returning variable-size values. Nothing about this load profile suggests
 a performance problem.*
-*The naive implementation has a structural flaw: allocation rate scales with
+*The implementation has a structural flaw: allocation rate scales with
 request rate, when it should scale with concurrency. Each request churns fresh
 buffers and hands them to the GC. Pre-allocating a pool sized to concurrency
 breaks that coupling — allocation cost is paid once at startup, regardless of
@@ -13,8 +13,8 @@ throughput.*
 
 ## The Starting Point
 
-We started a POC to explore RocksDB for our business requirements. With a lot
-of ground to cover, we kept the data-fetching path deliberately simple:
+Years ago, a POC explored RocksDB as the storage engine for the project. With
+a lot of ground to cover, the data-fetching path was kept deliberately simple:
 
 ```java
 Key key = ...; // request from the caller
@@ -26,18 +26,15 @@ Value value = deserializeValue(valueBytes);
 Both `serializeKey` and `deserializeValue` allocate extra objects to implement the serialization logic:
 ```java
 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-ObjectOutputStream oos = new ObjectOutputStream(baos);
-serializeKey(key, oos);
+DataOutputStream dos = new DataOutputStream(baos);
+serializeKey(key, dos);
 byte[] keyBytes = baos.toByteArray();
 ```
 
-For quite some time, this was not a problem: request volume was low and response
-times were acceptable.
-
 ### Why a custom binary format?
 
-Our keys had specific ordering requirements (grouped by path but sorted by
-timestamp, most recent first), so we implemented a custom binary encoding with
+The keys had specific ordering requirements (grouped by path but sorted by
+timestamp, most recent first), so the schema used a custom binary encoding with
 one non-negotiable constraint: **lexicographic order must equal semantic
 order**. RocksDB sorts keys lexicographically for iteration and prefix scans. If
 the binary encoding does not preserve the intended ordering, prefix scans
@@ -48,11 +45,11 @@ The consequences are concrete:
 - Integer fields must be encoded as **fixed-width big-endian**. An ASCII or
   decimal-string encoding of `2` and `10` sorts `10` before `2`
   lexicographically. Fixed-width big-endian sorts unsigned values correctly.
-  Our keys only use non-negative integers; signed values would need a sign-bit
+  The keys only use non-negative integers; signed values would need a sign-bit
   flip (or a bias) so that negatives sort before positives.
 - Hierarchy levels must have fixed-width components so that a prefix of one
   level cannot accidentally match the interior of another level's encoding.
-- Separators between path segments become unnecessary when all components are
+- Separators between levels become unnecessary when all components are
   fixed-width — the parser always knows where each field ends.
 
 This is the constraint that rules out Java's default serialization, Protobuf,
@@ -63,17 +60,17 @@ is a correctness requirement.
 ## The Signal
 
 The signal was not a latency spike. It was cost. The service was small, the
-load was modest, but the infrastructure bill was not proportional to what the
-service was doing. GC pauses were frequent enough to require more headroom than
-the workload justified.
+load was modest, but the infrastructure bill was higher than expected.
+GC pauses were frequent enough to require more headroom than the workload justified.
 
 The natural first response is to scale horizontally: add nodes. It works.
 Throughput goes up. Cost goes up proportionally. The structural problem remains,
 now running on more machines.
 
-To understand what was actually happening, we ran
-[JMH](https://github.com/openjdk/jmh) with
-[`GCProfiler`](https://javadoc.io/doc/org.openjdk.jmh/jmh-core/latest/org/openjdk/jmh/profile/GCProfiler.html)[^rocksdb-jni-bench]:
+To understand what was actually happening, a
+[JMH](https://github.com/openjdk/jmh) benchmark with
+[`GCProfiler`](https://javadoc.io/doc/org.openjdk.jmh/jmh-core/latest/org/openjdk/jmh/profile/GCProfiler.html)
+isolated the read path[^rocksdb-jni-bench]:
 
 ```java
 @BenchmarkMode(Mode.Throughput)
@@ -104,12 +101,12 @@ gc.alloc.rate                               ~4096  MB/sec
 gc.churn.G1_Eden_Space                      ~4096  MB/sec
 ```
 
-~4 GB/s of heap allocations under benchmark saturation. Production traffic of a
-few thousand requests per day does not produce anything close to this rate —
-the benchmark validates the mechanism, not the production diagnosis. The
-production signal was qualitatively different: GC headroom and infrastructure
-cost, not throughput. We sized the fix for projected scale, not for the load
-we already had. The benchmark gave us a reproducible target to measure against.
+~4 GB/s of heap allocations under benchmark saturation. Production traffic at
+the time was nowhere near this rate — the benchmark validates the mechanism,
+not the production diagnosis. The production signal was qualitatively
+different: GC headroom and infrastructure cost, not throughput. The fix was
+sized for projected scale, not for the load already in production. The
+benchmark provided a reproducible target to measure against.
 
 The structural point holds at any rate: allocation volume scales with request
 rate, even though only a few requests are ever in flight at the same time.
@@ -118,9 +115,19 @@ objects of unpredictable size. Well-known problem, well-known solutions.
 
 ## The Design
 
-A `DirectByteBuffer` lives off-heap. It is not managed by the GC. Allocation
-is expensive (native memory call), which is exactly why we pool them: pay the
-cost once at startup, reuse indefinitely.
+A `DirectByteBuffer` backs its bytes with off-heap native memory. The wrapper
+object itself is still a heap object — reclaimed by the GC, which then triggers
+a `Cleaner` to free the native region — but the payload bytes do not pressure
+the eden/survivor spaces. Allocation is expensive (a native `malloc`-style
+call), which is exactly why pooling helps: pay the cost once at startup, reuse
+indefinitely.
+
+The pool only pays off in combination with the direct-buffer overload of
+RocksDB's Java API, [`RocksDB.get(ByteBuffer key, ByteBuffer value)`](https://javadoc.io/doc/org.rocksdb/rocksdbjni/latest/org/rocksdb/RocksDB.html#get(org.rocksdb.ReadOptions,java.nio.ByteBuffer,java.nio.ByteBuffer)).
+The default `byte[]` overload copies across the JNI boundary on every call; the
+direct-buffer overload reads straight into the pooled native memory. Without
+that variant, pooling Java-side wrappers around `byte[]` would not eliminate
+the per-request copy.
 
 Essentially the pool is:
 
@@ -158,7 +165,7 @@ public final class DirectByteBufferPool {
 }
 ```
 
-We chose `ConcurrentLinkedDeque` because it is lock-free, and
+`ConcurrentLinkedDeque` was chosen because it is lock-free, and
 `offerFirst`/`pollFirst` give LIFO ordering — recently-released buffers stay
 cache-warm. `clear()` only resets indices, not contents. The borrow/release
 contract is the caller's responsibility: double-release is possible, and a
@@ -248,10 +255,10 @@ With the pool, each node carries a fixed memory reservation. `ConcurrentLinkedDe
 handles the concurrency itself; the real risk is the borrow/release lifecycle:
 a borrow without a matching release leaks a buffer permanently, double-release
 puts the same buffer in the pool twice (two callers will then mutate it
-concurrently), and use-after-release corrupts whoever borrowed it next. We
-mitigate this with a try-with-resources wrapper that owns the release call,
-plus a borrow/release counter exposed as a metric — a steadily growing delta
-flags a leak before the pool drains.
+concurrently), and use-after-release corrupts whoever borrowed it next. A
+try-with-resources wrapper that owns the release call mitigates this, alongside
+a borrow/release counter exposed as a metric — a steadily growing delta flags
+a leak before the pool drains.
 The payoff is that a single node can handle significantly more load efficiently.
 Horizontal scaling remains available, but is no longer forced by allocation
 pressure alone.
