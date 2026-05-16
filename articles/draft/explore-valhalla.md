@@ -90,50 +90,6 @@ UnsignedInt[10]  — value array
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
-## What this changes for security
-
-In part 1 the rule was: refine your types at the boundary, then quit before you hit the inner loop. With value classes, refined types belong in the inner loop too. Three concrete consequences.
-
-### 1. Refined integers everywhere
-
-A `Port` field used to be `int port`, with the comment "must be 0..65535" and the runtime check no one wrote. With value classes you write `Port port` in the struct, in the array, in the network protocol parser, and the bound is enforced once and never paid again:
-
-```java
-public record Listener(HostName host, Port port, ConnectionLimit limit) { }
-```
-
-Three constraints, three types, zero heap objects added by the refinement.
-
-### 2. Probability vs Percentage — at scale
-
-A common boundary bug is `* 100` rot: a probability ([0,1]) flowing into code that expected a percentage ([0,100]) or vice versa. Two refined floats catch it:
-
-```java
-public value class Probability implements RefinedFloat {
-    public Probability(float v) {
-        if (Float.isNaN(v) || v < 0f || v > 1f) {
-            throw new IllegalArgumentException("probability must be finite and in [0, 1]: " + v);
-        }
-        this.value = v;
-    }
-
-    public Probability and(Probability other)  { return new Probability(this.value * other.value); }
-    public Probability or(Probability other)   { /* inclusion-exclusion, clamped */ }
-    public Probability complement()            { return new Probability(1f - value); }
-}
-```
-
-A risk-scoring loop over a million events — `or`, `and`, `complement` chained — now type-checks the same way it did at the API boundary, and runs on a flat `Probability[]`. The compiler refuses `new Probability(50f)` at line 1; the JIT inlines the rest.
-
-### 3. Slug, HostName — the strings that bite
-
-Strings are where part 1 lived and where most of the bugs hide. ReDoS, header injection, path traversal, SSRF — all rooted in `String` being whatever the caller felt like. The library's `Slug` and `HostName` enforce the format up front:
-
-- [`Slug`](https://en.wikipedia.org/wiki/Clean_URL#Slug): `^[a-z0-9](-?[a-z0-9])*$`, length ≤ 64, length-checked **before** the regex — standard defensive practice for any string validation.
-- `HostName`: RFC 1123, plus an SSRF guard that rejects `localhost`, RFC 1918 ranges, and link-local `169.254.x.x` — the AWS instance-metadata endpoint, the origin of the 2019 Capital One breach[^capital-one].
-
-The value-class part is what lets you keep these on the inside of the system, not just at the parser. A `Map<HostName, RateLimit>` becomes practical to use everywhere a `String` host used to flow, because the wrapper costs nothing.
-
 ## What value classes don't fix
 
 Three caveats worth saying out loud:
@@ -176,5 +132,3 @@ The type system is now affordable in the inner loop too.
 [^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. Two preview JEPs ship the surface used here: *Value Classes and Objects* (syntax and semantics of `value class`) and *Null-Restricted and Nullable Types* (the `Port!` form referenced below). JEP numbers have shifted across drafts; the project page links to the current ones.
 
 [^compact-headers]: [JEP 450: Compact Object Headers](https://openjdk.org/jeps/450) (production-ready, JDK 24+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Enabled with `-XX:+UseCompactObjectHeaders`.
-
-[^capital-one]: [Capital One hack highlights SSRF concerns for AWS](https://www.techtarget.com/searchsecurity/news/252467901/Capital-One-hack-highlights-SSRF-concerns-for-AWS) (TechTarget, 2019). The attacker exploited a misconfigured WAF to reach `169.254.169.254` — the EC2 instance-metadata endpoint — and exfiltrate IAM credentials. A `HostName` type that rejects link-local addresses by construction would have closed that path.
