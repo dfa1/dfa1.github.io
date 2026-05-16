@@ -132,7 +132,7 @@ The trade-offs flip the right way when the domain is dense in identifiers, regul
 
 - **Regulated domains.** Finance, healthcare, payments. Audits and incident reviews ask the same question: *where does this value flow and how was it validated?* The compiler answers in one Find Usages.
 - **Financial identifiers.** ISIN, CUSIP, LEI, FIGI, IBAN, BIC. Fixed formats, checksum rules, jurisdictional constraints. Each one is a textbook refined type — cheap to write, expensive to get wrong, ubiquitous in code paths.
-- **Network boundaries.** `HostName`, `Port`, `IpAddress` (wrapping `java.net.InetAddress` with an SSRF guard), `Uri` (wrapping `java.net.URI` with scheme and host validation). SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
+- **Network boundaries.** `HostName`, `Port`, `IpAddress`, `CidrBlock` — all refined from raw `String` or `int`. SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
 - **Geo and locale.** `CountryCode`, `Currency`, `LanguageTag`, `TimeZone`. Each has an authoritative list (ISO 3166, ISO 4217, BCP 47, IANA tz). A refined type pins the value to that list at the boundary — no more "is `gb` the same as `GB`?" downstream.
 - **ML storage.** Feature vectors, embeddings, model and version identifiers, probability scores. Flat `Probability[]` and `Embedding[]` keep the arithmetic typed and the memory layout dense — the spot Valhalla pays off twice: correctness at the boundary, cache locality in the loop.
 
