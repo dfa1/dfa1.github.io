@@ -4,13 +4,13 @@
 
 *Once in a while, someone shares an "X rules of software engineering" list and I find myself agreeing with about a third of it. The rest is either too generic to act on, or too specific to someone else's context to be useful in mine. This is my pass through one such list[^kamina] — keeping what I've actually had to write down somewhere, dropping what I haven't, and rewriting the rest in language I'd defend in a code review.*
 
-*The principle behind the list is the same as [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist. A rule with a reason is guidance.*
+*The [Zen of Python](https://peps.python.org/pep-0020/) was the first such list I admired — `import this` felt like a secret handshake when I was younger, and a few of its lines have stayed with me ever since. Years later, I think its strength is also its trap: aphorisms without reasons get cargo-culted. So the principle behind this list is the same as [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist. A rule with a reason is guidance.*
 
 ## The Rules
 
-### 0. You will pay for complexity on-call.
+### 0. Complexity always bills you back.
 
-The bill always comes. Daily outages from a decade of stacked frameworks, OOM errors from unbounded accumulation, untraceable failures from reflection-heavy business logic — every shortcut a previous version of the team took, the next version paid back at 2 a.m. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
+Production code bills at 2 a.m. Demo code bills at the next refactor. Docs bill in the reader who gives up. Every shortcut accrues interest somewhere — on-call is just where it compounds fastest. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 
 ### 1. Be willing to delete what you wrote last quarter.
 
@@ -18,7 +18,7 @@ The bill always comes. Daily outages from a decade of stacked frameworks, OOM er
 
 ### 2. Every decision is a trade-off. Document the alternatives you rejected.
 
-The Hazelcast cluster was a deliberate reversal of our complexity-reduction principle, taken because the alternative — coordinating locks through the database — was worse. That kind of reasoning needs to be in writing for the future joiner who reads the architecture and wonders why. *([Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit))*
+The Hazelcast cluster was a deliberate reversal of our complexity-reduction principle, taken because the alternative — coordinating locks through the database — was worse. That kind of reasoning needs to be in writing for the next engineer who reads the architecture and wonders why. *([Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit))*
 
 ### 3. Every line is a liability.
 
@@ -38,11 +38,11 @@ Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `comm
 
 ### 7. Coding standards exist to argue once, not every PR.
 
-Standards don't prevent arguments — they move the argument up one level. Argue once about the rule, then stop arguing in every PR about taste. Same pattern as Write Down the Why, at a smaller scale: a rule with a reason outlasts the meeting where it was decided. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why))*
+Standards don't prevent arguments — they move the argument up one level. Argue once about the rule, then stop relitigating taste in every PR. Same pattern as Write Down the Why, at a smaller scale: a rule with a reason outlasts the meeting where it was decided. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why))*
 
 ### 8. Commit messages are documentation. Future-you is the audience.
 
-JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. "Fix" and "Updates..." are noise that you'll regret in two years when `git blame` is your only witness. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why))*
+JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why))*
 
 ### 9. Never stop learning.
 
@@ -50,7 +50,7 @@ I wrote a BPF packet sniffer in 2004. I'm reading eBPF kernel code in 2026. Tool
 
 ### 10. Move complexity from runtime into code, where it can be read.
 
-Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — implicit assumptions at runtime — is what produces 3 a.m. pages. The Java module system does the same thing: it makes the wrong thing look wrong, in the structure of the build itself. *([Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit), [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation))*
+Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — implicit assumptions at runtime — is what produces 3 a.m. pages. The Java module system does the same thing: it makes the wrong thing look wrong, in the structure of the build itself. *([Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit), [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation))*
 
 ### 11. Fix root causes. Symptoms come back.
 
@@ -58,11 +58,11 @@ The data warehouse job dying weekly was a symptom; the real cause was Hibernate 
 
 ### 12. Software is never finished — and that's a feature.
 
-BPF was finished in 1992. eBPF in 2014. The kernel observability story is still being written. Software that stops evolving is software whose context has stopped evolving — which usually means it's already irrelevant. *([From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later))*
+BPF landed in 1992. eBPF in 2014. The kernel observability story is still being written. Software that stops evolving is software whose context has stopped evolving — which usually means it's already irrelevant. *([From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later))*
 
 ### 13. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactorings, conversations. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why), [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
+Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, conversations. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why), [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 
 ### 14. Simplicity follows complexity, not the other way around.
 
@@ -70,14 +70,20 @@ Trunk-based development, small PRs, feature flags. Quarterly releases became wee
 
 You don't get to a simple system by demanding simplicity at the start. You get there by living through the complexity, understanding it, and having the patience to remove what doesn't earn its place.
 
-## ► If you're a Junior Engineer right now
+## When a checklist is the right tool
+
+Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
+
+The mistake is using a checklist where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding. Then the checklist hides the reasoning that would let you adapt — which is what rule 4 was about.
+
+## If you're a Junior Engineer right now
 
 - Ask questions fearlessly — and ask them in writing where others can read the answer.
 - Take ownership before you feel ready. The confidence comes after, not before. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 - Read more code than you write. The codebase you inherit is a body of decisions; learn to read them before you challenge them. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 - Don't wait for permission to learn a new system. Curiosity beats credentials.
 
-## ► If you're a Senior Engineer right now
+## If you're a Senior Engineer right now
 
 - Teach the *why*, not the *what*. A new engineer who knows the reasoning can handle cases the document never anticipated. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why))*
 - Lead by example, not by edict. The team copies what you do, not what you say.
@@ -85,7 +91,7 @@ You don't get to a simple system by demanding simplicity at the start. You get t
 - Listen before you correct. Sometimes the team's "wrong" approach is solving a constraint you don't know about.
 - Mentorship is how impact compounds. The team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) was the work I'm proudest of — not the code.
 
-## ► If you're leading work right now
+## If you're leading work right now
 
 **On context**
 
@@ -101,7 +107,7 @@ You don't get to a simple system by demanding simplicity at the start. You get t
 
 **On roadmap**
 
-- Sequence by what unlocks the next move, not by what hurts most. Tactical work has visible payoff; strategic work looks like overhead until it doesn't. *([The Slow Fix — Tactical and Strategic](https://dfa1.github.io/articles/the-slow-fix))*
+- Sequence by what unlocks the next move, not by what hurts most. Tactical work has visible payoff; strategic work looks like overhead until it doesn't. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 - The roadmap is a hypothesis. Defend the *why*, not the dates.
 - Don't commit to a target whose preconditions aren't in place yet — the deferred Postgres migration in *The Slow Fix* is the canonical example.
 
@@ -113,6 +119,6 @@ The list is not finished. It will not be next year either. That's the point.
 
 ---
 
-[^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down. I dropped four of the original rules, kept fourteen, and rewrote most of the kept ones.
+[^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down. I dropped three of the original rules, kept fifteen, and rewrote most of the kept ones.
 
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
