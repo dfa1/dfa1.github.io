@@ -4,7 +4,9 @@
 
 *[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
-*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. Then I found this old gist https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709 created in 2019 and then, using Claude, I quickly created an example repository to explore the idea:  [Refined types](https://github.com/dfa1/refined-type).
+*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection.*
+
+*I found [a gist I wrote in 2019](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) about refined types and wanted to explore further the design.*
 
 ---
 
@@ -16,9 +18,9 @@ The practical rule, until now, has been: refine your types at the boundary, then
 
 That was the friction. Value classes lift it — and the same pattern now fits a wider set of use cases.
 
-## What is Refined type?
+## What is a refined type?
 
-It is an idea explored in Scala and other languages:
+In Scala and similar languages you can narrow a base type with a predicate and get a compile-time rejection on invalid values. Java has no such mechanism — the constraint check runs at construction time, not compile time:
 
 ```java
 public class Refined<T> {
@@ -40,20 +42,30 @@ public class Refined<T> {
 	// ...provide equals/hashCode/toString
 }
 ```
-And then some static methods:
+
+A concrete refined type extends `Refined<T>` and supplies the predicate:
 
 ```java
-import java.util.function.Predicate;
+private static class PositiveInt extends Refined<Integer> {
 
+    public PositiveInt(Integer value) {
+        super(i -> i > 0, value);
+    }
+}
+```
+
+Companion classes provide the static factories:
+
+```java
 public class Refining {
 
 	public static PositiveInt of(int value) {
 		return new PositiveInt(value);
 	}
+}
 ```
 
-This was my gist and it was just scratching the surface of the design space.
-This is really not very efficient as it forces all primitives types to be boxed.
+That gist only scratched the surface of the design space, and the approach was not efficient — it forced all primitive types to be boxed.
 
 ## Enter Project Valhalla — value classes
 
@@ -85,24 +97,23 @@ The constructor still runs. The validation still happens. The compile-time guara
 
 ## The numbers
 
-
 ```
 UnsignedInt[100]:   416 bytes  (flat inline storage)
    Integer[100]:  2816 bytes  (array shell + 100 heap objects)
 ```
 
-To see why, compare the two layouts:
+Numbers measured on 64-bit HotSpot without compressed oops.[^bench-config] To see why, compare the two layouts:
 
 ```
 Integer[10]  — reference array
 
   ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
   │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │  ← 4-byte refs
-  └──┬──┴──┬──┴──┬──┴─────┴─────┴─────┴─────┴─────┴─────┴──┬──┘
-     │     │     │                   ...                     │
-     ▼     ▼     ▼                                           ▼
+  └──┬──┴──┬──┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴──┬──┘
+     │     │                        ...                    │
+     ▼     ▼                                               ▼
   ┌──────┐┌──────┐┌──────┐                             ┌──────┐
-  │header││header││header│          ...                │header│  ← 12 bytes each
+  │header││header││header│          ...                │header│  ← 8-12 bytes each
   │  v0  ││  v1  ││  v2  │                             │  v9  │
   └──────┘└──────┘└──────┘                             └──────┘
   10 heap objects scattered — one cache miss per element
@@ -118,15 +129,26 @@ UnsignedInt[10]  — value array
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
-The cost argument is off. The compile-time guarantee is unchanged. If you want the full picture — the type catalog, trade-offs, and where the pattern pays off — it is all in the [`refined-type` README](https://github.com/dfa1/refined-type).
+The original overhead objection no longer applies. The compile-time guarantee is unchanged. If you want the full picture — the type catalog, trade-offs, and where the pattern pays off — the library covers it.[^refined-type]
 
-The library adds `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`, and more.
+The library also has other examples like `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`, and more — all value classes.[^refined-type]
 
-Everything is a `value class`. JOL says:
+## Conclusion
+
+Valhalla removes the last reason to keep primitive types out of domain modeling.
+*Codes like a class, stores like an int* is reality. Domain primitives, like those described in
+[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), will be cheap as primitives.
+
+The main points against it are still the extra work to do at the edge of the software to convert
+from JSON/JPA/etc to a nice object. The library[^refined-type] has some example code also for that
+for Jackson and JPA.
+
 ---
 
-> Code: [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
+[^refined-type]: Code at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
 
-[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. Two preview JEPs ship the surface used here: *Value Classes and Objects* (syntax and semantics of `value class`) and *Null-Restricted and Nullable Types* (the `Port!` form referenced below). JEP numbers have shifted across drafts; the project page links to the current ones.
+[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. Two preview JEPs ship the surface used here: *Value Classes and Objects* (syntax and semantics of `value class`) and *Null-Restricted and Nullable Types*. JEP numbers have shifted across drafts; the project page links to the current ones.
 
 [^compact-headers]: [JEP 450: Compact Object Headers](https://openjdk.org/jeps/450) (production-ready, JDK 24+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Enabled with `-XX:+UseCompactObjectHeaders`.
+
+[^bench-config]: Measured without `-XX:+UseCompressedOops`. With compressed oops (the default for heaps under 32 GB) each `Integer` is 16 bytes, giving ~2 016 bytes total.
