@@ -135,7 +135,16 @@ The original overhead objection no longer applies. The compile-time guarantee is
 want the full picture — the type catalog, trade-offs, and where the pattern pays off — the library
 covers the full pattern.[^refined-type]
 
-The library also covers `Email`, `HostName`, `Port`, `Slug`, `Size`, `Percentage`, `Probability`, and more — all value classes.[^refined-type]
+The library covers a range of domains — all value classes[^refined-type]:
+
+| Domain | Types |
+|---|---|
+| Network | `Email`, `HostName`, `Port`, `Slug` |
+| Geography | `Latitude`, `Longitude`, `GeoPoint`, `Distance` |
+| Finance | `Price`, `CurrencyCode`, `Percentage`, `CusipNumber`, `SwissValorNumber`, `Isin` |
+| Measurement | `Age`, `Size`, `Velocity`, `Volume`, `Probability` |
+| Unsigned integers | `UnsignedByte`, `UnsignedShort`, `UnsignedInt`, `UnsignedLong` |
+| ML | `Float16` |
 
 ## Conclusion
 
