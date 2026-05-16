@@ -1,4 +1,4 @@
-# Your Compiler Is Already Part of Your Security Team — Part 2: And Now It's Free
+# Explore Valhalla
 
 *16 May 2026*
 
@@ -16,7 +16,7 @@ The reaction in my inbox split into two pushbacks. The first — *"my team won't
 
 ## The blocker: wrapper overhead
 
-A `class Volume { final long v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte long, padded to alignment (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. An end-of-day push distributes the closing volume for every traded instrument to every connected client — millions of `Volume` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
+A `class Price { final long v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte long, padded to alignment (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. An end-of-day push distributes the closing `Price` for every traded instrument to every connected client — millions of `Price` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
 
 The practical rule, until now, has been: refine your types at the boundary, then quit before you hit the inner loop. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the parsing layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
@@ -29,12 +29,12 @@ Value classes are objects without identity. They carry behavior and invariants, 
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
-public value class Volume implements RefinedLong {
-    private final long value;
+public value class Price implements RefinedLong {
+    private final long value; // in cents
 
-    public Volume(long value) {
+    public Price(long value) {
         if (value < 0) {
-            throw new IllegalArgumentException("volume cannot be negative: " + value);
+            throw new IllegalArgumentException("price cannot be negative: " + value);
         }
         this.value = value;
     }
@@ -46,9 +46,9 @@ public value class Volume implements RefinedLong {
 Same shape as a regular wrapper. Two things change underneath:
 
 1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable to the null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
-2. **Flat layout.** The JVM is allowed to inline the fields wherever a `Port` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
+2. **Flat layout.** The JVM is allowed to inline the fields wherever a `Price` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
-The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `Port`, the value is in `[0, 65535]`* — still holds.
+The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `Price`, the value is non-negative* — still holds.
 
 What disappears is the runtime cost.
 
