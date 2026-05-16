@@ -101,14 +101,15 @@ One caveat: the flat layout applies only when the static type is `PositiveInt`. 
 ## The numbers
 
 ```
-PositiveInt[100]:   416 bytes (flat inline storage)
-    Integer[100]:  2016 bytes (array shell + 100 heap objects)
+                   int[100]:   416 bytes  (bare primitive)
+  PositiveInt[100] (value):    416 bytes  (value class — matches int[])
+  PositiveInt[100] (identity): 2016 bytes (identity class, pre-Valhalla)
 ```
 
-Numbers measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB).[^bench-config] To see why, compare
-the two layouts:
+Measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB).[^bench-config] The value class matches the bare primitive; the identity class pays ~4.8× for the wrapper. To see why, compare the layouts:
+
 ```
-Integer[10]  — reference array
+PositiveInt[10]  — identity class (pre-Valhalla)
 
   ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
   │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │  ← 4-byte refs
@@ -122,16 +123,15 @@ Integer[10]  — reference array
   10 heap objects scattered — extra cache-line load per element on random access
 
 
-PositiveInt[10]  — value array
+PositiveInt[10]  — value class (Java 27+)
 
   ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐
   │ v0 │ v1 │ v2 │ v3 │ v4 │ v5 │ v6 │ v7 │ v8 │ v9 │  ← values inline
   └────┴────┴────┴────┴────┴────┴────┴────┴────┴────┘
-  contiguous in memory — sequential reads hit the cache line
+  contiguous in memory — same layout as int[]
 ```
 
-This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity
-costs space; saying *I don't need identity* is the permission slip.
+This is not a benchmark trick. It is the layout the JVM chooses when it has permission. The wrapper and the bare primitive now occupy the same memory. Identity costs space; saying *I don't need identity* is the permission slip.
 
 The original overhead objection no longer applies. The static guarantee is unchanged. The library covers a range of domains — all value classes[^refined-type]:
 
@@ -151,7 +151,7 @@ Types backed by a primitive (`Port`, `Latitude`, `Probability`, etc.) flatten in
 The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library[^refined-type] includes example adapters for Jackson and JPA.
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
-*Codes like a class; stores like an int,* is reality. Domain primitives, like those described in
+*Codes like a class; works like an int* is reality. Domain primitives, like those described in
 [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
 ---
