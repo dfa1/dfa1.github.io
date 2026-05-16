@@ -42,8 +42,7 @@ public class Refined<T> {
 }
 ```
 
-A concrete refined type extends `Refined<T>` and supplies the predicate.
-To represent a positive integer coming from an external interface:
+A concrete refined type extends `Refined<T>` and supplies the predicate — here, a positive integer:
 
 ```java
 private static class PositiveInt extends Refined<Integer> {
@@ -65,8 +64,7 @@ public class Refining {
 }
 ```
 
-That gist only scratched the surface of the design space, and the approach was not efficient —
-it forced all primitive types to be boxed.
+That gist only scratched the surface of the design space, and the approach had a cost: all primitive types were boxed.
 
 ## Enter Project Valhalla
 
@@ -133,7 +131,7 @@ PositiveInt[10]  — value class (Java 27+)
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. The wrapper and the bare primitive now occupy the same memory. Identity costs space; saying *I don't need identity* is the permission slip.
 
-The original overhead objection no longer applies. The static guarantee is unchanged. The library covers a range of domains — all value classes[^refined-type]:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library spans several domains, all backed by value classes[^refined-type]:
 
 | Domain | Types |
 |---|---|
@@ -151,7 +149,7 @@ Types backed by a primitive (`Port`, `Latitude`, `Probability`, etc.) flatten in
 The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library[^refined-type] includes example adapters for Jackson and JPA.
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
-*Codes like a class; works like an int* is reality. Domain primitives, like those described in
+*Codes like a class; works like an int* is now true. Domain primitives, as described in
 [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
 ---
@@ -162,4 +160,4 @@ Valhalla removes the last reason to keep primitive types out of domain modeling.
 
 [^compact-headers]: [JEP 519: Compact Object Headers](https://openjdk.org/jeps/519) (product feature, JDK 25+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Opt-in via `-XX:+UseCompactObjectHeaders`. (JEP 450 shipped the same feature as experimental in JDK 24, requiring `-XX:+UnlockExperimentalVMOptions`.)
 
-[^bench-config]: With `-XX:-UseCompressedOops` disabled, refs are 8 bytes and each `Integer` is 24 bytes — giving ~3 224 bytes total.
+[^bench-config]: With `-XX:-UseCompressedOops` disabled, refs are 8 bytes and each `Integer` is 24 bytes — giving ~3224 bytes total.
