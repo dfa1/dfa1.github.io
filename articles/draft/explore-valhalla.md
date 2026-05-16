@@ -58,10 +58,10 @@ I built [`refined-type`](https://github.com/dfa1/refined-type), a small library 
 
 ```
 UnsignedInt[100]:   416 bytes  (flat inline storage)
-   Integer[100]:  2016 bytes  (array shell + 100 heap objects)
+   Integer[100]:  2816 bytes  (array shell + 100 heap objects)
 ```
 
-**~4.85× less memory**, scanned in cache-line strides instead of jumping pointer-to-pointer across the heap. JMH on the array-traversal benchmark shows the loop matches a bare `int[]`. The "wrapper tax" is gone.
+**~6.8× less memory**, scanned in cache-line strides instead of jumping pointer-to-pointer across the heap. JMH on the array-traversal benchmark shows the loop matches a bare `int[]`. The "wrapper tax" is gone.
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
