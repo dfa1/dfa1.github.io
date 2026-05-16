@@ -4,7 +4,7 @@
 
 *[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
-*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. So the question worth exploring: can a refined `Port` or `Probability` now carry its compile-time guarantee into the inner loop without paying the memory tax that made the objection real in the first place?*
+*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. [Refined types](https://github.com/dfa1/refined-type) can now carry their compile-time guarantees into the inner loop — the memory tax that made the objection real is gone.*
 
 ---
 
