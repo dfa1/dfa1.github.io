@@ -54,7 +54,7 @@ What disappears is the runtime cost.
 
 ## The numbers
 
-I built [`refined-type`](https://github.com/dfa1/refined-type), a small library that lifts `Isin` from part 1 and adds `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`. Everything is a `value class`. JOL says:
+I built [`refined-type`](https://github.com/dfa1/refined-type), a small library that lifts `Isin` from part 1 and adds `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`, and more. Everything is a `value class`. JOL says:
 
 ```
 UnsignedInt[100]:   416 bytes  (flat inline storage)
@@ -100,11 +100,11 @@ public value class Probability implements RefinedFloat {
 
 A risk-scoring loop over a million events — `or`, `and`, `complement` chained — now type-checks the same way it did at the API boundary, and runs on a flat `Probability[]`. The compiler refuses `new Probability(50f)` at line 1; the JIT inlines the rest.
 
-### 3. Slug, HostName, BoundedString — the strings that bite
+### 3. Slug, HostName — the strings that bite
 
 Strings are where part 1 lived and where most of the bugs hide. ReDoS, header injection, path traversal, SSRF — all rooted in `String` being whatever the caller felt like. The library's `Slug` and `HostName` enforce the format up front:
 
-- `Slug`: `^[a-z0-9](-?[a-z0-9])*$`, length ≤ 64, length-checked **before** the regex — standard defensive practice for any string validation.
+- [`Slug`](https://en.wikipedia.org/wiki/Clean_URL#Slug): `^[a-z0-9](-?[a-z0-9])*$`, length ≤ 64, length-checked **before** the regex — standard defensive practice for any string validation.
 - `HostName`: RFC 1123, plus an SSRF guard that rejects `localhost`, RFC 1918 ranges, and link-local `169.254.x.x` — the AWS instance-metadata endpoint, the origin of the 2019 Capital One breach[^capital-one].
 
 The value-class part is what lets you keep these on the inside of the system, not just at the parser. A `Map<HostName, RateLimit>` becomes practical to use everywhere a `String` host used to flow, because the wrapper costs nothing.
@@ -132,7 +132,7 @@ The trade-offs flip the right way when the domain is dense in identifiers, regul
 
 - **Regulated domains.** Finance, healthcare, payments. Audits and incident reviews ask the same question: *where does this value flow and how was it validated?* The compiler answers in one Find Usages.
 - **Financial identifiers.** ISIN, CUSIP, LEI, FIGI, IBAN, BIC. Fixed formats, checksum rules, jurisdictional constraints. Each one is a textbook refined type — cheap to write, expensive to get wrong, ubiquitous in code paths.
-- **Network boundaries.** `HostName`, `Port`, `CidrBlock`, `IpAddress`. SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
+- **Network boundaries.** `HostName`, `Port`, `IpAddress` (wrapping `java.net.InetAddress` with an SSRF guard), `Uri` (wrapping `java.net.URI` with scheme and host validation). SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
 - **Geo and locale.** `CountryCode`, `Currency`, `LanguageTag`, `TimeZone`. Each has an authoritative list (ISO 3166, ISO 4217, BCP 47, IANA tz). A refined type pins the value to that list at the boundary — no more "is `gb` the same as `GB`?" downstream.
 - **ML storage.** Feature vectors, embeddings, model and version identifiers, probability scores. Flat `Probability[]` and `Embedding[]` keep the arithmetic typed and the memory layout dense — the spot Valhalla pays off twice: correctness at the boundary, cache locality in the loop.
 
