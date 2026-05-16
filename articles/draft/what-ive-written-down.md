@@ -6,6 +6,8 @@
 
 *The [Zen of Python](https://peps.python.org/pep-0020/) was the first such list I admired — `import this` felt like a secret handshake when I was younger, and a few of its lines have stayed with me ever since. Years later, I think its strength is also its trap: aphorisms without reasons get cargo-culted. So the principle behind this list is the same as [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist. A rule with a reason is guidance.*
 
+*This is also a meta article: each rule links, in italics, to the article where I've already written about it — so you can read the rule, then the receipts.*
+
 ## The Rules
 
 ### 0. Complexity always bills you back.
