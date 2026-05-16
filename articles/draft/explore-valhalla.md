@@ -4,15 +4,9 @@
 
 *[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
-*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. [Refined types](https://github.com/dfa1/refined-type) can now carry their compile-time guarantees into the inner loop — the memory tax that made the objection real is gone.*
+*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. Then I found this old gist https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709 created in 2019 and then, using Claude, I quickly created an example repository to explore the idea:  [Refined types](https://github.com/dfa1/refined-type).
 
 ---
-
-## The idea: constraints as types
-
-The rule from part 1: encode the domain in the type. A `Port` whose constructor rejects anything outside `[0, 65535]` is a proof — once you hold one, no further check is needed. Boundary code parses; inner code consumes.
-
-The reaction in my inbox split into two pushbacks. The first — *"my team won't write all those wrapper classes"* — is real but tractable: write them once, put them in a shared module, and the cost is paid once. The second was harder, and is what this article is about.
 
 ## The blocker: wrapper overhead
 
@@ -21,6 +15,45 @@ A `class Price { final double v; }` is 24 bytes on HotSpot — 12-byte header pl
 The practical rule, until now, has been: refine your types at the boundary, then quit before you hit the inner loop. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the parsing layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
 That was the friction. Value classes lift it — and the same pattern now fits a wider set of use cases.
+
+## What is Refined type?
+
+It is an idea explored in Scala and other languages:
+
+```java
+public class Refined<T> {
+
+	private final T value;
+
+	public Refined(Predicate<T> validator, T value) {
+		if (!validator.test(value)) {
+			throw new IllegalArgumentException("invalid value");
+		}
+		this.value = value;
+	}
+
+
+	public final T getValue() {
+		return value;
+	}
+
+	// ...provide equals/hashCode/toString
+}
+```
+And then some static methods:
+
+```java
+import java.util.function.Predicate;
+
+public class Refining {
+
+	public static PositiveInt of(int value) {
+		return new PositiveInt(value);
+	}
+```
+
+This was my gist and it was just scratching the surface of the design space.
+This is really not very efficient as it forces all primitives types to be boxed.
 
 ## Enter Project Valhalla — value classes
 
@@ -50,11 +83,8 @@ Same shape as a regular wrapper. Two things change underneath:
 
 The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `Price`, the value is finite* — still holds.
 
-What disappears is the runtime cost.
-
 ## The numbers
 
-I built [`refined-type`](https://github.com/dfa1/refined-type), a small library that lifts `Isin` from part 1 and adds `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`, and more. Everything is a `value class`. JOL says:
 
 ```
 UnsignedInt[100]:   416 bytes  (flat inline storage)
@@ -86,12 +116,13 @@ UnsignedInt[10]  — value array
   contiguous in memory — sequential reads hit the cache line
 ```
 
-**~6.8× less memory**, scanned in cache-line strides instead of jumping pointer-to-pointer across the heap. JMH on the array-traversal benchmark shows the loop matches a bare `int[]`. The "wrapper tax" is gone.
-
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
 The cost argument is off. The compile-time guarantee is unchanged. If you want the full picture — the type catalog, trade-offs, and where the pattern pays off — it is all in the [`refined-type` README](https://github.com/dfa1/refined-type).
 
+The library adds `Email`, `HostName`, `Port`, `Slug`, the unsigned integers, `Size`, `Percentage`, `Probability`, and more.
+
+Everything is a `value class`. JOL says:
 ---
 
 > Code: [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
