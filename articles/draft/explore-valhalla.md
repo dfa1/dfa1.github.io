@@ -63,6 +63,32 @@ UnsignedInt[100]:   416 bytes  (flat inline storage)
    Integer[100]:  2816 bytes  (array shell + 100 heap objects)
 ```
 
+To see why, compare the two layouts:
+
+```
+Integer[3]  — reference array
+
+  ┌─────┬─────┬─────┐
+  │ ptr │ ptr │ ptr │  ← array stores 4-byte references
+  └──┬──┴──┬──┴──┬──┘
+     │     │     └─────────────────┐
+     │     └──────────┐            │
+     ▼                ▼            ▼
+  ┌────────┐      ┌────────┐   ┌────────┐
+  │ header │      │ header │   │ header │  ← 12 bytes each
+  │   42   │      │   17   │   │   99   │
+  └────────┘      └────────┘   └────────┘
+  scattered across the heap — one cache miss per element
+
+
+UnsignedInt[3]  — value array
+
+  ┌────┬────┬────┐
+  │ 42 │ 17 │ 99 │  ← values stored inline, no indirection
+  └────┴────┴────┘
+  contiguous in memory — sequential reads hit the cache line
+```
+
 **~6.8× less memory**, scanned in cache-line strides instead of jumping pointer-to-pointer across the heap. JMH on the array-traversal benchmark shows the loop matches a bare `int[]`. The "wrapper tax" is gone.
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
