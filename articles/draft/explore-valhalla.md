@@ -90,40 +90,7 @@ UnsignedInt[10]  — value array
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
-## What value classes don't fix
-
-Three caveats worth saying out loud:
-
-- **Preview.** Java 27 EA. Production deployment requires `--enable-preview`. The shape is stable; the spec is not yet final.
-- **Equality.** `value class` `equals` is structural by default — fine for `Port`, wrong for `ApiToken`. For tokens you still override `equals` to use `MessageDigest.isEqual` for constant-time comparison. The compiler doesn't know your equality is timing-sensitive; you do.
-- **Null-restricted types are opt-in.** A plain `value class` is still nullable as a reference type. Null is excluded only when you mark the type null-restricted — the `Port!` form. That is mostly good news (no NPE on the restricted path) but it changes patterns: a missing `Port` is `Optional<Port>`, not `Port port = null`. Migration friction, not a deal-breaker.
-
-## The honest trade-offs
-
-Cheap layout is not free design. Four costs to weigh before sprinkling refined types across a codebase.
-
-- **Boilerplate.** Every primitive is a constructor, a validator, an accessor, equality, `toString`, maybe `compareTo`. Records soften the syntax; they don't erase the surface area. A hundred refined types is a hundred small files to read, review, and maintain.
-- **Integration friction.** Jackson, JPA, MapStruct, OpenAPI generators, protobuf — every framework needs to know how to serialize a `Port` or hydrate a `HostName`. Most have hooks; none discover wrappers automatically. Budget a one-time wiring tax per integration, paid in custom (de)serializers.
-- **Generic noise.** `List<Port>` and `Map<HostName, RateLimit>` are fine. Cross into reflection, erasure-sensitive code, or libraries that demand raw `String`/`int`, and the cost rises. Refined types pay off in the core domain; near the edges of the platform, you spend time bridging.
-- **Narrow sweet spot.** A value that flows from one endpoint into one method and back out to JSON is rarely worth wrapping. The payoff scales with the number of call sites the value crosses and the number of invariants that must hold across all of them.
-
-## Where this pattern shines
-
-The trade-offs flip the right way when the domain is dense in identifiers, regulated, or arithmetic-heavy. The [`refined-type`](https://github.com/dfa1/refined-type) library packages the recurring building blocks for these cases as value classes, so you import them rather than rewriting the same constructor for the tenth time.
-
-- **Regulated domains.** Finance, healthcare, payments. Audits and incident reviews ask the same question: *where does this value flow and how was it validated?* The compiler answers in one Find Usages.
-- **Financial identifiers.** ISIN, CUSIP, LEI, FIGI, IBAN, BIC. Fixed formats, checksum rules, jurisdictional constraints. Each one is a textbook refined type — cheap to write, expensive to get wrong, ubiquitous in code paths.
-- **Network boundaries.** `HostName`, `Port`, `IpAddress`, `CidrBlock` — all refined from raw `String` or `int`. SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
-- **Geo and locale.** `CountryCode`, `Currency`, `LanguageTag`, `TimeZone`. Each has an authoritative list (ISO 3166, ISO 4217, BCP 47, IANA tz). A refined type pins the value to that list at the boundary — no more "is `gb` the same as `GB`?" downstream.
-- **ML storage.** Feature vectors, embeddings, probability scores. `Float16` (IEEE 754 binary16) halves the memory footprint of a float array — a flat `Float16[]` of embeddings is dense, cache-friendly, and typed. The spot Valhalla pays off twice: correctness at the boundary, cache locality in the loop.
-
-## Where this lands
-
-Part 1's claim was that the type system is a security tool you already own. The reply — *fine, but I can't afford it in the hot path* — was honest and is now obsolete.
-
-Value classes turn the cost argument off. A wrapper is a primitive with a constructor. The constructor runs once at the boundary, the JIT inlines the access, the array is flat, no per-element heap allocations for the GC to track. The compile-time guarantee is unchanged.
-
-The type system is now affordable in the inner loop too.
+The cost argument is off. The compile-time guarantee is unchanged. If you want the full picture — the type catalog, trade-offs, and where the pattern pays off — it is all in the [`refined-type` README](https://github.com/dfa1/refined-type).
 
 ---
 
