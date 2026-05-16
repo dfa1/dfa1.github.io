@@ -134,7 +134,7 @@ The trade-offs flip the right way when the domain is dense in identifiers, regul
 - **Financial identifiers.** ISIN, CUSIP, LEI, FIGI, IBAN, BIC. Fixed formats, checksum rules, jurisdictional constraints. Each one is a textbook refined type — cheap to write, expensive to get wrong, ubiquitous in code paths.
 - **Network boundaries.** `HostName`, `Port`, `IpAddress`, `CidrBlock` — all refined from raw `String` or `int`. SSRF and host-spoofing classes of bugs disappear when the type rejects link-local and private ranges at construction.
 - **Geo and locale.** `CountryCode`, `Currency`, `LanguageTag`, `TimeZone`. Each has an authoritative list (ISO 3166, ISO 4217, BCP 47, IANA tz). A refined type pins the value to that list at the boundary — no more "is `gb` the same as `GB`?" downstream.
-- **ML storage.** Feature vectors, embeddings, model and version identifiers, probability scores. Flat `Probability[]` and `Embedding[]` keep the arithmetic typed and the memory layout dense — the spot Valhalla pays off twice: correctness at the boundary, cache locality in the loop.
+- **ML storage.** Feature vectors, embeddings, probability scores. `Float16` (IEEE 754 binary16) halves the memory footprint of a float array — a flat `Float16[]` of embeddings is dense, cache-friendly, and typed. The spot Valhalla pays off twice: correctness at the boundary, cache locality in the loop.
 
 ## Where this lands
 
