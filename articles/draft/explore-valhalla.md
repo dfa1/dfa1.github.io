@@ -64,26 +64,25 @@ UnsignedInt[100]:   416 bytes  (flat inline storage)
 To see why, compare the two layouts:
 
 ```
-Integer[3]  — reference array
+Integer[10]  — reference array
 
-  ┌─────┬─────┬─────┐
-  │ ptr │ ptr │ ptr │  ← array stores 4-byte references
-  └──┬──┴──┬──┴──┬──┘
-     │     │     └─────────────────┐
-     │     └──────────┐            │
-     ▼                ▼            ▼
-  ┌────────┐      ┌────────┐   ┌────────┐
-  │ header │      │ header │   │ header │  ← 12 bytes (8 with -XX:+UseCompactObjectHeaders)
-  │   42   │      │   17   │   │   99   │
-  └────────┘      └────────┘   └────────┘
-  scattered across the heap — one cache miss per element
+  ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+  │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │  ← 4-byte refs
+  └──┬──┴──┬──┴──┬──┴─────┴─────┴─────┴─────┴─────┴─────┴──┬──┘
+     │     │     │                   ...                     │
+     ▼     ▼     ▼                                           ▼
+  ┌──────┐┌──────┐┌──────┐                             ┌──────┐
+  │header││header││header│          ...                │header│  ← 12 bytes each
+  │  v0  ││  v1  ││  v2  │                             │  v9  │
+  └──────┘└──────┘└──────┘                             └──────┘
+  10 heap objects scattered — one cache miss per element
 
 
-UnsignedInt[3]  — value array
+UnsignedInt[10]  — value array
 
-  ┌────┬────┬────┐
-  │ 42 │ 17 │ 99 │  ← values stored inline, no indirection
-  └────┴────┴────┘
+  ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐
+  │ v0 │ v1 │ v2 │ v3 │ v4 │ v5 │ v6 │ v7 │ v8 │ v9 │  ← values inline
+  └────┴────┴────┴────┴────┴────┴────┴────┴────┴────┘
   contiguous in memory — sequential reads hit the cache line
 ```
 
