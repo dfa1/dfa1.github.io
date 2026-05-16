@@ -16,7 +16,7 @@ The reaction in my inbox split into two pushbacks. The first — *"my team won't
 
 ## The blocker: wrapper overhead
 
-A `class Volume { final long v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte long, padded to alignment — and the array holding it stores 4-byte references rather than the values themselves. One trading session of order-book ticks is millions of `Volume` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
+A `class Volume { final long v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte long, padded to alignment (8-byte header with `-XX:+UseCompactObjectHeaders`, experimental since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. One trading session of order-book ticks is millions of `Volume` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
 
 The practical rule, until now, has been: refine your types at the boundary, then quit before you hit the inner loop. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the parsing layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
@@ -75,7 +75,7 @@ Integer[3]  — reference array
      │     └──────────┐            │
      ▼                ▼            ▼
   ┌────────┐      ┌────────┐   ┌────────┐
-  │ header │      │ header │   │ header │  ← 12 bytes each
+  │ header │      │ header │   │ header │  ← 12 bytes (8 with -XX:+UseCompactObjectHeaders)
   │   42   │      │   17   │   │   99   │
   └────────┘      └────────┘   └────────┘
   scattered across the heap — one cache miss per element
@@ -177,5 +177,7 @@ The type system is now affordable in the inner loop too.
 > Code: [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
 
 [^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. Two preview JEPs ship the surface used here: *Value Classes and Objects* (syntax and semantics of `value class`) and *Null-Restricted and Nullable Types* (the `Port!` form referenced below). JEP numbers have shifted across drafts; the project page links to the current ones.
+
+[^compact-headers]: [JEP 450: Compact Object Headers](https://openjdk.org/jeps/450) (experimental, JDK 24). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Enabled with `-XX:+UseCompactObjectHeaders`.
 
 [^capital-one]: [Capital One hack highlights SSRF concerns for AWS](https://www.techtarget.com/searchsecurity/news/252467901/Capital-One-hack-highlights-SSRF-concerns-for-AWS) (TechTarget, 2019). The attacker exploited a misconfigured WAF to reach `169.254.169.254` — the EC2 instance-metadata endpoint — and exfiltrate IAM credentials. A `HostName` type that rejects link-local addresses by construction would have closed that path.
