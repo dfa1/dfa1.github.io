@@ -6,7 +6,7 @@
 
 *Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection.*
 
-*I found [a gist I wrote in 2019](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) about refined types and wanted to explore the design further.*
+*That [2019 gist](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) left performance as an open question; [refined-type](https://github.com/dfa1/refined-type) is the answer.*
 
 ---
 
@@ -131,7 +131,7 @@ PositiveInt[10]  — value class (Java 27+)
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. The wrapper and the bare primitive now occupy the same memory. Identity costs space; saying *I don't need identity* is the permission slip.
 
-The original overhead objection no longer applies. The static guarantee is unchanged. The library spans several domains, all backed by value classes[^refined-type]:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library spans several domains, all backed by value classes:
 
 | Domain | Types |
 |---|---|
@@ -146,15 +146,15 @@ Types backed by a primitive (`Port`, `Latitude`, `Probability`, etc.) flatten in
 
 ## Conclusion
 
-The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library[^refined-type] includes example adapters for Jackson and JPA.
+The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library includes example adapters for Jackson and JPA.
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
 *Codes like a class; works like an int* is now true. Domain primitives, as described in
 [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
----
+The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT). Issues, missing domains, and pull requests are welcome.
 
-[^refined-type]: Code at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
+---
 
 [^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. The main preview JEP is [JEP 401: Value Classes and Objects](https://openjdk.org/jeps/401) (syntax and semantics of `value class`). Null-restricted types are covered by a companion JEP. JEP numbers may advance as the feature progresses; the project page links to the current ones.
 
