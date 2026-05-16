@@ -2,7 +2,7 @@
 
 *16 May 2026*
 
-*[Part 1](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
+*[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
 *Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. So the question worth exploring: can a refined `Port` or `Probability` now carry its compile-time guarantee into the inner loop without paying the memory tax that made the objection real in the first place?*
 
@@ -16,7 +16,7 @@ The reaction in my inbox split into two pushbacks. The first — *"my team won't
 
 ## The blocker: wrapper overhead
 
-A `class Price { final long v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte long, padded to alignment (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. An end-of-day push distributes the closing `Price` for every traded instrument to every connected client — millions of `Price` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
+A `class Price { final double v; }` is 24 bytes on HotSpot — 12-byte header plus 8-byte double, padded to alignment (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. An end-of-day push distributes the closing `Price` for every traded instrument to every connected client — millions of `Price` instances scattered across the heap, each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs roughly 3× the memory of the `long` it wraps, and the pointer chase costs one L2 cache miss per access.
 
 The practical rule, until now, has been: refine your types at the boundary, then quit before you hit the inner loop. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the parsing layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
@@ -29,17 +29,17 @@ Value classes are objects without identity. They carry behavior and invariants, 
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
-public value class Price implements RefinedLong {
-    private final long value; // in cents
+public value class Price implements RefinedDouble {
+    private final double value;
 
-    public Price(long value) {
-        if (value < 0) {
-            throw new IllegalArgumentException("price cannot be negative: " + value);
+    public Price(double value) {
+        if (Double.isNaN(value) || value < 0.0) {
+            throw new IllegalArgumentException("price must be finite and non-negative: " + value);
         }
         this.value = value;
     }
 
-    @Override public long value() { return value; }
+    @Override public double value() { return value; }
 }
 ```
 
