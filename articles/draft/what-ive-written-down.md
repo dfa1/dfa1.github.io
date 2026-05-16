@@ -34,7 +34,7 @@ The full rewrite is the single worst strategic mistake a team can make[^spolsky]
 
 ### 6. Justify every dependency. Removing one is also engineering.
 
-Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `commons-*` libraries — to evaluate three trivial business rules. JNI brought five layers of build tooling for what's now a `--enable-native-access` flag. Every dependency is a permanent commitment to someone else's release schedule, security posture, and design choices. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix), [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni))*
+Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `commons-*` libraries — to evaluate three trivial business rules. JNI required a C++ glue layer and a portable native build; FFM replaces both with `--enable-native-access`. Every dependency is a permanent commitment to someone else's release schedule, security posture, and design choices. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix), [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni))*
 
 ### 7. Coding standards exist to argue once, not every PR.
 
@@ -58,11 +58,11 @@ The data warehouse job dying weekly was a symptom; the real cause was Hibernate 
 
 ### 12. Software is never finished — and that's a feature.
 
-BPF landed in 1992. eBPF in 2014. The kernel observability story is still being written. Software that stops evolving is software whose context has stopped evolving — which usually means it's already irrelevant. *([From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later))*
+BPF landed in 1993. eBPF in 2014. The kernel observability story is still being written. Software that stops evolving is software whose context has stopped evolving — which usually means it's already irrelevant. *([From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later))*
 
 ### 13. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, conversations. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why), [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
+Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, hard conversations. *([Write Down the Why](https://dfa1.github.io/articles/write-down-the-why), [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 
 ### 14. Simplicity follows complexity, not the other way around.
 
@@ -102,14 +102,14 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 **On estimates**
 
 - Estimates are probability distributions, not dates. Communicate ranges, and the assumptions underneath them.
-- Re-estimate when reality changes. Anchoring on the first guess is dishonest, not professional.
+- Re-estimate when reality changes. Anchoring on the first guess is dishonest about uncertainty.
 - The right answer to "when?" is often "what do you mean by *done*?"
 
 **On roadmap**
 
 - Sequence by what unlocks the next move, not by what hurts most. Tactical work has visible payoff; strategic work looks like overhead until it doesn't. *([The Slow Fix](https://dfa1.github.io/articles/the-slow-fix))*
 - The roadmap is a hypothesis. Defend the *why*, not the dates.
-- Don't commit to a target whose preconditions aren't in place yet — the deferred Postgres migration in *The Slow Fix* is the canonical example.
+- Don't commit to a target whose preconditions aren't in place yet — the deferred PostgreSQL migration in *The Slow Fix* is one example among many.
 
 ## Closing
 
