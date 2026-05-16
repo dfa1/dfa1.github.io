@@ -137,7 +137,8 @@ The library also has other examples like `Email`, `HostName`, `Port`, `Slug`, th
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
 *Codes like a class, stores like an int* is reality. Domain primitives, like those described in
-[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), will be cheap as primitives.
+[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), and soon, it won't charge you a performance penalty to do
+its job.
 
 The main points against it are still the extra work to do at the edge of the software to convert
 from JSON/JPA/etc to a nice object. The library[^refined-type] has some example code also for that
