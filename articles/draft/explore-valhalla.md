@@ -24,6 +24,8 @@ That was the friction. Value classes lift it — and the same pattern now fits a
 
 ## Enter Project Valhalla — value classes
 
+Value classes are objects without identity. They carry behavior and invariants, but store like primitives — the JVM is free to inline them wherever they appear: into a register, into another object's fields, into an array slot.
+
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
