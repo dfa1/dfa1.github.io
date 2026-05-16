@@ -33,8 +33,8 @@ public value class Price implements RefinedDouble {
     private final double value;
 
     public Price(double value) {
-        if (Double.isNaN(value) || value < 0.0) {
-            throw new IllegalArgumentException("price must be finite and non-negative: " + value);
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException("price must be finite: " + value);
         }
         this.value = value;
     }
@@ -48,7 +48,7 @@ Same shape as a regular wrapper. Two things change underneath:
 1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable to the null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
 2. **Flat layout.** The JVM is allowed to inline the fields wherever a `Price` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
-The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `Price`, the value is non-negative* — still holds.
+The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `Price`, the value is finite* — still holds.
 
 What disappears is the runtime cost.
 
