@@ -12,7 +12,7 @@
 
 ## The blocker: wrapper overhead
 
-A `class PositiveInt { final int v; }` is 16 bytes on HotSpot — 12-byte header plus 4-byte int (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 24[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. A stream processor carrying millions of `PositiveInt` sequence numbers, one per event, means millions of heap objects — each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs 4× the memory of the `int` it wraps, and the pointer chase typically costs one L2 cache miss per access.
+A `class PositiveInt { final int v; }` is 16 bytes on HotSpot — 12-byte header plus 4-byte int (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 25[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. A stream processor carrying millions of `PositiveInt` sequence numbers, one per event, means millions of heap objects — each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs 4× the memory of the `int` it wraps, and the pointer chase costs an extra cache-line load per access — an L2 miss on random access patterns.
 
 The practical rule that I followed, until now, has been: refine your types at the boundary, then quit before you hit any performance-sensitive code. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the outermost layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
@@ -94,16 +94,18 @@ Same shape as a regular wrapper. Two things change underneath:
 1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable to the null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
 2. **Flat layout.** The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
-The constructor still runs. The validation still happens. The compile-time guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
+The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
+
+One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation. Flattening survives only at the concrete type.
 
 ## The numbers
 
 ```
 PositiveInt[100]:   416 bytes (flat inline storage)
-    Integer[100]:  2816 bytes (array shell + 100 heap objects)
+    Integer[100]:  2016 bytes (array shell + 100 heap objects)
 ```
 
-Numbers measured on 64-bit HotSpot without compressed oops.[^bench-config] To see why, compare
+Numbers measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB).[^bench-config] To see why, compare
 the two layouts:
 ```
 Integer[10]  — reference array
@@ -117,7 +119,7 @@ Integer[10]  — reference array
   │header││header││header│          ...                │header│  ← 8-12 bytes each
   │  v0  ││  v1  ││  v2  │                             │  v9  │
   └──────┘└──────┘└──────┘                             └──────┘
-  10 heap objects scattered — one cache miss per element
+  10 heap objects scattered — extra cache-line load per element on random access
 
 
 PositiveInt[10]  — value array
@@ -131,11 +133,7 @@ PositiveInt[10]  — value array
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. Identity
 costs space; saying *I don't need identity* is the permission slip.
 
-The original overhead objection no longer applies. The compile-time guarantee is unchanged. If you
-want the full picture — the type catalog, trade-offs, and where the pattern pays off — the library
-covers the full pattern.[^refined-type]
-
-The library covers a range of domains — all value classes[^refined-type]:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library covers a range of domains — all value classes[^refined-type]:
 
 | Domain | Types |
 |---|---|
@@ -145,6 +143,8 @@ The library covers a range of domains — all value classes[^refined-type]:
 | Measurement | `Age`, `Size`, `Velocity`, `Volume`, `Probability` |
 | Unsigned integers | `UnsignedByte`, `UnsignedShort`, `UnsignedInt`, `UnsignedLong` |
 | ML | `Float16` |
+
+Types backed by a primitive (`Port`, `Latitude`, `Probability`, etc.) flatten into contiguous storage. String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
 
 ## Conclusion
 
@@ -158,8 +158,8 @@ Valhalla removes the last reason to keep primitive types out of domain modeling.
 
 [^refined-type]: Code at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) — Java 27 EA, MIT.
 
-[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. Two preview JEPs ship the surface used here: *Value Classes and Objects* (syntax and semantics of `value class`) and *Null-Restricted and Nullable Types*. JEP numbers have shifted across drafts; the project page links to the current ones.
+[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. The main preview JEP is [JEP 401: Value Classes and Objects](https://openjdk.org/jeps/401) (syntax and semantics of `value class`). Null-restricted types are covered by a companion JEP. JEP numbers may advance as the feature progresses; the project page links to the current ones.
 
-[^compact-headers]: [JEP 450: Compact Object Headers](https://openjdk.org/jeps/450) (production-ready, JDK 24+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Enabled with `-XX:+UseCompactObjectHeaders`.
+[^compact-headers]: [JEP 519: Compact Object Headers](https://openjdk.org/jeps/519) (product feature, JDK 25+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Opt-in via `-XX:+UseCompactObjectHeaders`. (JEP 450 shipped the same feature as experimental in JDK 24, requiring `-XX:+UnlockExperimentalVMOptions`.)
 
-[^bench-config]: Measured without `-XX:+UseCompressedOops`. With compressed oops (the default for heaps under 32 GB) each `Integer` is 16 bytes, giving ~2 016 bytes total.
+[^bench-config]: With `-XX:-UseCompressedOops` disabled, refs are 8 bytes and each `Integer` is 24 bytes — giving ~3 224 bytes total.
