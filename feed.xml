@@ -3,12 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-05-09T00:00:00Z</updated>
+  <updated>2026-05-16T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>https://dfa1.github.io/feed.xml</id>
 
+  <entry>
+    <title>Rethink Domain Primitives with Valhalla</title>
+    <link href="https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla"/>
+    <id>https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla</id>
+    <updated>2026-05-16T00:00:00Z</updated>
+    <published>2026-05-16T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Your Compiler Is Already Part of Your Security Team made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per int is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.</summary>
+  </entry>
   <entry>
     <title>The Cost of Implicitness</title>
     <link href="https://dfa1.github.io/articles/the-cost-of-implicitness"/>

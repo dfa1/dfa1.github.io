@@ -22,6 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [Rethink Domain Primitives with Valhalla](articles/rethink-domain-primitives-with-valhalla) (2026)
 - [The Cost of Implicitness](articles/the-cost-of-implicitness) (2026)
 - [From BPF to eBPF, Twenty Years Later](articles/from-bpf-to-ebpf-twenty-years-later) (2026)
 - [Java + RocksDB - JNI](articles/java-plus-rocksdb-minus-jni) (2026)
@@ -68,4 +69,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 9 May 2026
+Updated: 16 May 2026

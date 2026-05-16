@@ -1,4 +1,4 @@
-# Explore Valhalla
+# Rethink Domain Primitives with Valhalla
 
 *16 May 2026*
 
