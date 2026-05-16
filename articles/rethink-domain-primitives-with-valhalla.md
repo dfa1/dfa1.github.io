@@ -131,7 +131,8 @@ PositiveInt[10]  — value class (Java 27+)
 
 This is not a benchmark trick. It is the layout the JVM chooses when it has permission. The wrapper and the bare primitive now occupy the same memory. Identity costs space; saying *I don't need identity* is the permission slip.
 
-The original overhead objection no longer applies. The static guarantee is unchanged. The library spans several domains, all backed by value classes:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library
+implement several examples, all backed by value classes:
 
 | Domain | Types |
 |---|---|
@@ -142,7 +143,7 @@ The original overhead objection no longer applies. The static guarantee is uncha
 | Unsigned integers | `UnsignedByte`, `UnsignedShort`, `UnsignedInt`, `UnsignedLong` |
 | ML | `Float16` |
 
-Types backed by a primitive (`Port`, `Latitude`, `Probability`, etc.) flatten into contiguous storage. String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
+NB: String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
 
 ## Conclusion
 
@@ -152,7 +153,8 @@ Valhalla removes the last reason to keep primitive types out of domain modeling.
 *Codes like a class; works like an int* is now true. Domain primitives, as described in
 [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
-The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT). Issues, missing domains, and pull requests are welcome.
+The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT).
+Issues, missing domains, and pull requests are welcome.
 
 ---
 
