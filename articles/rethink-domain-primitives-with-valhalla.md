@@ -73,16 +73,6 @@ Records share the same compact carrier syntax but are identity classes — one h
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
-public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
-
-    int value();
-
-    @Override
-    default int compareTo(T that) {
-        return Integer.compare(this.value(), that.value());
-    }
-}
-
 public value class PositiveInt implements RefinedInt<PositiveInt> {
     private final int value;
 
@@ -95,14 +85,22 @@ public value class PositiveInt implements RefinedInt<PositiveInt> {
 
     @Override public int value() { return value; }
 }
+
+// Refined<T> is now RefinedInt, to avoid boxing
+// marker interface — F-bounded so Probability.compareTo(Price) won't compile
+public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
+
+    int value();
+
+    @Override
+    default int compareTo(T that) {
+        return Integer.compare(this.value(), that.value());
+    }
+}
 ```
 
-Same shape as a regular wrapper. Two things change underneath:
-
-1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable when the type is declared in null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
-2. **Flat layout.** The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
-
-The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
+Same shape as a regular wrapper. The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
+The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
 The pattern scales to multi-field types. `Coordinate` carries a `Latitude` and a `Longitude`, each a `double`-backed value class. The JVM inlines both doubles per slot — 16 bytes contiguous, no pointers:
 
@@ -132,7 +130,7 @@ PositiveInt[100] (identity) : 2016 bytes (identity class: domain-aware but expen
 PositiveInt[100] (value)    :  416 bytes (value class: cheap and domain-aware)
 ```
 
-The value class matches the bare primitive; the identity class costs ~4.8×. The layouts show why:
+The value class matches the bare primitive; the identity class costs ~5×. The layouts show why:
 
 ```
 PositiveInt[10]  — identity class
@@ -209,8 +207,8 @@ The library includes adapters for Jackson and JPA; register them with the usual 
 
 Valhalla removes the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
-The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT).
-Issues, missing domains, and pull requests are welcome.
+The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type).
+Issues, discussions and pull requests are welcome!
 
 ---
 
