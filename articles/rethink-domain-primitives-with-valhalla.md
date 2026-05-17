@@ -2,11 +2,11 @@
 
 *16 May 2026*
 
-*[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives: encode constraints in types, the compiler enforces them forever. The recurring objection — a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
+*[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives — types that encode business constraints, as opposed to Java primitives (`int`, `double`, `long`). Wrap an `int` in a `PositiveInt` and the compiler rejects invalid states forever. The recurring objection: a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
-*Project Valhalla in Java 27 EA changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection.*
+*Project Valhalla changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. All experiments here run on `openjdk 27-jep401ea3`, the current Valhalla EA build implementing [JEP 401](https://openjdk.org/jeps/401).*
 
-*That [2019 gist](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) left performance as an open question; [refined-type](https://github.com/dfa1/refined-type) is the answer.*
+*That [2019 gist](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) left performance as an open question; [refined-type](https://github.com/dfa1/refined-type) — a library of domain primitives backed by value classes — is the answer.*
 
 ---
 
@@ -70,6 +70,8 @@ That gist only scratched the surface of the design space, and the approach had a
 
 Value classes are objects without identity. They carry behavior and invariants, but store like primitives — the JVM is free to inline them wherever they appear: into a register, into another object's fields, into an array slot.
 
+Records share the same compact carrier syntax but are identity classes — one heap object per value, references in arrays, object header included. The `value` keyword is the distinction: it tells the JVM this type has no identity, which is what allows flat layout.
+
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
@@ -103,6 +105,22 @@ Same shape as a regular wrapper. Two things change underneath:
 2. **Flat layout.** The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
 The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
+
+The pattern scales to multi-field types. `Coordinate` carries a `Latitude` and a `Longitude`, each a `double`-backed value class. The JVM inlines both doubles per slot — 16 bytes contiguous, no pointers:
+
+```java
+public value class Coordinate {
+    private final Latitude latitude;
+    private final Longitude longitude;
+
+    public Coordinate(Latitude latitude, Longitude longitude) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
+}
+```
+
+A `Coordinate[100]` array stores 1,600 bytes of contiguous doubles. An identity-class equivalent stores 100 references pointing to 100 scattered heap objects, each carrying its own header.
 
 One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation.
 
@@ -143,6 +161,15 @@ PositiveInt[10]  — value class (Java 27+)
 
 Same size, same layout, same cache behavior. The JVM chooses this when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
+`SwissValorNumberConstructionBenchmark` measures the cost of building 1,000 values from scratch per iteration. Running with `-prof gc` on Java 27 EA shows the allocation rate:
+
+| Variant        | Time/op  | B/op   |
+|----------------|----------|--------|
+| value class    | 0.769 µs | 8,016  |
+| identity class | 2.845 µs | 20,016 |
+
+Identity class: 1,000 heap objects at 16 bytes each (header plus payload) plus the array shell — 20,016 bytes total. Value class: one flat array, 2.5× less allocation and 3.7× faster construction.
+
 The original overhead objection no longer applies. The static guarantee is unchanged. The library implements several examples, all backed by value classes:
 
 | Domain | Types |
@@ -156,9 +183,31 @@ The original overhead objection no longer applies. The static guarantee is uncha
 
 String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
 
-## Conclusion
+## Remaining Considerations
 
-The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library includes example adapters for Jackson and JPA.
+**`==` semantics.** Value classes compare by value, not by pointer. `==` on a `PositiveInt` tests field-wise substitutability — equivalent to a well-implemented `equals`, but different from the pointer comparison `==` performed on the identity class. Migrating an existing identity class to `value` silently changes any `==` comparisons that relied on reference equality. Audit before converting.
+
+**Null.** Value classes cannot be null. JEP 401 introduces a null-restricted reference form (`PositiveInt!`) alongside the nullable form (`PositiveInt?`). On the hot path, null-checks disappear: the type proves the value exists.
+
+**Generics still box.** `List<PositiveInt>` and `Optional<PositiveInt>` box today — erasure forces each element to the heap. JEP 402 (generic specialization) is not yet shipped. Flat layout applies only to typed arrays (`PositiveInt[]`) and value-typed fields. In performance-critical code, use arrays; collections remain heap-heavy until specialization lands.
+
+**Framework integration.** Jackson, JPA, and Bean Validation expect primitives and `String`. Each value type needs a thin adapter. A Jackson deserializer for `PositiveInt` is five lines:
+
+```java
+class PositiveIntDeserializer extends StdDeserializer<PositiveInt> {
+    PositiveIntDeserializer() { super(PositiveInt.class); }
+
+    @Override
+    public PositiveInt deserialize(JsonParser p, DeserializationContext ctx)
+            throws IOException {
+        return new PositiveInt(p.getIntValue());
+    }
+}
+```
+
+The library includes adapters for Jackson and JPA; register them with the usual module mechanism.
+
+## Conclusion
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
 The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in
