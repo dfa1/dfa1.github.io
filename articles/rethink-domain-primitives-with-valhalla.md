@@ -73,7 +73,17 @@ Value classes are objects without identity. They carry behavior and invariants, 
 Java 27 EA ships [Project Valhalla](https://openjdk.org/projects/valhalla/) preview[^valhalla-jep]. The new keyword is `value`:
 
 ```java
-public value class PositiveInt implements RefinedInt {
+public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
+
+    int value();
+
+    @Override
+    default int compareTo(T that) {
+        return Integer.compare(this.value(), that.value());
+    }
+}
+
+public value class PositiveInt implements RefinedInt<PositiveInt> {
     private final int value;
 
     public PositiveInt(int value) {
