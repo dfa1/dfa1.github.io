@@ -128,14 +128,14 @@ Memory footprint for arrays of 100 elements, measured on 64-bit HotSpot with com
 
 ```
 int[100]                    :  416 bytes (bare primitive: cheap but not domain-aware)
-PositiveInt[100] (identity) : 2016 bytes (identity class, pre-Valhalla: domain-aware but expensive)
-PositiveInt[100] (value)    :  416 bytes (value class — matches int[]: cheap and domain-aware)
+PositiveInt[100] (identity) : 2016 bytes (identity class: domain-aware but expensive)
+PositiveInt[100] (value)    :  416 bytes (value class: cheap and domain-aware)
 ```
 
 The value class matches the bare primitive; the identity class costs ~4.8×. The layouts show why:
 
 ```
-PositiveInt[10]  — identity class (pre-Valhalla)
+PositiveInt[10]  — identity class
 
   ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
   │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │ ptr │  ← 4-byte refs
@@ -149,7 +149,7 @@ PositiveInt[10]  — identity class (pre-Valhalla)
   10 heap objects scattered — extra cache-line load per element on random access
 
 
-PositiveInt[10]  — value class (Java 27+)
+PositiveInt[10]  — value class
 
   ┌────┬────┬────┬────┬────┬────┬────┬────┬────┬────┐
   │ v0 │ v1 │ v2 │ v3 │ v4 │ v5 │ v6 │ v7 │ v8 │ v9 │  ← values inline
