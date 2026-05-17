@@ -173,7 +173,7 @@ The original overhead objection no longer applies. The static guarantee is uncha
 | Domain | Types |
 |---|---|
 | Network | `Email`, `HostName`, `Port`, `Slug` |
-| Geography | `Latitude`, `Longitude`, `GeoPoint`, `Distance` |
+| Geography | `Latitude`, `Longitude`, `Coordinate`, `Distance` |
 | Finance | `Price`, `CurrencyCode`, `Percentage`, `CusipNumber`, `SwissValorNumber`, `Isin` |
 | Measurement | `Age`, `Size`, `Velocity`, `Volume`, `Probability` |
 | Unsigned integers | `UnsignedByte`, `UnsignedShort`, `UnsignedInt`, `UnsignedLong` |
@@ -185,7 +185,7 @@ String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's objec
 
 **`==` semantics.** Value classes compare by value, not by pointer. `==` on a `PositiveInt` tests field-wise substitutability — equivalent to a well-implemented `equals`, but different from the pointer comparison `==` performed on the identity class. Migrating an existing identity class to `value` silently changes any `==` comparisons that relied on reference equality. Audit before converting.
 
-**Null.** Value classes cannot be null. JEP 401 introduces a null-restricted reference form (`PositiveInt!`) alongside the nullable form (`PositiveInt?`). On the hot path, null-checks disappear: the type proves the value exists.
+**Null.** Value classes cannot be null. A companion JEP to 401 is introducing null-restricted references — tentatively `PositiveInt!` for the non-null form and `PositiveInt?` for the nullable form; the syntax is still in flux on this EA build. On the hot path the practical effect is already visible: the type proves the value exists, so null-checks disappear.
 
 **Generics still box.** `List<PositiveInt>` and `Optional<PositiveInt>` box today — erasure forces each element to the heap. JEP 402 (generic specialization) is not yet shipped. Flat layout applies only to typed arrays (`PositiveInt[]`) and value-typed fields. In performance-critical code, use arrays; collections remain heap-heavy until specialization lands.
 
@@ -207,9 +207,7 @@ The library includes adapters for Jackson and JPA; register them with the usual 
 
 ## Conclusion
 
-Valhalla removes the last reason to keep primitive types out of domain modeling.
-The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in
-[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
+Valhalla removes the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
 The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT).
 Issues, missing domains, and pull requests are welcome.
