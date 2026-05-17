@@ -14,7 +14,7 @@
 
 A `class PositiveInt { final int v; }` is 16 bytes on HotSpot — 12-byte header plus 4-byte int (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 25[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. A stream processor carrying millions of `PositiveInt` sequence numbers, one per event, means millions of heap objects — each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs 4× the memory of the `int` it wraps, and the pointer chase costs an extra cache-line load per access — an L2 miss on random access patterns.
 
-The practical rule that I followed, until now, has been: refine your types at the boundary, then quit before you hit any performance-sensitive code. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the outermost layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
+The practical rule that I followed, until now, has been: refine your types at the boundary, then stop before you hit any performance-sensitive code. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the outermost layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
 That was the friction. Value classes lift it — and the same pattern now fits far more use cases.
 
@@ -53,7 +53,7 @@ private static class PositiveInt extends Refined<Integer> {
 }
 ```
 
-Companion classes provide the static factories:
+A utility class provides the static factories:
 
 ```java
 public class Refining {
@@ -94,7 +94,7 @@ Same shape as a regular wrapper. Two things change underneath:
 
 The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
 
-One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation. Flattening survives only at the concrete type.
+One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation. Flattening applies only at the concrete type.
 
 ## The numbers
 
@@ -134,7 +134,7 @@ PositiveInt[10]  — value class (Java 27+)
 Same size, same layout, same cache behavior. The JVM chooses this when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
 The original overhead objection no longer applies. The static guarantee is unchanged. The library
-implement several examples, all backed by value classes:
+implements several examples, all backed by value classes:
 
 | Domain | Types |
 |---|---|
@@ -164,4 +164,4 @@ Issues, missing domains, and pull requests are welcome.
 
 [^compact-headers]: [JEP 519: Compact Object Headers](https://openjdk.org/jeps/519) (product feature, JDK 25+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Opt-in via `-XX:+UseCompactObjectHeaders`. (JEP 450 shipped the same feature as experimental in JDK 24, requiring `-XX:+UnlockExperimentalVMOptions`.)
 
-[^bench-config]: With `-XX:-UseCompressedOops` disabled, refs are 8 bytes and each `Integer` is 24 bytes — giving ~3224 bytes total.
+[^bench-config]: With compressed oops disabled (`-XX:-UseCompressedOops`), refs are 8 bytes and each `Integer` is 24 bytes — giving ~3224 bytes total.
