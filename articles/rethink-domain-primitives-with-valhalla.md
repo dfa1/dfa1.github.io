@@ -6,8 +6,6 @@
 
 *Project Valhalla changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. All experiments here run on `openjdk 27-jep401ea3`, the current Valhalla EA build implementing [JEP 401](https://openjdk.org/jeps/401).*
 
-*That [2019 gist](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) left performance as an open question; [refined-type](https://github.com/dfa1/refined-type) — a library of domain primitives backed by value classes — is the answer.*
-
 ---
 
 ## The blocker: wrapper overhead
@@ -64,7 +62,7 @@ public class Refining {
 }
 ```
 
-That gist only scratched the surface of the design space, and the approach had a cost: all primitive types were boxed.
+That [2019 gist](https://gist.github.com/dfa1/f6fdca0513730dc7dc7d6a5d89629709) only scratched the surface of the design space, and left performance as an open question — all primitive types were boxed. [refined-type](https://github.com/dfa1/refined-type) — a library of domain primitives backed by value classes — is the answer.
 
 ## Enter Project Valhalla
 
