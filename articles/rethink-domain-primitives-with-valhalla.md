@@ -205,7 +205,7 @@ The library includes adapters for Jackson and JPA; register them with the usual 
 
 ## Conclusion
 
-Valhalla removes the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
+Valhalla is on track to remove the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is close: value classes are in preview, not yet production-ready. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), may soon carry no performance penalty at all.
 
 The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type).
 Issues, discussions and pull requests are welcome!
