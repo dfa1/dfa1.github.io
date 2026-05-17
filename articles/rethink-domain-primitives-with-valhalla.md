@@ -12,7 +12,7 @@
 
 ## The blocker: wrapper overhead
 
-A `class PositiveInt { final int v; }` is 16 bytes on HotSpot — 12-byte header plus 4-byte int (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 25[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. A stream processor carrying millions of `PositiveInt` sequence numbers, one per event, means millions of heap objects — each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs 4× the memory of the `int` it wraps, and the pointer chase costs an extra cache-line load per access — an L2 miss on random access patterns.
+A `class PositiveInt { final int v; }` is 16 bytes on HotSpot — 12-byte header plus 4-byte int (8-byte header with `-XX:+UseCompactObjectHeaders`, production-ready since JDK 25[^compact-headers]) — and the array holding it stores 4-byte references rather than the values themselves. A stream processor carrying millions of `PositiveInt` sequence numbers, one per event, means millions of heap objects — each one a cache miss waiting to happen, each one tracked by the GC. The wrapper costs 4× the memory of the `int` it wraps, and the pointer chase costs an extra cache-line load per access — a cache miss on random access patterns.
 
 The practical rule that I followed, until now, has been: refine your types at the boundary, then stop before you hit any performance-sensitive code. You can refine your boundaries; you cannot refine your hot path. Refined types stayed in the outermost layer; the loops over millions of events kept using raw `int`, raw `float`, raw `String`.
 
@@ -89,12 +89,12 @@ public value class PositiveInt implements RefinedInt {
 
 Same shape as a regular wrapper. Two things change underneath:
 
-1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable to the null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
+1. **No identity.** `==` is a field-wise substitutability test, `null` is not assignable when the type is declared in null-restricted form, synchronizing on the value throws `IdentityException`, `System.identityHashCode` derives from field values, not identity.
 2. **Flat layout.** The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
 The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
 
-One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation. Flattening applies only at the concrete type.
+One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation.
 
 ## The numbers
 
@@ -106,7 +106,7 @@ PositiveInt[100] (identity) : 2016 bytes (identity class, pre-Valhalla: domain-a
 PositiveInt[100] (value)    :  416 bytes (value class — matches int[]: fast and domain-aware)
 ```
 
-The value class matches the bare primitive; the identity class pays ~4.8× for the wrapper. The layouts show why:
+The value class matches the bare primitive; the identity class costs ~4.8×. The layouts show why:
 
 ```
 PositiveInt[10]  — identity class (pre-Valhalla)
@@ -133,8 +133,7 @@ PositiveInt[10]  — value class (Java 27+)
 
 Same size, same layout, same cache behavior. The JVM chooses this when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
-The original overhead objection no longer applies. The static guarantee is unchanged. The library
-implements several examples, all backed by value classes:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library implements several examples, all backed by value classes:
 
 | Domain | Types |
 |---|---|
@@ -145,14 +144,14 @@ implements several examples, all backed by value classes:
 | Unsigned integers | `UnsignedByte`, `UnsignedShort`, `UnsignedInt`, `UnsignedLong` |
 | ML | `Float16` |
 
-NB: String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
+String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
 
 ## Conclusion
 
 The remaining friction is integration work at the system boundary: converting to and from JSON, JPA, and similar frameworks. The library includes example adapters for Jackson and JPA.
 
 Valhalla removes the last reason to keep primitive types out of domain modeling.
-*Codes like a class; works like an int* is now true. Domain primitives, as described in
+The promise — *codes like a class; works like an int* — is now delivered. Domain primitives, as described in
 [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), no longer carry a performance penalty.
 
 The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type) (Java 27 EA, MIT).
