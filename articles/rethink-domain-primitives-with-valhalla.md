@@ -111,9 +111,9 @@ One caveat: the flat layout applies only when the static type is `PositiveInt`. 
 Memory footprint for arrays of 100 elements, measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB):[^bench-config]
 
 ```
-int[100]                    :  416 bytes (bare primitive: no domain but cheap)
+int[100]                    :  416 bytes (bare primitive: cheap but not domain-aware)
 PositiveInt[100] (identity) : 2016 bytes (identity class, pre-Valhalla: domain-aware but expensive)
-PositiveInt[100] (value)    :  416 bytes (value class — matches int[]: fast and domain-aware)
+PositiveInt[100] (value)    :  416 bytes (value class — matches int[]: cheap and domain-aware)
 ```
 
 The value class matches the bare primitive; the identity class costs ~4.8×. The layouts show why:
