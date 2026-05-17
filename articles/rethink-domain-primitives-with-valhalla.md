@@ -98,13 +98,15 @@ One caveat: the flat layout applies only when the static type is `PositiveInt`. 
 
 ## The numbers
 
+Memory footprint for arrays of 100 elements, measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB):[^bench-config]
+
 ```
-                   int[100]:   416 bytes  (bare primitive)
-  PositiveInt[100] (value):    416 bytes  (value class — matches int[])
-  PositiveInt[100] (identity): 2016 bytes (identity class, pre-Valhalla)
+int[100]                    :  416 bytes (bare primitive: no domain but cheap)
+PositiveInt[100] (identity) : 2016 bytes (identity class, pre-Valhalla: domain-aware but expensive)
+PositiveInt[100] (value)    :  416 bytes (value class — matches int[]: fast and domain-aware)
 ```
 
-Measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB).[^bench-config] The value class matches the bare primitive; the identity class pays ~4.8× for the wrapper. To see why, compare the layouts:
+The value class matches the bare primitive; the identity class pays ~4.8× for the wrapper. The layouts show why:
 
 ```
 PositiveInt[10]  — identity class (pre-Valhalla)
@@ -129,7 +131,7 @@ PositiveInt[10]  — value class (Java 27+)
   contiguous in memory — same layout as int[]
 ```
 
-This is not a benchmark trick. It is the layout the JVM chooses when it has permission. The wrapper and the bare primitive now occupy the same memory. Identity costs space; saying *I don't need identity* is the permission slip.
+Same size, same layout, same cache behavior. The JVM chooses this when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
 The original overhead objection no longer applies. The static guarantee is unchanged. The library
 implement several examples, all backed by value classes:
