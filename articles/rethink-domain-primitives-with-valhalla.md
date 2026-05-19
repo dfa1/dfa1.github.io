@@ -203,7 +203,7 @@ Issues, discussions, and pull requests are welcome!
 
 ---
 
-[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. The main preview JEP is [JEP 401: Value Classes and Objects](https://openjdk.org/jeps/401) (syntax and semantics of `value class`). Null-restricted types are covered by a companion JEP. JEP numbers may advance as the feature progresses; the project page links to the current ones.
+[^valhalla-jep]: [Project Valhalla](https://openjdk.org/projects/valhalla/) — the umbrella effort. The main preview JEP is [JEP 401: Value Classes and Objects](https://openjdk.org/jeps/401) (syntax and semantics of `value class`).
 
 [^compact-headers]: [JEP 519: Compact Object Headers](https://openjdk.org/jeps/519) (product feature, JDK 25+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Opt-in via `-XX:+UseCompactObjectHeaders`. (JEP 450 shipped the same feature as experimental in JDK 24, requiring `-XX:+UnlockExperimentalVMOptions`.)
 
