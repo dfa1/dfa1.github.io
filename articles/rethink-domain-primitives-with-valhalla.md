@@ -157,15 +157,6 @@ PositiveInt[10]  — value class
 
 Same size, same layout, same cache behavior. The JVM chooses this when it has permission. Identity costs space; saying *I don't need identity* is the permission slip.
 
-`SwissValorNumberConstructionBenchmark` measures the cost of building 1,000 values from scratch per iteration. Running with `-prof gc` on Java 27 EA shows the allocation rate:
-
-| Variant        | Time/op  | B/op   |
-|----------------|----------|--------|
-| value class    | 0.769 µs | 8,016  |
-| identity class | 2.845 µs | 20,016 |
-
-Identity class: 1,000 heap objects at 16 bytes each (header plus payload) plus the array shell — 20,016 bytes total. Value class: one flat array, 2.5× less allocation and 3.7× faster construction.
-
 The original overhead objection no longer applies. The static guarantee is unchanged. The library includes several domain types, all backed by value classes:
 
 | Domain | Types |
