@@ -116,21 +116,21 @@ public value class Coordinate {
 }
 ```
 
-A `Coordinate[100]` array stores 1,600 bytes of contiguous doubles. An identity-class equivalent stores 100 references pointing to 100 scattered heap objects, each carrying its own header.
+A `Coordinate[10]` array stores 160 bytes of contiguous doubles. An identity-class equivalent stores 10 references pointing to 10 scattered heap objects, each carrying its own header.
 
 One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation.
 
 ## The numbers
 
-Memory footprint for arrays of 100 elements, measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB):[^bench-config]
+Memory footprint for arrays of 10 elements, measured on 64-bit HotSpot with compressed oops (the JVM default for heaps under 32 GB):[^bench-config]
 
 ```
-int[100]                    :  416 bytes (bare primitive: cheap but not domain-aware)
-PositiveInt[100] (identity) : 2016 bytes (identity class: domain-aware but expensive)
-PositiveInt[100] (value)    :  416 bytes (value class: cheap and domain-aware)
+int[10]                    :  56 bytes (bare primitive: cheap but not domain-aware)
+PositiveInt[10] (identity) : 216 bytes (identity class: domain-aware but expensive)
+PositiveInt[10] (value)    :  56 bytes (value class: cheap and domain-aware)
 ```
 
-The value class matches the bare primitive; the identity class costs ~5×. The layouts show why:
+The value class matches the bare primitive; the identity class costs ~4×. The layouts show why:
 
 ```
 PositiveInt[10]  — identity class
