@@ -166,7 +166,7 @@ Same size, same layout, same cache behavior. The JVM chooses this when it has pe
 
 Identity class: 1,000 heap objects at 16 bytes each (header plus payload) plus the array shell — 20,016 bytes total. Value class: one flat array, 2.5× less allocation and 3.7× faster construction.
 
-The original overhead objection no longer applies. The static guarantee is unchanged. The library implements several examples, all backed by value classes:
+The original overhead objection no longer applies. The static guarantee is unchanged. The library includes several domain types, all backed by value classes:
 
 | Domain | Types |
 |---|---|
@@ -179,7 +179,7 @@ The original overhead objection no longer applies. The static guarantee is uncha
 
 String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's object header but still hold a reference to the `String` — the indirection remains.
 
-## Remaining Considerations
+## Remaining considerations
 
 **`==` semantics.** Value classes compare by value, not by pointer. `==` on a `PositiveInt` tests field-wise substitutability — equivalent to a well-implemented `equals`, but different from the pointer comparison `==` performed on the identity class. Migrating an existing identity class to `value` silently changes any `==` comparisons that relied on reference equality. Audit before converting.
 
@@ -187,7 +187,7 @@ String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's objec
 
 **Generics still box.** `List<PositiveInt>` and `Optional<PositiveInt>` box today — erasure forces each element to the heap. JEP 402 (generic specialization) is not yet shipped. Flat layout applies only to typed arrays (`PositiveInt[]`) and value-typed fields. In performance-critical code, use arrays; collections remain heap-heavy until specialization lands.
 
-**Framework integration.** Jackson, JPA, and Bean Validation expect primitives and `String`. Each value type needs a thin adapter. A Jackson deserializer for `PositiveInt` is five lines:
+**Framework integration.** Jackson, JPA, and Bean Validation expect primitives and `String`. Each value type needs a thin adapter. A Jackson deserializer for `PositiveInt` is a few lines:
 
 ```java
 class PositiveIntDeserializer extends StdDeserializer<PositiveInt> {
@@ -208,7 +208,7 @@ The library includes adapters for Jackson and JPA; register them with the usual 
 Valhalla is on track to remove the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is close: value classes are in preview, not yet production-ready. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), may soon carry no performance penalty at all.
 
 The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type).
-Issues, discussions and pull requests are welcome!
+Issues, discussions, and pull requests are welcome!
 
 ---
 
@@ -216,4 +216,4 @@ Issues, discussions and pull requests are welcome!
 
 [^compact-headers]: [JEP 519: Compact Object Headers](https://openjdk.org/jeps/519) (product feature, JDK 25+). Reduces the object header from 12 to 8 bytes on 64-bit HotSpot by merging the mark word and class pointer. Opt-in via `-XX:+UseCompactObjectHeaders`. (JEP 450 shipped the same feature as experimental in JDK 24, requiring `-XX:+UnlockExperimentalVMOptions`.)
 
-[^bench-config]: With compressed oops disabled (`-XX:-UseCompressedOops`), refs are 8 bytes and each `Integer` is 24 bytes — giving ~3224 bytes total.
+[^bench-config]: With compressed oops disabled (`-XX:-UseCompressedOops`), refs are 8 bytes and each `Integer` is 24 bytes — giving ~336 bytes total for 10 elements.
