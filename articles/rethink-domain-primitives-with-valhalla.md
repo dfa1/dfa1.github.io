@@ -86,8 +86,6 @@ public value class PositiveInt implements RefinedInt<PositiveInt> {
     @Override public int value() { return value; }
 }
 
-// Refined<T> is now RefinedInt, to avoid boxing
-// marker interface — F-bounded so Probability.compareTo(Price) won't compile
 public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
 
     int value();
@@ -98,6 +96,8 @@ public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
     }
 }
 ```
+
+`RefinedInt` replaces the generic `Refined<T>` to avoid boxing. The F-bound (`T extends RefinedInt<T>`) constrains `compareTo` to the same type — `Probability.compareTo(Price)` is a compile error.
 
 Same shape as a regular wrapper. The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
 The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
