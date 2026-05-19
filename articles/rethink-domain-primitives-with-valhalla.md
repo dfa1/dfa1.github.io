@@ -176,7 +176,7 @@ String-backed types (`Email`, `HostName`, `Slug`, etc.) drop the wrapper's objec
 
 **Null.** Value classes cannot be null. A companion JEP to 401 is introducing null-restricted references — tentatively `PositiveInt!` for the non-null form and `PositiveInt?` for the nullable form; the syntax is still in flux on this EA build. On the hot path the practical effect is already visible: the type proves the value exists, so null-checks disappear.
 
-**Generics still box.** `List<PositiveInt>` and `Optional<PositiveInt>` box today — erasure forces each element to the heap. JEP 402 (generic specialization) is not yet shipped. Flat layout applies only to typed arrays (`PositiveInt[]`) and value-typed fields. In performance-critical code, use arrays; collections remain heap-heavy until specialization lands.
+**Generics still box.** `List<PositiveInt>` and `Optional<PositiveInt>` box today — erasure forces each element to the heap. Generic specialization is not yet shipped. Flat layout applies only to typed arrays (`PositiveInt[]`) and value-typed fields. In performance-critical code, use arrays; collections remain heap-heavy until specialization lands.
 
 **Framework integration.** Jackson, JPA, and Bean Validation expect primitives and `String`. Each value type needs a thin adapter. A Jackson deserializer for `PositiveInt` is a few lines:
 
