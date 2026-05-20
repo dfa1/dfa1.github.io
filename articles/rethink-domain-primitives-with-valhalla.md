@@ -102,6 +102,8 @@ public interface RefinedInt<T extends RefinedInt<T>> extends Comparable<T> {
 Same shape as a regular wrapper. The constructor still runs. The validation still happens. The static guarantee — *anywhere I see a `PositiveInt`, the value is positive* — still holds.
 The JVM is allowed to inline the fields wherever a `PositiveInt` lives — into a register, into another object, into an array slot. No header, no pointer chasing.
 
+One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation.
+
 The pattern scales to multi-field types. `Coordinate` carries a `Latitude` and a `Longitude`, each a `double`-backed value class. The JVM inlines both doubles per slot — 16 bytes contiguous, no pointers:
 
 ```java
@@ -117,8 +119,6 @@ public value class Coordinate {
 ```
 
 A `Coordinate[10]` array stores 160 bytes of contiguous doubles. An identity-class equivalent stores 10 references pointing to 10 scattered heap objects, each carrying its own header.
-
-One caveat: the flat layout applies only when the static type is `PositiveInt`. Code holding a `RefinedInt` reference — an interface parameter, a field, a collection element — forces heap allocation.
 
 ## The numbers
 
