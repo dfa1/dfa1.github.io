@@ -46,6 +46,7 @@ All presentations made with [reveal.js](https://revealjs.com)
 ## Projects
 
 - [eBPF-sensor](https://github.com/dfa1/ebpf-sensor), experimental eBPF sensor in Python (2026)
+- [vortex-java](https://github.com/dfa1/vortex-java), columnar format in pure Java, zero-copy via FFM (2026)
 - [refined-type](https://github.com/dfa1/refined-type), domain primitives + Valhalla in Java (2026)
 - [rocksdbffm](https://github.com/dfa1/rocksdbffm), experimenal RocksDB FFM bindings in Java (2026)
 - [hosh](https://github.com/hosh-shell/hosh), **H**uman **O**riented **SH**ell in Java (2018)
@@ -70,4 +71,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 16 May 2026
+Updated: 17 June 2026
