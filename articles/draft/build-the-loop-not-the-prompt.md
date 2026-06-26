@@ -17,26 +17,23 @@ loop of tools to catch it when it's wrong.*
 ## The thesis
 
 AI coding is not "use a better model." It's "build a feedback loop the model can close by
-itself." The agent proposes; something else has to say whether the proposal is wrong —
-cheaply, automatically, before a human looks.
+itself."[^validation] The agent proposes; something else has to say whether the proposal is
+wrong — cheaply, automatically, before a human looks.
 
 ```
-        ┌─────────────┐   proposes change   ┌──────────────────────────┐
-        │  AI agent   │ ──────────────────► │  harness                 │
-        │             │                     │  language · tests · PIT   │
-        │  fixes it   │ ◄────────────────── │  Sonar · cross-impl oracle│
-        └─────────────┘   readable failure   └──────────────────────────┘
-                 ▲                                       │
-                 └─────────── human steers ◄─────────────┘
+        ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
+        │  AI agent   │ ──────────────────► │  harness                         │
+        │             │                     │  language · tests · PIT · Sonar  │
+        │  fixes it   │ ◄────────────────── │  cross-impl oracle · ADR         │
+        └─────────────┘   readable failure  └──────────────────────────────────┘
+                 ▲                                        │
+                 └─────────── human steers ◄──────────────┘
 ```
 
-This isn't only my framing. Anthropic's [Building Effective
-Agents](https://www.anthropic.com/research/building-effective-agents) (December 2024) puts it
-plainly: *"agents are typically just LLMs using tools based on environmental feedback in a
-loop,"* and *"it's crucial for the agents to gain 'ground truth' from the environment at each
-step (such as tool call results or code execution)."* The whole article below is about
-engineering that ground truth — making the environment answer "is this wrong?" honestly and
-cheaply.
+This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
+tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
+execution at each step.[^agents] The whole article below is about engineering that ground
+truth: making the environment answer "is this wrong?" honestly and cheaply.
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
@@ -47,9 +44,9 @@ subject.
 
 | | What | Distinct angle |
 |---|---|---|
-| **rocksdbffm** | RocksDB's stable C API via FFM, not JNI | Type-safe: `ReadWriteDB` vs `ReadOnlyDB`, so `put` on a read-only handle won't compile. [Earlier post](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni). |
-| **vortex-java** | The Vortex columnar format, *no native library at all* | Pure Java, memory-mapped, zero-copy. Runs on Windows (Rust bindings don't); beats the Rust JNI reference (11.8× on string columns). [TODO: verify numbers.] |
-| **zstd-java** | zstd's C library via FFM | Native dictionary compression, zero-copy `MemorySegment` API, hermetic Zig build for 6 OS/arch combos. |
+| **[rocksdbffm](https://github.com/dfa1/rocksdbffm)** | [RocksDB](https://rocksdb.org/)'s stable [C API](https://github.com/facebook/rocksdb/blob/main/include/rocksdb/c.h) via [FFM](https://openjdk.org/jeps/454), not JNI | Type-safe: `ReadWriteDB` vs `ReadOnlyDB`, so `put` on a read-only handle won't compile. [Earlier post](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni). |
+| **[vortex-java](https://github.com/dfa1/vortex-java)** | The [Vortex](https://github.com/spiraldb/vortex) columnar format, *no native library at all* | Pure Java, memory-mapped, zero-copy. Runs on Windows (the [Rust bindings](https://github.com/spiraldb/vortex) don't). |
+| **[zstd-java](https://github.com/dfa1/zstd-java)** | [zstd](https://github.com/facebook/zstd)'s C library via FFM | Native [dictionary compression](https://github.com/facebook/zstd#the-case-for-small-data-compression), zero-copy `MemorySegment` API, hermetic [Zig](https://ziglang.org/) build for 6 OS/arch combos. |
 
 Two bind a native library; one reimplements a format. All three converge on the *same*
 `MemorySegment`/`Arena` core — FFM isn't a "JNI replacement," it's one memory model covering
@@ -96,20 +93,21 @@ No suite means the human *is* the test runner.
 
 **Mutation testing keeps the tests honest — and finds real bugs.** PIT flips a condition or
 drops a line; if no test fails, the test was theater. The headline payoff in vortex-java was a
-shippable bug ([`473256b1`](https://github.com/dfa1/vortex-java/commit/473256b1f745f90592aad305811d41752a2f128d)):
-the writer's global dictionary admitted narrow ints
-(`I8`/`U8`/`I16`/`U16`), but the reader's lazy decode only handles `I32`/`I64`/`F32`/`F64`. A
-low-cardinality `I16` column wrote a `vortex.dict` the reader rejected — *"unsupported ptype
-for lazy dict: I16"* — a file you could write but never read back.
+shippable bug ([`473256b1`](https://github.com/dfa1/vortex-java/commit/473256b1f745f90592aad305811d41752a2f128d)).
+The format can store a column with few distinct values as a *dictionary* — the values once,
+plus compact codes pointing at them. The writer happily dictionary-encoded small-integer
+columns; the reader's fast-path decoder only knew how to unpack the wider numeric types. So a
+small-integer column produced a file the reader then refused to open — *"unsupported type for
+lazy dict"* — one you could write but never read back.
 
 But a survivor has *three* meanings, and only one is "add a test." vortex-java's `CLAUDE.md`
 says it directly: *"read survivors as a simplify-first signal, not only a test-gap signal."*
 
 | Survivor means | Do | Example |
 |---|---|---|
-| Genuine edge | add a test | `I16` bug; zone-map stats (`a60f9502`, `474beabf`) |
+| Real boundary case | add a test | the dictionary bug; column-statistics gaps (`a60f9502`, `474beabf`) |
 | Dead clause | **delete it** | `36328285`: redundant `offset > fileSize` check, mutations 110→106 |
-| Equivalent heuristic | leave it | ALP-RD / Delta survivors (#174) |
+| Interchangeable heuristic | leave it | two encoders, equally valid output (#174) |
 
 The deletion is the instructive case. Mutating `offset > fileSize` never changed an outcome:
 once `length >= 0`, an offset past `fileSize` makes `fileSize - offset` negative, so the
@@ -117,7 +115,7 @@ existing `length > fileSize - offset` clause already fires. The clause was unrea
 removing it *eliminated* four dead mutants instead of papering over them with unkillable
 tests. An agent's reflex is to assert on every survivor — which grows unkillable tests around
 dead code and freezes heuristics into false contracts. (That's why #173/#174 are coverage
-hardening, not bug fixes: the `I16` file was the exception that paid for the loop.)
+hardening, not bug fixes: the dictionary bug was the exception that paid for the loop.)
 
 **Cross-implementation interop is the oracle the agent can't fake.** A test the agent wrote,
 judged by the agent's own code, is a closed circle — both sides can be wrong together. A
@@ -128,21 +126,22 @@ second implementation breaks it:
    vortex-rust  ──writes──►  file  ──reads──►  vortex-java     ┘ divergence = bug on one side
 ```
 
-This is what actually nailed the `I16` bug: it round-tripped fine *within Java*; only the Rust
-cross-check exposed the writer as the outlier. `@ParameterizedTest` scales it cheaply — one
-body, every dtype × cardinality × encoding as parameters, both directions: a combinatorial
-space no hand-written cases would cover. zstd-java uses the same idea with a different oracle —
-the upstream **zstd golden corpus**: decompress a known-good frame, you must get the documented
-bytes back. [Verify the corpus is wired; cite the test.]
+This is what actually nailed the dictionary bug: it round-tripped fine *within Java*; only the
+Rust cross-check exposed the writer as the outlier. `@ParameterizedTest` scales it cheaply —
+one body, every data type, column size, and encoding as parameters, run both directions: a
+combinatorial space no hand-written cases would cover. zstd-java uses the same idea with a
+different oracle — the upstream **zstd golden corpus**, a set of known-good compressed files
+shipped by the project: decompress one and you must get the documented bytes back.
+[Verify the corpus is wired; cite the test.]
 
 **Write the threat model down, then let the agent execute it.** vortex-java's `TODO.md` states
-a hard contract: *the reader parses untrusted binary input; every malformed input must throw
-`VortexException` — never `ArrayIndexOutOfBoundsException`, `OutOfMemoryError`,
-`StackOverflowError`, or a raw FlatBuffer/Protobuf exception.* Under it, a per-encoding
-adversarial checklist (VarBin offsets non-monotonic/negative; Dict `codes[i] >= values.length`;
-Bitpacked `bit_width < 0 || > 64`). The spec became a wall of executed commits — `cap
-array-node recursion depth`, `validate segment specs`, `sanitize HTTP Content-Range`. A precise
-contract plus a checklist is exactly what an agent grinds through best; "make it secure" is not.
+a hard contract: *the reader parses untrusted binary input; every malformed file must fail with
+one clean `VortexException` — never a raw out-of-bounds, out-of-memory, or stack-overflow
+crash.* Under it, a checklist of hostile inputs to defend against — string offsets that run
+backward or past the buffer, dictionary codes pointing outside the value table, bit-widths out
+of range. The spec became a wall of executed commits — `cap array-node recursion depth`,
+`validate segment specs`, `sanitize HTTP Content-Range`. A precise contract plus a checklist is
+exactly what an agent grinds through best; "make it secure" is not.
 
 **Sonar is the cheap broad sweep.** Static analysis finds security hotspots, leaks, and dodgy
 concurrency far cheaper than tests or review, and the agent acts on each finding directly.
@@ -154,8 +153,8 @@ push detection left and automate it.
 
 Many failures weren't bad reasoning — they were the agent *inventing* a fact it should have
 looked up. vortex-java's `CLAUDE.md` is blunt: *"Never reverse-engineer wire formats by
-probing bytes. Read the vtable `serialize`/`deserialize` in the Rust source, then implement
-from spec"* — and hands over the access path (`gh api repos/spiraldb/vortex/contents/<path>`).
+probing bytes. Read the [...] Rust source for the exact schema, then implement from spec"* —
+and hands over the access path (`gh api repos/spiraldb/vortex/contents/<path>`).
 A format inferred from examples is right until the one example you didn't have; a format read
 from the spec is just right. Same split as the oracle: Rust source is ground truth for
 *behavior*, the Rust binary for *bytes*.
@@ -210,5 +209,19 @@ new across three repos: did the harness transfer between projects?]
   it across the whole matrix for the cost of one test body.
 - Feed ground truth (read the spec) and encode hard-won rules (the regression tripwire) so the
   agent never makes the mistake at all.
-- ADRs record the *why* so the agent doesn't relitigate settled decisions — *Write Down The
-  Why*, now also onboarding the agent every session.
+- ADRs record the *why* so the agent doesn't relitigate settled decisions —
+  [Write Down The Why](https://dfa1.github.io/articles/write-down-the-why), now also onboarding
+  the agent every session.
+
+[^validation]: The same argument at team scale: Michael Webster (CircleCI),
+    [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/).
+    AI now writes code far faster than humans can review it (his figure: ~1,500 lines in 30
+    minutes against ~500 lines/hour of review), so the highest-leverage investment is
+    validation infrastructure — testing, test-impact analysis, automated gates — not prompt
+    engineering. The unguarded version shows up as "persistent technical debt accumulation": a
+    short velocity boost, then regression to baseline. Same thesis as this article, one altitude
+    up — the org's CI pipeline instead of one developer's test suite.
+[^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents)
+    (December 2024): *"agents are typically just LLMs using tools based on environmental feedback
+    in a loop"*; *"it's crucial for the agents to gain 'ground truth' from the environment at
+    each step (such as tool call results or code execution)."*
