@@ -40,6 +40,10 @@ generated code to be silently catastrophic) and **a harness of tools** (each tur
 of "looks fine, is wrong" into an automatic failure). The projects are the evidence, not the
 subject.
 
+So the idea is to avoid AI to copy paste too much code, and to reuse existing code as much as
+possible. Sonar is a cheap way to detect large chunks of copy-pasted code where PIT will
+flag ineffective tests. Parametrized tests and property based testing are great ways to have test coverage across a lot of possible inputs.
+
 ## The three projects
 
 | | What | Distinct angle |
