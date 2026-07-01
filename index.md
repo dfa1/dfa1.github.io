@@ -72,4 +72,6 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *Simplicity does not precede complexity, but follows it.* — [Alan Perlis](https://en.wikipedia.org/wiki/Alan_Perlis)
 
-Updated: 26 June 2026
+> *If you think good architecture is expensive, try bad architecture.* — Brian Foote and Joseph Yoder, [Big Ball of Mud](https://www.laputan.org/mud/)
+
+Updated: 1 July 2026
