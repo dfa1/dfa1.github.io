@@ -12,7 +12,7 @@
 
 ### 0. Every decision is a trade-off. Document the alternatives you rejected.
 
-A legacy system we had spent years simplifying grew to a second node, and needed locks that worked across both. We added Hazelcast, a distributed in-memory cache with cluster-wide locking — one more moving part, a deliberate reversal of the simplification we had fought for — because the alternative, coordinating locks through the database, was worse at our write volumes. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why.
+An undocumented trade-off is indistinguishable from a mistake. The next engineer who reads the architecture and wonders why will either burn a day reconstructing the reasoning, or "fix" what was deliberate.
 
 The mechanism is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains — the decision, the alternatives rejected, the why. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory. In the repo, because the audience has doubled: most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does. A decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
 
@@ -22,9 +22,7 @@ Every rule, every design decision, every constraint should carry a *because*. No
 
 ### 2. Be willing to delete what you wrote last quarter — dependencies included.
 
-One legacy codebase I maintained lost 70,000 lines while gaining two years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. The best code is the code that doesn't exist.
-
-Dependencies deserve the same scrutiny. Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `commons-*` libraries — to evaluate three trivial business rules. JNI required a C++ glue layer and a portable native build; FFM replaces both with `--enable-native-access`. Every dependency is a permanent commitment to someone else's release schedule, security posture, and design choices — justify each one, and treat removing one as engineering too.
+Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist.
 
 ### 3. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
 
@@ -44,11 +42,11 @@ Versioned endpoints, isolated DTOs, decorator stacks — they look like more mov
 
 ### 7. Fix root causes. Symptoms come back.
 
-A data warehouse job dying weekly — restarted by hand every time — was a symptom; the real cause was Hibernate combined with reflection hacks and connection-pooling issues. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
+Compensating logic accumulates fast when nobody asks why: the manual restart, the extra `if`, the silenced warning — each papers over a cause that keeps compounding underneath. Empty `catch` blocks are the purest form: a culture that doesn't want to look at exceptions.
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. I've seen quarterly releases become weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments and refactors.
+Trunk-based development, small PRs, feature flags. The pain of merging *decreases* as merges become smaller and more frequent, because conflicts grow with the distance between branches. The same goes for everything else that hurts: deployments and refactors.
 
 ### 9. Simplicity follows complexity, not the other way around.
 
@@ -64,9 +62,9 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 ## The stories behind the rules
 
-Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
+Most of these rules were earned in stories already told here. Each rule above is the compressed version; these are the full ones:
 
-- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0, 2, 3, 7, 8)
+- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — a codebase that lost 70,000 lines while gaining two years of features; the Hazelcast cluster that reversed years of simplification, deliberately; the warehouse job restarted by hand every week instead of fixed; quarterly releases becoming several per week (rules 0, 2, 3, 7, 8)
 - [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 4, 5, 8)
 - [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 6)
 - [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 6, 7)
