@@ -12,7 +12,7 @@
 
 ### 0. Every decision is a trade-off. Document the alternatives you rejected.
 
-Adding a Hazelcast cluster to a codebase we had spent years simplifying was a deliberate reversal, taken because the alternative — coordinating locks through the database — was worse. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why.
+A legacy system we had spent years simplifying grew to a second node, and needed locks that worked across both. We added Hazelcast, a distributed in-memory cache with cluster-wide locking — one more moving part, a deliberate reversal of the simplification we had fought for — because the alternative, coordinating locks through the database, was worse at our write volumes. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why.
 
 The mechanism is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains — the decision, the alternatives rejected, the why. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory. In the repo, because the audience has doubled: most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does. A decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
 
