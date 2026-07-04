@@ -40,7 +40,7 @@ JIRA reference, brief summary, then the *why* — what was the problem, what was
 
 ### 6. Never stop learning.
 
-I wrote a BPF packet sniffer in 2004. I'm reading eBPF kernel code in 2026. Tools change, fundamentals compound.
+In 2004 I wrote a packet sniffer in C to learn raw sockets and BPF, the kernel's packet-filtering mechanism. In 2026 I'm reading eBPF kernel code — the same mechanism, grown into a general-purpose virtual machine inside Linux. The tool is unrecognizable; the fundamentals I learned twenty years ago are what make it readable. Tools change, fundamentals compound.
 
 ### 7. Move complexity from runtime into code, where it can be read.
 
