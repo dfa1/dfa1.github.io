@@ -10,17 +10,17 @@
 
 ## The Rules
 
-### 0. Complexity always bills you back.
+### 0. Every decision is a trade-off. Document the alternatives you rejected.
 
-Production code bills at 2 a.m. Demo code bills at the next refactor. Docs bill in the reader who gives up. Every shortcut accrues interest somewhere — on-call is just where it compounds fastest.
+Adding a Hazelcast cluster to a codebase we had spent years simplifying was a deliberate reversal, taken because the alternative — coordinating locks through the database — was worse. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why. ADRs are the mechanism — more on that [below](#keep-the-decision-records-in-the-repo).
 
 ### 1. Be willing to delete what you wrote last quarter.
 
-One legacy codebase I maintained lost 70,000 lines while gaining three years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred.
+That same codebase lost 70,000 lines while gaining three years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred.
 
-### 2. Every decision is a trade-off. Document the alternatives you rejected.
+### 2. Complexity always bills you back.
 
-Adding a Hazelcast cluster to that same codebase was a deliberate reversal of years of complexity reduction, taken because the alternative — coordinating locks through the database — was worse. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why. ADRs are the mechanism — more on that [below](#keep-the-decision-records-in-the-repo).
+Production code bills at 2 a.m. Demo code bills at the next refactor. Docs bill in the reader who gives up. Every shortcut accrues interest somewhere — on-call is just where it compounds fastest.
 
 ### 3. Every line is a liability.
 
@@ -79,7 +79,7 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 ## Keep the decision records in the repo
 
-Rule 2 needs a mechanism, and mine is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory — `0001-ffm-over-jni.md`, `0010-native-context-pool.md` — recording the decision, the alternatives rejected, and the why.
+Rule 0 needs a mechanism, and mine is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory — `0001-ffm-over-jni.md`, `0010-native-context-pool.md` — recording the decision, the alternatives rejected, and the why.
 
 The reason to keep them *in the repo* is that the audience has doubled. Most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does: a decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
 
@@ -124,7 +124,7 @@ Most of these rules were earned in stories already told here. If a rule reads li
 
 - [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0–3, 5, 6, 11, 13)
 - [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 4, 7, 8, 13)
-- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 2, 10)
+- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 10)
 - [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 10, 11)
 - [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning, software is never finished (rules 9, 12)
 - [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni) — the dependency removed with FFM (rule 6)
