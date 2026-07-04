@@ -206,7 +206,7 @@ These are the techniques that enabled us to slowly fix an unstable system — I 
 
 **Automate deploy and provisiong** — manual steps are where environments diverge and where outages start: database migrations, infrastructure provisioning, secrets management, etc.
 
-**Read:** Michael Feathers, *Working Effectively with Legacy Code* — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
+**Read *Working Effectively with Legacy Code***[^feathers] — the practical manual for everything described here. If you're inheriting a large codebase without tests, start there.
 
 ## By the Numbers
 
@@ -240,5 +240,7 @@ These are the techniques that enabled us to slowly fix an unstable system — I 
 [^bcrypt]: Spring Security `BCrypt` — https://docs.spring.io/spring-security/site/docs/current/api/org/springframework/security/crypto/bcrypt/BCrypt.html
 
 [^kamira]: "18 Subtle Rules of Software Engineering", [source](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/)
+
+[^feathers]: Michael Feathers, *Working Effectively with Legacy Code* (Prentice Hall, 2004).
 
 [^javamelody]: a monitoring tool for Java / Java EE, [source](https://github.com/javamelody/javamelody)
