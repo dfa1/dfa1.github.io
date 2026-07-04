@@ -164,12 +164,15 @@ public final class DirectByteBufferPool {
 
 `ConcurrentLinkedDeque` was chosen because it is non-blocking, and
 `offerFirst`/`pollFirst` give LIFO ordering — recently released buffers stay
-cache-warm. A `ThreadLocal<ByteBuffer>` would avoid the shared deque entirely
-and works well with a bounded platform-thread pool, but it couples buffer count
-to thread count — a dead end with virtual threads, where that number is
-unbounded. `clear()` only resets indices, not contents. The borrow/release
-contract is the caller's responsibility: double-release is possible, and a
-`Lease` wrapper around the `ByteBuffer` would prevent it (omitted for brevity).
+cache-warm. `clear()` only resets indices, not contents. A
+`ThreadLocal<ByteBuffer>` would avoid the shared deque entirely and works well
+with a bounded platform-thread pool, but it couples buffer count to thread
+count — a dead end with virtual threads, where that number is unbounded.
+
+The borrow/release contract is the caller's responsibility: double-release is
+possible, and a `Lease` wrapper around the `ByteBuffer` would prevent it
+(omitted for brevity).
+
 The pool is unbounded by design — it grows to the high-water mark of concurrent
 borrows and never shrinks: a single latency spike that drives concurrency up
 pins that peak native memory for the lifetime of the JVM. A soft cap or
