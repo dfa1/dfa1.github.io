@@ -59,15 +59,11 @@ Versioned endpoints, isolated DTOs, decorator stacks — they look like more mov
 
 A data warehouse job dying weekly was a symptom; the real cause was Hibernate plus reflection plus connection pooling. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
 
-### 12. Software is never finished — and that's a feature.
-
-BPF landed in 1993. eBPF in 2014. The kernel observability story is still being written. Software that stops evolving is software whose context has stopped evolving — which usually means it's already irrelevant.
-
-### 13. Ship small, ship often. If merging hurts, do it more often.
+### 12. Ship small, ship often. If merging hurts, do it more often.
 
 Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, hard conversations.
 
-### 14. Simplicity follows complexity, not the other way around.
+### 13. Simplicity follows complexity, not the other way around.
 
 > *Simplicity does not precede complexity, but follows it.* — Alan Perlis
 
@@ -118,11 +114,11 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
 
-- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0–3, 5, 6, 11, 13)
-- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 4, 7, 8, 13)
+- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0–3, 5, 6, 11, 12)
+- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 4, 7, 8, 12)
 - [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 10)
 - [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 10, 11)
-- [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning, software is never finished (rules 9, 12)
+- [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning (rule 9)
 - [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni) — the dependency removed with FFM (rule 6)
 
 ## Closing
@@ -133,6 +129,6 @@ The list is not finished. It will not be next year either. That's the point.
 
 ---
 
-[^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down. I dropped three of the original rules, kept fifteen, and rewrote most of the kept ones.
+[^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down. I dropped four of the original rules, kept fourteen, and rewrote most of the kept ones.
 
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
