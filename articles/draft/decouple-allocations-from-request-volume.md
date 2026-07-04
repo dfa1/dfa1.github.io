@@ -17,6 +17,9 @@ a lot of ground to cover, the data-fetching path was kept deliberately simple:
 Key key = ...; // request from the caller
 byte[] keyBytes = serializeKey(key);
 byte[] valueBytes = db.get(keyBytes);
+if (valueBytes == null) {
+    return null; // key not found
+}
 Value value = deserializeValue(valueBytes);
 ```
 
@@ -161,11 +164,23 @@ public final class DirectByteBufferPool {
 
 `ConcurrentLinkedDeque` was chosen because it is non-blocking, and
 `offerFirst`/`pollFirst` give LIFO ordering — recently released buffers stay
-cache-warm. `clear()` only resets indices, not contents. The borrow/release
+cache-warm. A `ThreadLocal<ByteBuffer>` would avoid the shared deque entirely
+and works well with a bounded platform-thread pool, but it couples buffer count
+to thread count — a dead end with virtual threads, where that number is
+unbounded. `clear()` only resets indices, not contents. The borrow/release
 contract is the caller's responsibility: double-release is possible, and a
 `Lease` wrapper around the `ByteBuffer` would prevent it (omitted for brevity).
 The pool is unbounded by design — it grows to the high-water mark of concurrent
-borrows. In production, extra instrumentation tracks that high-water mark.
+borrows and never shrinks: a single latency spike that drives concurrency up
+pins that peak native memory for the lifetime of the JVM. A soft cap or
+idle-buffer eviction would bound it; in production, extra instrumentation
+tracks the high-water mark instead. That reservation counts against
+[`-XX:MaxDirectMemorySize`](https://docs.oracle.com/en/java/javase/21/docs/specs/man/java.html#extra-options-for-java),
+which must be sized for the peak — otherwise `allocateDirect` fails with
+`OutOfMemoryError: Direct buffer memory`. The sizing matters more than usual
+here: with heap churn gone, the GC runs rarely, so any direct buffer left to
+the `Cleaner` would be freed late — the pool sidesteps this by never releasing
+buffers at all.
 
 The caller ended up like:
 ```java
@@ -173,14 +188,30 @@ ByteBuffer keyBuffer = pool.borrow();
 ByteBuffer valueBuffer = pool.borrow();
 try {
     serializeKey(key, keyBuffer);
-    db.get(keyBuffer, valueBuffer);
-    valueBuffer.flip();
+    keyBuffer.flip();
+    int size = db.get(keyBuffer, valueBuffer);
+    if (size == RocksDB.NOT_FOUND) {
+        return null;
+    }
+    if (size > valueBuffer.capacity()) {
+        // partial result: retry with a dedicated buffer of `size` bytes
+        return getWithLargerBuffer(key, size);
+    }
     return deserialize(valueBuffer);
 } finally {
     pool.release(keyBuffer);
     pool.release(valueBuffer);
 }
 ```
+
+The extra ceremony follows the contract of the direct-buffer `get`: the key is
+read between `position` and `limit` (hence the `flip()` after serializing), and
+the return value is the size of the actual value — `RocksDB.NOT_FOUND` when the
+key is missing, larger than the buffer's capacity when the pooled buffer was
+too small and the result was truncated. The value buffer needs no flip: `get()`
+sets its limit to the value size before returning. The `byte[]` overload has no
+truncation case at all — it returns the whole value in a freshly allocated,
+exactly-sized array, which is precisely the allocation being eliminated here.
 
 This is noticeably more complex than the naive approach.
 
