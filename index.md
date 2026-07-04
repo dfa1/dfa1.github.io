@@ -22,6 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [Decouple Allocations from Request Volume](articles/decouple-allocations-from-request-volume) (2023)
 - [Rethink Domain Primitives with Valhalla](articles/rethink-domain-primitives-with-valhalla) (2026)
 - [The Cost of Implicitness](articles/the-cost-of-implicitness) (2026)
 - [From BPF to eBPF, Twenty Years Later](articles/from-bpf-to-ebpf-twenty-years-later) (2026)
@@ -74,4 +75,4 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 > *If you think good architecture is expensive, try bad architecture.* — Brian Foote and Joseph Yoder, [Big Ball of Mud](https://www.laputan.org/mud/)
 
-Updated: 1 July 2026
+Updated: 4 July 2026
