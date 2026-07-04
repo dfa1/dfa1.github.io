@@ -22,7 +22,7 @@ Every rule, every design decision, every constraint should carry a *because*. No
 
 ### 2. Be willing to delete what you wrote last quarter — dependencies included.
 
-That same codebase lost 70,000 lines while gaining three years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. The best code is the code that doesn't exist.
+That same codebase lost 70,000 lines while gaining two years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. The best code is the code that doesn't exist.
 
 Dependencies deserve the same scrutiny. Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `commons-*` libraries — to evaluate three trivial business rules. JNI required a C++ glue layer and a portable native build; FFM replaces both with `--enable-native-access`. Every dependency is a permanent commitment to someone else's release schedule, security posture, and design choices — justify each one, and treat removing one as engineering too.
 

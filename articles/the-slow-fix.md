@@ -54,7 +54,7 @@ After a few days of setup, we could create a new environment with a single `pupp
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes without blocking pre-production, usually reserved for hot fixes.
 
-[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. The weight was not justified — a clear tension with the previous refactoring direction. Until that point we were replacing custom libs with external libs, but in this case the logic was trivial conditions:
+[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. Until that point we were replacing custom libs with external libs, but in this case the logic was trivial conditions:
 
 ```
 rule "No Gold Customers"
@@ -143,7 +143,7 @@ Another important point was publishing AWS metrics on a dashboard to check vario
 
 ## Months 19–24: Stability
 
-We were deploying several times a week. By this point the system looked almost nothing like what we had inherited. The WAR file was down to 60 MB. The codebase was at 180,000 lines — 70,000 fewer than when we started, despite three years of new features. There were over 200 database migrations in Flyway, every schema change tracked and repeatable. Production outages had been absent for months.
+We were deploying several times a week. By this point the system looked almost nothing like what we had inherited. The WAR file was down to 60 MB. The codebase was at 180,000 lines — 70,000 fewer than when we started, despite two years of new features. There were over 200 database migrations in Flyway, every schema change tracked and repeatable. Production outages had been absent for months.
 
 The continuous-improvement cycle was fully in place. Integration tests and automated acceptance tests replaced a purely manual QA process. jBPM, the workflow engine, was removed — its use case didn't require it. A straightforward state machine, written from scratch and fully covered by integration tests, replaced it with a fraction of the complexity.
 
