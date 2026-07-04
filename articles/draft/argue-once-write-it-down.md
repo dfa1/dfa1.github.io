@@ -38,22 +38,18 @@ Standards don't prevent arguments — they move the argument up one level: argue
 
 JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness. None of this means agonizing over every local commit: commit often, perfect later, publish once[^robertson]. The history you publish is the documentation; the history you keep while working is scaffolding — rebase the second into the first before it leaves your machine.
 
-### 6. Never stop learning.
-
-In 2004 I wrote a packet sniffer in C to learn raw sockets and BPF, the kernel's packet-filtering mechanism. In 2026 I'm reading eBPF kernel code — the same mechanism, grown into a general-purpose virtual machine inside Linux. The tool is unrecognizable; the fundamentals I learned twenty years ago are what make it readable. Tools change, fundamentals compound.
-
-### 7. Move complexity from runtime into code, where it can be read.
+### 6. Move complexity from runtime into code, where it can be read.
 
 Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — is what produces incidents and deployments that have to be coordinated across every consumer.
-### 8. Fix root causes. Symptoms come back.
+### 7. Fix root causes. Symptoms come back.
 
 A data warehouse job dying weekly was a symptom; the real cause was Hibernate plus reflection plus connection pooling. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
 
-### 9. Ship small, ship often. If merging hurts, do it more often.
+### 8. Ship small, ship often. If merging hurts, do it more often.
 
 Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, hard conversations.
 
-### 10. Simplicity follows complexity, not the other way around.
+### 9. Simplicity follows complexity, not the other way around.
 
 > *Simplicity does not precede complexity, but follows it.* — Alan Perlis
 
@@ -103,11 +99,10 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
 
-- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0, 2, 3, 8, 9)
-- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 4, 5, 9)
-- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 7)
-- [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 7, 8)
-- [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning (rule 6)
+- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0, 2, 3, 7, 8)
+- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 4, 5, 8)
+- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 6)
+- [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 6, 7)
 - [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni) — the dependency removed with FFM (rule 2)
 
 ## Closing
