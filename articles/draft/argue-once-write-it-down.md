@@ -20,13 +20,13 @@ The mechanism is [Architecture Decision Records](https://adr.github.io/): one sh
 
 Every rule, every design decision, every constraint should carry a *because*. Not "use fixed snapshots" but "use fixed snapshots *because* tests that fail for external reasons erode trust."
 
-### 2. Be willing to delete what you wrote last quarter — dependencies included.
-
-Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist.
-
-### 3. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
+### 2. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
 
 The full rewrite is the single worst strategic mistake a team can make[^spolsky]. The old system contains years of accumulated domain knowledge — bugs that turned into features, edge cases silently handled, compensations for upstream failures. Throw it away and you won't know what you've lost until production tells you. You don't get to a simple system by demanding simplicity at the start: you get there by living through the complexity, understanding it, and having the patience to remove what doesn't earn its place.
+
+### 3. But be willing to delete what you wrote last quarter — dependencies included.
+
+Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist.
 
 ### 4. Coding standards exist to argue once, not every PR.
 
