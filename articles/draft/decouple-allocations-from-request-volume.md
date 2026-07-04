@@ -242,10 +242,10 @@ gc.alloc.rate                                  ~10  MB/sec
 gc.churn.G1_Eden_Space                         ~10  MB/sec
 ```
 
-Heap allocations dropped from 4 GB/s to ~10 MB/s. The residual is the
-deserialized `Value` plus a few iterator and wrapper objects — buffer
-allocations are zero, domain-object allocations remain. The GC had almost
-nothing to do on the read path. Throughput stabilized.
+Heap allocations dropped from 4 GB/s to ~10 MB/s. The leftover ~10 MB/s is the
+deserialized `Value` and a few iterator and wrapper objects — the buffers are
+gone from the profile. With almost nothing left for the GC to do on the read
+path, throughput stabilized.
 
 ## The Insight
 
