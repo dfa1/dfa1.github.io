@@ -212,7 +212,7 @@ These are the techniques that enabled us to slowly fix an unstable system — I 
 
 |                  | Start          | End                          |
 |------------------|----------------|------------------------------|
-| Production outages | 2-3/week       | 0 for months                 |
+| Production outages | ~1/day         | 0 for months                 |
 | Deploy frequency | ~1/quarter     | Several/week                 |
 | Codebase         | 250,000 LOC    | 180,000 LOC                  |
 | WAR size         | 90 MB          | 60 MB                        |
