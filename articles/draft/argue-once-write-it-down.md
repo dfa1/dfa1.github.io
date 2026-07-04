@@ -26,7 +26,7 @@ Code you wrote is not sacred: every line has to be maintained, secured, debugged
 
 ### 3. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
 
-The full rewrite is the single worst strategic mistake a team can make[^spolsky]. The old system contains years of accumulated domain knowledge — bugs that turned into features, edge cases silently handled, compensations for upstream failures. Throw it away and you won't know what you've lost until production tells you.
+The full rewrite is the single worst strategic mistake a team can make[^spolsky]. The old system contains years of accumulated domain knowledge — bugs that turned into features, edge cases silently handled, compensations for upstream failures. Throw it away and you won't know what you've lost until production tells you. You don't get to a simple system by demanding simplicity at the start: you get there by living through the complexity, understanding it, and having the patience to remove what doesn't earn its place.
 
 ### 4. Coding standards exist to argue once, not every PR.
 
