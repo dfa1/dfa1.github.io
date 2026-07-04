@@ -83,14 +83,14 @@ gc.alloc.rate                               ~4096  MB/sec
 gc.churn.G1_Eden_Space                      ~4096  MB/sec
 ```
 
-~4 GB/s of heap allocations under benchmark saturation. Production traffic at
-the time was nowhere near this rate — the benchmark validates the mechanism,
-not the production diagnosis. The production signal was qualitatively
-different: GC headroom and infrastructure cost, not throughput. The fix was
-sized for projected scale, not for the load already in production. The
-benchmark provided a reproducible target to measure against.
+~4 GB/s of heap allocations at benchmark saturation — far beyond production
+traffic at the time, and deliberately so: the benchmark isolates the mechanism,
+not the production load. It explains the symptom: every request pays an
+allocation tax, the GC burns CPU collecting it, and adding nodes buys headroom
+without removing the tax. It also gives the fix a reproducible target, sized
+for projected scale rather than for the load already in production.
 
-## The Non-Naive Design
+## The Pooled Design
 
 A `DirectByteBuffer` backs its bytes with off-heap native memory. The wrapper
 object itself is still a heap object — reclaimed by the GC, which then triggers
