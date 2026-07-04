@@ -42,7 +42,7 @@ Versioned endpoints, isolated DTOs, decorator stacks — they look like more mov
 
 ### 7. Fix root causes. Symptoms come back.
 
-Compensating logic accumulates fast when nobody asks why: the manual restart, the extra `if`, the silenced warning — each papers over a cause that keeps compounding underneath. Empty `catch` blocks are the purest form: a culture that doesn't want to look at exceptions.
+Restarting the job that dies every week is not a fix; it is a schedule. The cause is still there, producing the next failure, while workarounds accumulate around it — extra code whose only purpose is to survive a bug nobody understood. Empty `catch` blocks are where that road ends: a codebase that has stopped asking why.
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
