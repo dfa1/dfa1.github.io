@@ -44,7 +44,7 @@ Versioned endpoints, isolated DTOs, decorator stacks — they look like more mov
 
 ### 7. Fix root causes. Symptoms come back.
 
-A data warehouse job dying weekly was a symptom; the real cause was Hibernate plus reflection plus connection pooling. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
+A data warehouse job dying weekly — restarted by hand every time — was a symptom; the real cause was Hibernate combined with reflection hacks and connection-pooling issues. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
