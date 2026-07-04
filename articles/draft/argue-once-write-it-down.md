@@ -6,7 +6,7 @@
 
 *The [Zen of Python](https://peps.python.org/pep-0020/) was the first such list I admired — `import this` felt like a secret handshake when I was younger. Its strength is also its trap: aphorisms without reasons get cargo-culted. So the principle here is the one from [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist; a rule with a reason is guidance.*
 
-*The receipts — the articles where these rules were earned — are collected at the end.*
+*The stories behind these rules — the articles where they were earned — are collected at the end.*
 
 ## The Rules
 
@@ -118,7 +118,7 @@ The reason to keep them *in the repo* is that the audience has doubled. Most of 
 - The roadmap is a hypothesis. Defend the *why*, not the dates.
 - Don't commit to a target whose preconditions aren't in place yet — the deferred PostgreSQL migration in *The Slow Fix* is one example among many.
 
-## The receipts
+## The stories behind the rules
 
 Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
 
