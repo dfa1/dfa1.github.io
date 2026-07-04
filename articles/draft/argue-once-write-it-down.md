@@ -30,7 +30,7 @@ The full rewrite is the single worst strategic mistake a team can make[^spolsky]
 
 ### 4. Coding standards exist to argue once, not every PR.
 
-Standards don't prevent arguments — they move the argument up one level: argue once about the rule, then stop relitigating taste in every PR. A rule with a reason outlasts the meeting where it was decided.
+Standards don't prevent arguments — they move the argument up one level: argue once about the rule, then stop relitigating taste in every PR. A rule with a reason outlasts the meeting where it was decided. In [vortex-java](https://github.com/dfa1/vortex-java) and [zstd-java](https://github.com/dfa1/zstd-java) that means a `checkstyle.xml` enforced by the build, so formatting arguments end before they start, and a `CLAUDE.md` stating the conventions — which makes the standards bind the AI agents writing most of the code, not just the humans reviewing it.
 
 ### 5. Commit messages are documentation.
 
