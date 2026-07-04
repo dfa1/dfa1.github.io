@@ -48,7 +48,7 @@ A data warehouse job dying weekly — restarted by hand every time — was a sym
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. I've seen quarterly releases become weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, hard conversations.
+Trunk-based development, small PRs, feature flags. I've seen quarterly releases become weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors.
 
 ### 9. Simplicity follows complexity, not the other way around.
 
