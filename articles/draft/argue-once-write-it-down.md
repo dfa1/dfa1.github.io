@@ -71,7 +71,7 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 ## If you're a senior engineer right now
 
-- Teach the *why*, not the *what*. A new engineer who knows the reasoning can handle cases the document never anticipated.
+- Teach the *why*, not just the *what*. An engineer who knows the reasoning can handle the cases no document anticipated.
 - Lead by example, not by edict. The team copies what you do, not what you say.
 - Use code review to spread context, not to gatekeep. Ask Socratic questions; let the author find the answer.
 - Listen before you correct. Sometimes the team's "wrong" approach is solving a constraint you don't know about.
