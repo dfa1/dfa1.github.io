@@ -93,7 +93,7 @@ A `DirectByteBuffer` backs its bytes with off-heap native memory. The wrapper
 object itself is still a heap object — reclaimed by the GC, which then triggers
 a `Cleaner` to free the native region — but the payload bytes do not pressure
 the eden/survivor spaces. Allocation is expensive (a native `malloc`-style
-call), which is exactly why pooling helps: pay the cost once at startup, reuse
+call), which is exactly why pooling helps: pay the cost once per buffer, reuse
 indefinitely.
 
 The pool only pays off in combination with the direct-buffer overload of
@@ -102,6 +102,26 @@ The default `byte[]` overload copies across the JNI boundary on every call; the
 direct-buffer overload reads straight into the pooled native memory. Without
 that variant, pooling Java-side wrappers around `byte[]` would not eliminate
 the per-request copy.
+
+```
+byte[] overload:
+
+   JVM heap              │  native (RocksDB)
+                         │
+   new byte[] key   ──copy──►  db.get()
+   new byte[] value ◄──copy──  result
+                         │
+   2 allocations + 2 copies per request
+
+direct-buffer overload:
+
+   JVM heap              │  native memory
+                         │
+   pool.borrow()   ────────►  pooled DirectByteBuffer
+   pool.release()  ◄────────  RocksDB reads/writes it in place
+                         │
+   0 allocations, 0 copies per request
+```
 
 Essentially the pool is:
 
@@ -140,7 +160,7 @@ public final class DirectByteBufferPool {
 ```
 
 `ConcurrentLinkedDeque` was chosen because it is non-blocking, and
-`offerFirst`/`pollFirst` give LIFO ordering — recently-released buffers stay
+`offerFirst`/`pollFirst` give LIFO ordering — recently released buffers stay
 cache-warm. `clear()` only resets indices, not contents. The borrow/release
 contract is the caller's responsibility: double-release is possible, and a
 `Lease` wrapper around the `ByteBuffer` would prevent it (omitted for brevity).
@@ -195,6 +215,16 @@ nothing to do on the read path. Throughput stabilized.
 
 ## The Insight
 
+```
+alloc rate                        alloc rate
+    │        ╱  naive                 │         pooled
+    │      ╱                          │
+    │    ╱                            │    ┌───────────────
+    │  ╱                              │   ╱  bounded by
+    │╱                                │  ╱   concurrency
+    └───────────► requests/s          └───────────► requests/s
+```
+
 In the naive design, allocation rate scales with request rate:
 
 ```
@@ -202,12 +232,12 @@ per_request_alloc = avg_key_size + avg_value_size + serialization wrappers
 total_alloc_rate  = requests_per_second × per_request_alloc
 ```
 
-With a pool of pre-allocated `DirectByteBuffer`s, allocation rate scales with
+With a pool of reusable `DirectByteBuffer`s, allocation rate scales with
 concurrency, and concurrency is bounded by the thread pool:
 
 ```
 per_request_alloc = sizeof(Value)                # deserialized domain object
-fixed_cost        = pool_size × buffer_capacity  # paid once, at startup
+fixed_cost        = pool_size × buffer_capacity  # paid once, grows to peak concurrency
 ```
 
 Request rate can grow without bound; allocation rate cannot.
