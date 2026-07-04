@@ -22,42 +22,38 @@ Every rule, every design decision, every constraint should carry a *because*. No
 
 ### 2. Be willing to delete what you wrote last quarter — dependencies included.
 
-That same codebase lost 70,000 lines while gaining three years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred.
+That same codebase lost 70,000 lines while gaining three years of features. Lambdaj, Drools, jBPM, custom logging wrappers, hand-rolled JS minification — all gone. Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. The best code is the code that doesn't exist.
 
 Dependencies deserve the same scrutiny. Drools pulled Eclipse JDT, ANTLR, ASM, protobuf, xstream, and half a dozen `commons-*` libraries — to evaluate three trivial business rules. JNI required a C++ glue layer and a portable native build; FFM replaces both with `--enable-native-access`. Every dependency is a permanent commitment to someone else's release schedule, security posture, and design choices — justify each one, and treat removing one as engineering too.
 
-### 3. Every line is a liability.
-
-Every line has to be maintained, secured, debugged, and explained to the next person or AI agent. The best code is the code that doesn't exist.
-
-### 4. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
+### 3. Treat unfamiliar code as a system to understand, not an enemy to rewrite.
 
 The full rewrite is the single worst strategic mistake a team can make[^spolsky]. The old system contains years of accumulated domain knowledge — bugs that turned into features, edge cases silently handled, compensations for upstream failures. Throw it away and you won't know what you've lost until production tells you.
 
-### 5. Coding standards exist to argue once, not every PR.
+### 4. Coding standards exist to argue once, not every PR.
 
 Standards don't prevent arguments — they move the argument up one level: argue once about the rule, then stop relitigating taste in every PR. A rule with a reason outlasts the meeting where it was decided.
 
-### 6. Commit messages are documentation.
+### 5. Commit messages are documentation.
 
 JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness. None of this means agonizing over every local commit: commit often, perfect later, publish once[^robertson]. The history you publish is the documentation; the history you keep while working is scaffolding — rebase the second into the first before it leaves your machine.
 
-### 7. Never stop learning.
+### 6. Never stop learning.
 
 I wrote a BPF packet sniffer in 2004. I'm reading eBPF kernel code in 2026. Tools change, fundamentals compound.
 
-### 8. Move complexity from runtime into code, where it can be read.
+### 7. Move complexity from runtime into code, where it can be read.
 
 Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — is what produces incidents and deployments that have to be coordinated across every consumer.
-### 9. Fix root causes. Symptoms come back.
+### 8. Fix root causes. Symptoms come back.
 
 A data warehouse job dying weekly was a symptom; the real cause was Hibernate plus reflection plus connection pooling. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
 
-### 10. Ship small, ship often. If merging hurts, do it more often.
+### 9. Ship small, ship often. If merging hurts, do it more often.
 
 Trunk-based development, small PRs, feature flags. Quarterly releases became weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors, hard conversations.
 
-### 11. Simplicity follows complexity, not the other way around.
+### 10. Simplicity follows complexity, not the other way around.
 
 > *Simplicity does not precede complexity, but follows it.* — Alan Perlis
 
@@ -107,11 +103,11 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
 
-- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0, 2–4, 9, 10)
-- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 5, 6, 10)
-- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 8)
-- [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 8, 9)
-- [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning (rule 7)
+- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — the shrinking codebase, the Hazelcast reversal, the root causes (rules 0, 2, 3, 8, 9)
+- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 4, 5, 9)
+- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 7)
+- [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 7, 8)
+- [From BPF to eBPF, Twenty Years Later](https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later) — never stop learning (rule 6)
 - [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni) — the dependency removed with FFM (rule 2)
 
 ## Closing
