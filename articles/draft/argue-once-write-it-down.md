@@ -108,7 +108,6 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 - Sequence by what unlocks the next move, not by what hurts most. Tactical work has visible payoff; strategic work looks like overhead until it doesn't.
 - The roadmap is a hypothesis. Defend the *why*, not the dates.
-- Don't commit to a target whose preconditions aren't in place yet — the deferred PostgreSQL migration in *The Slow Fix* is one example among many.
 
 ## The stories behind the rules
 
