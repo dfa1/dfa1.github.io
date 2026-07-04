@@ -12,7 +12,9 @@
 
 ### 0. Every decision is a trade-off. Document the alternatives you rejected.
 
-Adding a Hazelcast cluster to a codebase we had spent years simplifying was a deliberate reversal, taken because the alternative — coordinating locks through the database — was worse. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why. ADRs are the mechanism — more on that [below](#keep-the-decision-records-in-the-repo).
+Adding a Hazelcast cluster to a codebase we had spent years simplifying was a deliberate reversal, taken because the alternative — coordinating locks through the database — was worse. That reasoning belongs in writing, for the next engineer who reads the architecture and wonders why.
+
+The mechanism is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains — the decision, the alternatives rejected, the why. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory. In the repo, because the audience has doubled: most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does. A decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
 
 ### 1. Be willing to delete what you wrote last quarter.
 
@@ -76,12 +78,6 @@ You don't get to a simple system by demanding simplicity at the start. You get t
 Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
 
 The mistake is using a checklist where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding. Then the checklist hides the reasoning that would let you adapt — which is what rule 4 was about.
-
-## Keep the decision records in the repo
-
-Rule 0 needs a mechanism, and mine is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory — `0001-ffm-over-jni.md`, `0010-native-context-pool.md` — recording the decision, the alternatives rejected, and the why.
-
-The reason to keep them *in the repo* is that the audience has doubled. Most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does: a decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
 
 ## If you're a Junior Engineer right now
 
