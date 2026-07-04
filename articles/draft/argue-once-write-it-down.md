@@ -41,6 +41,7 @@ JIRA reference, brief summary, then the *why* — what was the problem, what was
 ### 6. Move complexity from runtime into code, where it can be read.
 
 Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — is what produces incidents and deployments that have to be coordinated across every consumer.
+
 ### 7. Fix root causes. Symptoms come back.
 
 A data warehouse job dying weekly was a symptom; the real cause was Hibernate plus reflection plus connection pooling. Empty `catch` blocks were a symptom; the real cause was a culture that didn't want to look at exceptions. Compensating logic accumulates fast when nobody asks why — and silencing a warning is just the fastest way to ship the wrong fix.
@@ -61,14 +62,14 @@ Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbo
 
 The mistake is using a checklist where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding. Then the checklist hides the reasoning that would let you adapt — which is what rule 1 was about.
 
-## If you're a Junior Engineer right now
+## If you're a junior engineer right now
 
 - Ask questions fearlessly — and ask them in writing where others can read the answer.
 - Take ownership before you feel ready. The confidence comes after, not before.
 - Read more code than you write. The codebase you inherit is a body of decisions; learn to read them before you challenge them.
 - Don't wait for permission to learn a new system. Curiosity beats credentials.
 
-## If you're a Senior Engineer right now
+## If you're a senior engineer right now
 
 - Teach the *why*, not the *what*. A new engineer who knows the reasoning can handle cases the document never anticipated.
 - Lead by example, not by edict. The team copies what you do, not what you say.
