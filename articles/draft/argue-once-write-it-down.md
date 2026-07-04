@@ -104,7 +104,6 @@ Most of these rules were earned in stories already told here. If a rule reads li
 - [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 1, 4, 5, 8)
 - [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 6)
 - [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 6, 7)
-- [Java + RocksDB − JNI](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni) — the dependency removed with FFM (rule 2)
 
 ## Closing
 
