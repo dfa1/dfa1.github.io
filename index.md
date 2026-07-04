@@ -22,13 +22,13 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
-- [Decouple Allocations from Request Volume](articles/decouple-allocations-from-request-volume) (2023)
 - [Rethink Domain Primitives with Valhalla](articles/rethink-domain-primitives-with-valhalla) (2026)
 - [The Cost of Implicitness](articles/the-cost-of-implicitness) (2026)
 - [From BPF to eBPF, Twenty Years Later](articles/from-bpf-to-ebpf-twenty-years-later) (2026)
 - [Java + RocksDB - JNI](articles/java-plus-rocksdb-minus-jni) (2026)
 - [The Joy of Proper Encapsulation](articles/the-joy-of-proper-encapsulation) (2026)
 - [Coding With Claude Code](articles/coding-with-claude-code) (2026)
+- [Decouple Allocations from Request Volume](articles/decouple-allocations-from-request-volume) (2023)
 - [Make the Implicit Explicit](articles/make-the-implicit-explicit) (2022, republished in 2026)
 - [Your compiler is already part of your Security Team](articles/your-compiler-is-already-part-of-your-security-team) (2021, republished in 2026)
 - [Write Down The Why](articles/write-down-the-why) (2020, republished in 2026)
