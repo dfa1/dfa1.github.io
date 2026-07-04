@@ -46,7 +46,7 @@ Standards don't prevent arguments — they move the argument up one level: argue
 
 ### 8. Commit messages are documentation.
 
-JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness.
+JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness. None of this means agonizing over every local commit: commit often, perfect later, publish once[^robertson]. The history you publish is the documentation; the history you keep while working is scaffolding — rebase the second into the first before it leaves your machine.
 
 ### 9. Never stop learning.
 
@@ -132,3 +132,5 @@ The list is not finished. It will not be next year either. That's the point.
 [^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down. I dropped four of the original rules, kept fourteen, and rewrote most of the kept ones.
 
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
+
+[^robertson]: Seth Robertson, [*Commit Often, Perfect Later, Publish Once — Git Best Practices*](https://sethrobertson.github.io/GitBestPractices/).
