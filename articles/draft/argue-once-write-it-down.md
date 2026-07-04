@@ -48,7 +48,7 @@ A data warehouse job dying weekly — restarted by hand every time — was a sym
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. I've seen quarterly releases become weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments, refactors.
+Trunk-based development, small PRs, feature flags. I've seen quarterly releases become weekly, then several per week. The pain of merging *decreases* as merges become smaller and more frequent. The same goes for everything else that hurts: deployments and refactors.
 
 ### 9. Simplicity follows complexity, not the other way around.
 
@@ -62,40 +62,6 @@ Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbo
 
 The mistake is using a checklist where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding. Then the checklist hides the reasoning that would let you adapt — which is what rule 1 was about.
 
-## If you're a junior engineer right now
-
-- Ask questions fearlessly — and ask them in writing where others can read the answer.
-- Take ownership before you feel ready. The confidence comes after, not before.
-- Read more code than you write. The codebase you inherit is a body of decisions; learn to read them before you challenge them.
-- Don't wait for permission to learn a new system. Curiosity beats credentials.
-
-## If you're a senior engineer right now
-
-- Teach the *why*, not just the *what*. An engineer who knows the reasoning can handle the cases no document anticipated.
-- Lead by example, not by edict. The team copies what you do, not what you say.
-- Use code review to spread context, not to gatekeep. Ask Socratic questions; let the author find the answer.
-- Listen before you correct. Sometimes the team's "wrong" approach is solving a constraint you don't know about.
-- Mentorship is how impact compounds. The team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) was the work I'm proudest of — not the code.
-
-## If you're leading work right now
-
-**On context**
-
-- Write things down where the next person finds them: in the repo, not the wiki.
-- The onboarding doc is now also the agent's prompt. If you never wrote down the why, you can't align humans or machines either.
-- Code review is how context spreads. Treat it as teaching, not gatekeeping.
-
-**On estimates**
-
-- Estimates are probability distributions, not dates. Communicate ranges, and the assumptions underneath them.
-- Re-estimate when reality changes. Anchoring on the first guess is dishonest about uncertainty.
-- The right answer to "when?" is often "what do you mean by *done*?"
-
-**On roadmap**
-
-- Sequence by what unlocks the next move, not by what hurts most. Tactical work has visible payoff; strategic work looks like overhead until it doesn't.
-- The roadmap is a hypothesis. Defend the *why*, not the dates.
-
 ## The stories behind the rules
 
 Most of these rules were earned in stories already told here. If a rule reads like a fragment of a longer story, it is:
@@ -107,7 +73,7 @@ Most of these rules were earned in stories already told here. If a rule reads li
 
 ## Closing
 
-This is what I've written down. None of it is original — most of it was earned the slow way, by being wrong about it first.
+This is what I've written down. None of it is original — most of it was earned the slow way, by being wrong about it first. And the work I'm proudest of isn't code at all: it's the team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — mentorship is how impact compounds.
 
 The list is not finished. It will not be next year either. That's the point.
 
