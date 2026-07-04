@@ -48,12 +48,6 @@ Compensating logic accumulates fast when nobody asks why: the manual restart, th
 
 Trunk-based development, small PRs, feature flags. The pain of merging *decreases* as merges become smaller and more frequent, because conflicts grow with the distance between branches. The same goes for everything else that hurts: deployments and refactors.
 
-### 9. Simplicity follows complexity, not the other way around.
-
-> *Simplicity does not precede complexity, but follows it.* — Alan Perlis
-
-You don't get to a simple system by demanding simplicity at the start. You get there by living through the complexity, understanding it, and having the patience to remove what doesn't earn its place.
-
 ## When a checklist is the right tool
 
 Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
