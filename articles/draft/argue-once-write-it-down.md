@@ -46,7 +46,7 @@ Restarting the job that dies every week is not a fix; it is a schedule. The caus
 
 ### 8. Ship small, ship often. If merging hurts, do it more often.
 
-Trunk-based development, small PRs, feature flags. The pain of merging *decreases* as merges become smaller and more frequent, because conflicts grow with the distance between branches. The same goes for everything else that hurts: deployments and refactors.
+[Trunk-based development](https://trunkbaseddevelopment.com/), small PRs, feature flags. The pain of merging *decreases* as merges become smaller and more frequent, because conflicts grow with the distance between branches. The same goes for everything else that hurts: deployments and refactors.
 
 ## When a checklist is the right tool
 
