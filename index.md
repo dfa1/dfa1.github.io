@@ -47,11 +47,11 @@ All presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
-- [eBPF-sensor](https://github.com/dfa1/ebpf-sensor), experimental eBPF sensor in Python (2026)
+- [eBPF-sensor](https://github.com/dfa1/ebpf-sensor), eBPF sensor in Python (2026)
 - [zstd-java](https://github.com/dfa1/zstd-java), Zstandard bindings in pure Java via FFM (2026)
 - [vortex-java](https://github.com/dfa1/vortex-java), columnar format in pure Java, zero-copy via FFM (2026)
 - [refined-type](https://github.com/dfa1/refined-type), domain primitives + Valhalla in Java (2026)
-- [rocksdbffm](https://github.com/dfa1/rocksdbffm), experimental RocksDB FFM bindings in Java (2026)
+- [rocksdbffm](https://github.com/dfa1/rocksdbffm), RocksDB FFM bindings in Java (2026)
 - [hosh](https://github.com/hosh-shell/hosh), **H**uman **O**riented **SH**ell in Java (2018)
 - [fungoid](https://github.com/dfa1/fungoid.js), transducer library in Javascript (2016)
 - [vim-stuff](https://github.com/dfa1/vim-stuff), my minimal .vimrc (2013)
