@@ -37,24 +37,6 @@ Everyone already runs a version of this loop by hand:
                              (very important)
 ```
 
-The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
-scale is who provides it: a human, reading every output, every round. The whole point is
-replacing that step with machinery:
-
-```
-        ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
-        │  AI agent   │ ──────────────────► │  harness                         │
-        │             │                     │  language · tests · PIT · Sonar  │
-        │  fixes it   │ ◄────────────────── │  cross-impl oracle · ADR         │
-        └─────────────┘   readable failure  └──────────────────────────────────┘
-                 ▲                                        │
-                 └─────────── human steers ◄──────────────┘
-```
-
-This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
-tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
-execution at each step.[^agents]
-
 Why not just write better prompts? Because a prompt is open-loop control: it improves the
 average and can't limit the worst case. A better prompt raises the hit rate; the misses still
 ship unless something catches them — and with generated code the failures that hurt are
@@ -76,6 +58,26 @@ this machinery with only humans in it. What the agent changes is the economics: 
 faster than anyone can read it, so a loop that used to be good practice becomes the
 precondition. A team that already had tight feedback loops for its humans is — almost by
 accident — ready for agents.
+
+The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
+scale is who provides it: a human, reading every output, every round. The whole point is
+replacing that step with machinery:
+
+```
+        ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
+        │  AI agent   │ ──────────────────► │  harness                         │
+        │             │                     │  language · tests · PIT · Sonar  │
+        │  fixes it   │ ◄────────────────── │  cross-impl oracle · ADR         │
+        └─────────────┘   readable failure  └──────────────────────────────────┘
+                 ▲                                        │
+                 └─────────── human steers ◄──────────────┘
+```
+
+This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
+tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
+execution at each step.[^agents]
+
+## The loop in practice
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
@@ -230,20 +232,22 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
 
 ## Lessons
 
-- AI coding is loop-building, not prompt-writing — the model is one tool in a harness. And the
-  loop predates the agent: compilers, CI, and code review were always it; agents change the
-  economics, not the principle.
-- A safe language is the first tool: `MemorySegment` turns silent corruption into a readable
-  exception. "No Unsafe" is engineering, not branding.
-- Integration tests are mandatory for FFM: wrong types pass compilation, fail at runtime.
-- A mutation survivor has three responses, one of which is "add a test": edge → test; dead
-  clause → delete; equivalent heuristic → leave it. An agent that only knows "add a test"
-  grows unkillable tests around dead code.
-- An independent implementation is the oracle the agent can't fake; `@ParameterizedTest` scales
-  it across the whole matrix for the cost of one test body.
-- Feed ground truth (read the spec) so the agent looks facts up instead of inventing them.
-- The docs are part of the harness: fitness functions keep the agent's ground truth —
-  `CLAUDE.md`, ADRs, `docs/*.md` — from drifting away from the code.
+- AI coding is loop-building, not prompt-writing; the loop predates the agent —
+  agents change the economics, not the principle.
+- Pick a language that turns silent corruption into readable failures:
+  `MemorySegment` over `Unsafe`.
+- For FFM, integration tests are mandatory: wrong native types compile fine and
+  fail at runtime.
+- Read mutation survivors three ways: edge case → test, dead clause → delete,
+  equivalent heuristic → leave it.
+- Get an oracle the agent can't fake: a second implementation, or the upstream
+  project's golden files.
+- A precise contract plus a checklist is what an agent works through best;
+  "make it secure" is not.
+- Feed the agent ground truth — the spec, the source — instead of room to guess.
+- Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
+  `docs/*.md` true.
+- The agent runs inside the loop; choosing the loop stays the engineer's job.
 
 ---
 
