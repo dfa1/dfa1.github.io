@@ -159,7 +159,7 @@ Around that time, I left the company to move to another city.
 The team had grown to 5 backend developers, 2 frontend developers, and 2 QAs — still no sysadmins. And it was in good shape: confident, autonomous, and shipping regularly.
 What I found on day one and what I left behind were barely recognizable as the same team culture.
 
-This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not because of the technical work, but because of watching the team grow. They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
+This wasn't my first lead role. But in retrospect, it was one of the most satisfying — not only because of the technical work, but because of watching the team grow. They went from being afraid to touch anything to taking ownership of the system, making decisions independently, and treating problems as something to solve rather than something to survive.
 
 ## Tactical and Strategic
 
