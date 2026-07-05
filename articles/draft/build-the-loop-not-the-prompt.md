@@ -2,10 +2,11 @@
 
 *27 June 2026*
 
-*I built three small native-adjacent Java libraries —
-[rocksdbffm](https://github.com/dfa1/rocksdbffm) (a RocksDB wrapper),
-[vortex-java](https://github.com/dfa1/vortex-java) (a pure-Java reader for the Vortex
-columnar format), and [zstd-java](https://github.com/dfa1/zstd-java) (Zstandard bindings).
+*Recently I built three small Java libraries using JDK 25 and the
+[Foreign Function & Memory API](https://openjdk.org/jeps/454):
+[rocksdbffm](https://github.com/dfa1/rocksdbffm),
+[vortex-java](https://github.com/dfa1/vortex-java), and
+[zstd-java](https://github.com/dfa1/zstd-java).
 Most of the code was written by an AI agent. The lesson that stuck wasn't about the model:
 an agent is only as good as the harness around it — a safe language to write in, and a tight
 loop of tools to catch it when it's wrong.*
@@ -85,18 +86,6 @@ subject.
 So the idea is to avoid AI to copy paste too much code, and to reuse existing code as much as
 possible. Sonar is a cheap way to detect large chunks of copy-pasted code where PIT will
 flag ineffective tests. Parametrized tests and property based testing are great ways to have test coverage across a lot of possible inputs.
-
-## The three projects
-
-| | What | Distinct angle |
-|---|---|---|
-| **[rocksdbffm](https://github.com/dfa1/rocksdbffm)** | [RocksDB](https://rocksdb.org/)'s stable [C API](https://github.com/facebook/rocksdb/blob/main/include/rocksdb/c.h) via [FFM](https://openjdk.org/jeps/454), not JNI | Type-safe: `ReadWriteDB` vs `ReadOnlyDB`, so `put` on a read-only handle won't compile. [Earlier post](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni). |
-| **[vortex-java](https://github.com/dfa1/vortex-java)** | The [Vortex](https://github.com/spiraldb/vortex) columnar format, *no native library at all* | Pure Java, memory-mapped, zero-copy. Runs on Windows (the [Rust bindings](https://github.com/spiraldb/vortex) don't). |
-| **[zstd-java](https://github.com/dfa1/zstd-java)** | [zstd](https://github.com/facebook/zstd)'s C library via FFM | Native [dictionary compression](https://github.com/facebook/zstd#the-case-for-small-data-compression), zero-copy `MemorySegment` API, hermetic [Zig](https://ziglang.org/) build for 6 OS/arch combos. |
-
-Two bind a native library; one reimplements a format. All three converge on the *same*
-`MemorySegment`/`Arena` core — FFM isn't a "JNI replacement," it's one memory model covering
-native calls and mapped files alike.
 
 ## Half one: a safe language to generate
 
@@ -225,30 +214,6 @@ A format inferred from examples is right until the one example you didn't have; 
 from the spec is just right. Same split as the oracle: Rust source is ground truth for
 *behavior*, the Rust binary for *bytes*.
 
-## Encode what you know as rules the agent can't skip
-
-Guardrails also front-load hard-won knowledge so the mistake never happens.
-
-**Turn a past regression into a tripwire.** vortex-java's `CLAUDE.md` bans per-element modulo
-in hot loops — it blocks C2 auto-vectorization — and cites the regression chain
-(`ed658b7`→`051a794`→`442021f`, a 5–10× slowdown) plus the fix (branch-split: hoist the check
-once, gate two specialized loops). The agent can't *know* a single `i % cap` in a million-row
-body tanks throughput; written down, it's a constraint generated code is checked against.
-
-**Codify recurring work as skills.** Repeating tasks became `.claude/skills/` —
-`improve-performance`, `review-performance`, `proto-compat-audit`, `release`: the workflow as a
-versioned command, not a re-explanation each session. Same instinct as `CLAUDE.md`, one level
-more granular — procedures, not facts.
-
-**Record the *why* as ADRs.** vortex-java carries 18 numbered Architecture Decision Records,
-and `CLAUDE.md` cites them as authority (*"ADR 0017"* for the in-house FlatBuffers codegen,
-*"ADR 0003 Phase E"* for the exception-sanitization work). They're the antidote to an agent's
-worst habit: relitigating a settled decision because nothing on disk says it was settled. An
-ADR records the decision *and the reasoning* — so the agent reads "we hand-rolled the codegen
-to drop the `flatc`/protobuf runtime dependency" instead of helpfully proposing to add it back.
-This is [Write Down The Why](https://dfa1.github.io/articles/write-down-the-why) with a new
-beneficiary: the *why* now also onboards the agent, every session, for free.
-
 ## Where the human stayed
 
 Both newer READMEs draw the same line — Claude Code implements, humans own architecture:
@@ -275,27 +240,10 @@ new across three repos: did the harness transfer between projects?]
   a test" grows unkillable tests around dead code.
 - An independent implementation is the oracle the agent can't fake; `@ParameterizedTest` scales
   it across the whole matrix for the cost of one test body.
-- Feed ground truth (read the spec) and encode hard-won rules (the regression tripwire) so the
-  agent never makes the mistake at all.
+- Feed ground truth (read the spec) so the agent looks facts up instead of inventing them.
 - The docs are part of the harness: fitness functions keep the agent's ground truth —
   `CLAUDE.md`, ADRs, `docs/*.md` — from drifting away from the code.
-- ADRs record the *why* so the agent doesn't relitigate settled decisions —
-  [Write Down The Why](https://dfa1.github.io/articles/write-down-the-why), now also onboarding
-  the agent every session.
 
-[^validation]: The same argument at team scale: Michael Webster (CircleCI),
-    [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/).
-    AI now writes code far faster than humans can review it (his figure: ~1,500 lines in 30
-    minutes against ~500 lines/hour of review), so the highest-leverage investment is
-    validation infrastructure — testing, test-impact analysis, automated gates — not prompt
-    engineering. The unguarded version shows up as "persistent technical debt accumulation": a
-    short velocity boost, then regression to baseline. Same thesis as this article, one altitude
-    up — the org's CI pipeline instead of one developer's test suite.
-[^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents)
-    (December 2024): *"agents are typically just LLMs using tools based on environmental feedback
-    in a loop"*; *"it's crucial for the agents to gain 'ground truth' from the environment at
-    each step (such as tool call results or code execution)."*
-[^ford]: Neal Ford, Rebecca Parsons, Patrick Kua,
-    [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/)
-    (O'Reilly, 2nd ed. 2022): a fitness function is any mechanism that gives an objective,
-    automated assessment of an architectural characteristic.
+[^validation]: Michael Webster (CircleCI), [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/) — the same argument at team scale.
+[^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents) (December 2024).
+[^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022).
