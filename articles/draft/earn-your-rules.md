@@ -6,7 +6,7 @@
 
 *The [Zen of Python](https://peps.python.org/pep-0020/) was the first such list I admired — `import this` felt like a secret handshake when I was younger. Its strength is also its trap: aphorisms without reasons get cargo-culted. So the principle here is the one from [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist; a rule with a reason is guidance.*
 
-*Each rule opens with an extract from the story where it was earned — we remember stories better than rules.*
+*So yes, this is another rules list — but with narrative attached: each rule opens with an extract from the story where it was earned, because we remember stories better than rules. Hopefully you like the format.*
 
 ## My Rules
 
@@ -25,9 +25,9 @@
 
 > *Adding a distributed in-memory cluster was a deliberate reversal of our complexity-reduction principle — but the alternative, coordinating locks through the database, was slower and more fragile at the write volumes we were seeing.* — [The Slow Fix § Team maturity](https://dfa1.github.io/articles/the-slow-fix#months-1318-team-maturity)
 
-Every rule, every design decision, every constraint should carry a *because*. Not "use fixed snapshots" but "use fixed snapshots *because* tests that fail for external reasons erode trust." For decisions, the *why* includes the alternatives you rejected: an undocumented trade-off is indistinguishable from a mistake, and the next engineer who reads the architecture and wonders why will either burn a day reconstructing the reasoning, or "fix" what was deliberate.
+Every rule, every design decision, every constraint should carry a *because*. Not "use fixed snapshots" but "use fixed snapshots *because* tests that fail for external reasons erode trust." For decisions, the *why* includes the alternatives you rejected: an undocumented trade-off is indistinguishable from a mistake, and the next engineer will either burn a day reconstructing the reasoning, or "fix" what was deliberate.
 
-There are many mechanisms — comments in the code, structured documentation in the project wiki — but my favorite is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains — the decision, the alternatives rejected, the why. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory. In the repo, because the audience has doubled: most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does. A decision recorded there keeps months of later sessions aligned with it; a decision in a wiki might as well not exist.
+There are many mechanisms — code comments, a project wiki — but my favorite is [Architecture Decision Records](https://adr.github.io/): one short Markdown file per decision, numbered, committed next to the code it explains. [vortex-java](https://github.com/dfa1/vortex-java/tree/main/adr) and [zstd-java](https://github.com/dfa1/zstd-java/tree/main/adr) each carry a top-level `adr/` directory — in the repo, because the audience has doubled: most of the code in both projects is written with AI assistance, and an agent reads `adr/` the same way a new engineer does. A decision recorded there keeps months of later sessions aligned; a decision in a wiki might as well not exist.
 
 ### 1. Treat unfamiliar code as a system to understand, not an enemy to rewrite. {#rule-1}
 
@@ -39,7 +39,7 @@ The full rewrite is the single worst strategic mistake a team can make[^spolsky]
 
 > *The codebase was at 180,000 lines — 70,000 fewer than when we started, despite two years of new features.* — [The Slow Fix § Stability](https://dfa1.github.io/articles/the-slow-fix#months-1924-stability)
 
-Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist. So the challenge is understanding how and when to retire a subsystem or a component, keeping the system as simple as possible.
+Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist; the challenge is judging how and when to retire a subsystem, keeping the whole as simple as possible.
 
 ### 3. Coding standards exist to argue once, not every PR. {#rule-3}
 
@@ -47,7 +47,9 @@ Code you wrote is not sacred: every line has to be maintained, secured, debugged
 
 Standards don't prevent arguments — they move the argument up one level: argue once about the rule, document it, share it with the team — then stop relitigating taste in every PR. A rule with a reason outlasts the meeting where it was decided.
 
-For code formatting, I love the `go fmt` philosophy and tried to reproduce it in my Java projects with Checkstyle. Recent examples are [vortex-java](https://github.com/dfa1/vortex-java) and [zstd-java](https://github.com/dfa1/zstd-java): a `checkstyle.xml` enforced by the build, so formatting arguments end before they start, and a `CLAUDE.md` stating the conventions — which makes the standards bind the AI agents writing most of the code, not just the humans reviewing it.
+For code formatting, I love the `go fmt` philosophy — one canonical format, no debate — and reproduce it in my Java projects with Checkstyle. In [vortex-java](https://github.com/dfa1/vortex-java) and [zstd-java](https://github.com/dfa1/zstd-java), a `checkstyle.xml` enforced by the build ends formatting arguments before they start, and a `CLAUDE.md` states the conventions — binding the AI agents writing most of the code, not just the humans reviewing it.
+
+Formatting is the easy case. Neal Ford's *fitness functions*[^ford] extend the same move to any property you can check automatically. [hosh](https://github.com/hosh-shell/hosh) carries ArchUnit tests literally named `*FitnessTest`: every public command must declare a `@Description` and `@Examples`, each example must compile against the shell's own grammar, and every `@Mock` in a test must actually be used. Documentation and test hygiene, enforced the same way formatting is — argue once, then let the build remember.
 
 ### 4. Commit messages are documentation. {#rule-4}
 
@@ -98,5 +100,7 @@ The list is not finished. It will not be next year either. That's the point.
 [^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down.
 
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
+
+[^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022): a fitness function is any mechanism that gives an objective, automated assessment of an architectural characteristic.
 
 [^robertson]: Seth Robertson, [*Commit Often, Perfect Later, Publish Once — Git Best Practices*](https://sethrobertson.github.io/GitBestPractices/).
