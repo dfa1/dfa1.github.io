@@ -71,9 +71,9 @@ Restarting the job that dies every week is not a fix; it is a schedule. The caus
 
 ## When a checklist is the right tool
 
-Not every rule needs a *why*. Pre-flight checks, surgical timeouts, deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
+Not every rule needs a *why*. A checklist is a substitute for memory: pre-flight checks, [surgical timeouts](https://en.wikipedia.org/wiki/WHO_Surgical_Safety_Checklist), deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
 
-The mistake is using a checklist where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding. Then the checklist hides the reasoning that would let you adapt — which is what rule 0 was about.
+A rule is a substitute for judgment, and the mistake is confusing the two: a checklist tells you what to do, a rule tells you how to decide. Where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding, a checklist hides the reasoning that would let you adapt. Strip the reason from a rule and that's what it becomes — which is what rule 0 was about.
 
 ## Closing
 
