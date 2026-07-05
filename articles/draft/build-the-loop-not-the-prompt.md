@@ -50,10 +50,32 @@ replacing that step with machinery:
                  └─────────── human steers ◄──────────────┘
 ```
 
+Why not just write better prompts? Because a prompt is open-loop control: it improves the
+average and can't bound the worst case. A better prompt raises the hit rate; the misses still
+ship unless something catches them — and with generated code the failures that hurt are
+exactly the ones that *look* fine. The model doesn't know it's wrong; only the environment
+does.
+
+The deeper reason is an asymmetry: verification is cheaper than generation. A prompt exhaustive
+enough to need no checking would have to anticipate every failure mode in advance, in prose. A
+compiler, a mutation run, a cross-implementation round-trip check the same properties
+mechanically, on every change, forever. And harness effort compounds where prompt effort
+doesn't: a tuned prompt is consumed by the task it was written for; a fitness function keeps
+paying every session. The harness even writes the prompts — a readable failure message is the
+most precise instruction an agent ever gets.
+
 This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
 tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
 execution at each step.[^agents] The whole article below is about engineering that ground
 truth: making the environment answer "is this wrong?" honestly and cheaply.
+
+To be fair, nothing about the loop itself is new. Compilers, CI, code review, the
+bug → failing test → fix cycle — software engineering has always run on feedback loops;
+[The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) is two years of building exactly
+this machinery with only humans in it. What the agent changes is the economics: it writes code
+faster than anyone can read it, so a loop that used to be good practice becomes the
+precondition. A team that already had tight feedback loops for its humans is — almost by
+accident — ready for agents.
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
@@ -108,6 +130,7 @@ Each tool converts one category of "looks fine, is wrong" into a readable failur
 | Mutation testing (PIT) | assertion-free tests; dead code | mutants must be killed, not just covered |
 | Sonar | security hotspots, leaks, null, concurrency | external ruleset |
 | Cross-impl oracle | bytes/behavior that disagree with the reference | a second, independent implementation |
+| Docs fitness functions | documentation that drifted from the code | FQNs, links, and tables asserted against the codebase |
 
 **Integration tests are the self-correction signal.** Unit tests catch the local mistake;
 integration tests catch the binding that crashes at runtime. For FFM this is non-negotiable —
@@ -173,6 +196,25 @@ Pairs with [the compiler is part of your security
 team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team):
 push detection left and automate it.
 
+**Fitness functions keep the documentation honest.** Neal Ford's term[^ford] for an automated
+check on an architectural characteristic — here, the characteristic is documentation accuracy.
+The stakes are higher than a stale README: `CLAUDE.md`, the ADRs, and `docs/*.md` are what the
+agent reads every session, so a claim that drifted from the code is bad ground truth delivered
+automatically. vortex-java gives the docs a compiler
+([`08b6cd59`](https://github.com/dfa1/vortex-java/commit/08b6cd59c44f8306aa985a17289f4a0b7134adee)):
+every project FQN in the living docs must resolve against the codebase, every
+`META-INF/services` mention must name a real file, relative links must not dangle, and every
+backticked `Class.method(...)` claim must name a real method. The first run caught 11 fossils
+that a manual audit had missed the same day — imports from a pre-refactor package layout,
+`Registry.*` claims from two renames ago, an API that no longer existed. A second fitness
+function
+([`a1505349`](https://github.com/dfa1/vortex-java/commit/a1505349fcc4a60b2914247a4636e85ee4028718))
+guards completeness where the first guards accuracy: the encodings table in
+`docs/compatibility.md` must list exactly the encodings the code registers via `ServiceLoader`.
+Both assert and never generate — on drift they print the exact rows to add or fix, a readable
+failure the agent closes like any other. Argue once, then let the build remember — the same
+move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3).
+
 ## Feed the agent ground truth, not room to guess
 
 Many failures weren't bad reasoning — they were the agent *inventing* a fact it should have
@@ -222,7 +264,9 @@ new across three repos: did the harness transfer between projects?]
 
 ## Lessons
 
-- AI coding is loop-building, not prompt-writing — the model is one tool in a harness.
+- AI coding is loop-building, not prompt-writing — the model is one tool in a harness. And the
+  loop predates the agent: compilers, CI, and code review were always it; agents change the
+  economics, not the principle.
 - A safe language is the first tool: `MemorySegment` turns silent corruption into a readable
   exception. "No Unsafe" is engineering, not branding.
 - Integration tests are mandatory for FFM: wrong types pass compilation, fail at runtime.
@@ -233,6 +277,8 @@ new across three repos: did the harness transfer between projects?]
   it across the whole matrix for the cost of one test body.
 - Feed ground truth (read the spec) and encode hard-won rules (the regression tripwire) so the
   agent never makes the mistake at all.
+- The docs are part of the harness: fitness functions keep the agent's ground truth —
+  `CLAUDE.md`, ADRs, `docs/*.md` — from drifting away from the code.
 - ADRs record the *why* so the agent doesn't relitigate settled decisions —
   [Write Down The Why](https://dfa1.github.io/articles/write-down-the-why), now also onboarding
   the agent every session.
@@ -249,3 +295,7 @@ new across three repos: did the harness transfer between projects?]
     (December 2024): *"agents are typically just LLMs using tools based on environmental feedback
     in a loop"*; *"it's crucial for the agents to gain 'ground truth' from the environment at
     each step (such as tool call results or code execution)."*
+[^ford]: Neal Ford, Rebecca Parsons, Patrick Kua,
+    [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/)
+    (O'Reilly, 2nd ed. 2022): a fitness function is any mechanism that gives an objective,
+    automated assessment of an architectural characteristic.
