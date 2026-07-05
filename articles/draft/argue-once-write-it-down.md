@@ -52,12 +52,16 @@ The mistake is using a checklist where the situation changes, the steps vary, an
 
 ## The stories behind the rules
 
-Most of these rules were earned in stories already told here. Each rule above is the compressed version; these are the full ones:
+Each rule is the compressed version of a story already told here:
 
-- [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — a codebase that lost 70,000 lines while gaining two years of features; the Hazelcast cluster that reversed years of simplification, deliberately; the warehouse job restarted by hand every week instead of fixed; quarterly releases becoming several per week (rules 0–2, 6, 7)
-- [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) — rules with reasons, commit messages, coding standards (rules 0, 3, 4, 7)
-- [Make the Implicit Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) — trade-offs documented, complexity made visible (rules 0, 5)
-- [The Joy of Proper Encapsulation](https://dfa1.github.io/articles/the-joy-of-proper-encapsulation) — warnings worth listening to (rules 5, 6)
+- **Rule 0** — the Hazelcast cluster that reversed years of simplification, and the reasoning written down so nobody would "fix" it: [The Slow Fix § Team maturity](https://dfa1.github.io/articles/the-slow-fix#months-1318-team-maturity)
+- **Rule 1** — the developer who proposed the full rewrite, and why the answer was no: [The Slow Fix § Tactical and Strategic](https://dfa1.github.io/articles/the-slow-fix#tactical-and-strategic)
+- **Rule 2** — 70,000 lines deleted while gaining two years of features: [The Slow Fix § Stability](https://dfa1.github.io/articles/the-slow-fix#months-1924-stability)
+- **Rule 3** — a team that stopped relitigating taste because the rules carried reasons: [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why)
+- **Rule 4** — the commit-message convention that made `git blame` a witness worth calling: [Write Down the Why § Branching strategy](https://dfa1.github.io/articles/write-down-the-why#branching-strategy)
+- **Rule 5** — versioned endpoints and isolated DTOs at a system boundary: [Make the Implicit Explicit § Versioned endpoints](https://dfa1.github.io/articles/make-the-implicit-explicit#versioned-endpoints)
+- **Rule 6** — the warehouse job restarted by hand every week until the cause was fixed: [The Slow Fix § Hard choices](https://dfa1.github.io/articles/the-slow-fix#months-46-hard-choices)
+- **Rule 7** — releases going from quarterly to every three weeks, then several per week: [The Slow Fix § Infra as code](https://dfa1.github.io/articles/the-slow-fix#months-79-infra-as-code)
 
 ## Closing
 
