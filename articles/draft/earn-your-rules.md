@@ -6,7 +6,7 @@
 
 *The [Zen of Python](https://peps.python.org/pep-0020/) was the first such list I admired — `import this` felt like a secret handshake when I was younger. Its strength is also its trap: aphorisms without reasons get cargo-culted. So the principle here is the one from [Write Down the Why](https://dfa1.github.io/articles/write-down-the-why): a rule without a reason is a checklist; a rule with a reason is guidance.*
 
-*So yes, this is another rules list — but with narrative attached: each rule opens with an extract from the story where it was earned, because we remember stories better than rules. Hopefully you like the format.*
+*So yes, this is another rules list — but with narrative attached: each rule opens with an extract from the story where it was earned, because we remember stories better than rules. The extracts stand on their own; follow the links when you want the full story. Hopefully you like the format.*
 
 ## My Rules
 
@@ -41,11 +41,11 @@ A rule needs boundaries to be guidance rather than dogma, so here are mine: a re
 
 > *The codebase was at 180,000 lines — 70,000 fewer than when we started, despite two years of new features.* — [The Slow Fix § Stability](https://dfa1.github.io/articles/the-slow-fix#months-1924-stability)
 
-Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person or AI agent. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist; the challenge is judging how and when to retire a subsystem, keeping the whole as simple as possible.
+Code you wrote is not sacred: every line has to be maintained, secured, debugged, and explained to the next person. A dependency is worse — a permanent commitment to someone else's release schedule, security posture, and design choices — so justify each one, and treat removing one as engineering too. The best code is the code that doesn't exist; the challenge is judging how and when to retire a subsystem, keeping the whole as simple as possible.
 
 ### 3. Coding standards exist to argue once, not every PR. {#rule-3}
 
-> *We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.* — [Write Down the Why § Branching strategy](https://dfa1.github.io/articles/write-down-the-why#branching-strategy)
+> *We use squash, rebase and fast-forward only. Why? Because sometimes merging two "green" PRs produces a build error.*[^ffonly] — [Write Down the Why § Branching strategy](https://dfa1.github.io/articles/write-down-the-why#branching-strategy)
 
 Standards don't prevent arguments — they move the argument up one level: argue once about the rule, document it, share it with the team — then stop relitigating taste in every PR. A rule with a reason outlasts the meeting where it was decided.
 
@@ -65,7 +65,7 @@ JIRA reference, brief summary, then the *why* — what was the problem, what was
 
 The implicit is production behavior: the external integrations, the dependencies, the extension points that only show up when the system runs — complexity you can only observe. Understand it, document it, then make it *explicit* in the code, where you can read it.
 
-Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — looks "simple," but it is what produces incidents and deployments that have to be coordinated across every consumer.
+Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. Concretely: when `/v2` of an endpoint ships a breaking change, `/v1` keeps its own DTOs — two classes that are nearly identical, on purpose. Consumers of `/v1` stay untouched, and the difference between the versions lives in code you can diff, not in a migration document. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — looks "simple," but it is what produces incidents and deployments that have to be coordinated across every consumer.
 
 ### 6. Fix root causes. Symptoms come back. {#rule-6}
 
@@ -91,7 +91,7 @@ I guess this shouldn't be a surprise anymore. During my years as a consultant I 
 
 Not every rule needs a *why*. A checklist is a substitute for memory: pre-flight checks, [surgical timeouts](https://en.wikipedia.org/wiki/WHO_Surgical_Safety_Checklist), deploy runbooks — situations with known steps, high stakes, and a real cost of forgetting one — are exactly where a checklist beats judgment. Atul Gawande's *[The Checklist Manifesto](https://en.wikipedia.org/wiki/The_Checklist_Manifesto)* makes the case better than I can.
 
-A rule is a substitute for judgment, and the mistake is confusing the two: a checklist tells you what to do, a rule tells you how to decide. Where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding, a checklist hides the reasoning that would let you adapt. Strip the reason from a rule and that's what it becomes — which is what rule 0 was about.
+A rule is an aid to judgment, and the mistake is confusing the two: a checklist tells you what to do, a rule tells you how to decide. Where the situation changes, the steps vary, and the cost isn't forgetting but misunderstanding, a checklist hides the reasoning that would let you adapt. Strip the reason from a rule and that's what it becomes — which is what rule 0 was about.
 
 ## Closing
 
@@ -106,5 +106,7 @@ The list is not finished. It will not be next year either. That's the point.
 [^spolsky]: Joel Spolsky, [*Things You Should Never Do, Part I*](https://www.joelonsoftware.com/2000/04/06/things-you-should-never-do-part-i/) (2000).
 
 [^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022): a fitness function is any mechanism that gives an objective, automated assessment of an architectural characteristic.
+
+[^ffonly]: To be precise, the rebase itself doesn't prevent the semantic conflict — requiring the branch to be up to date with its target and re-running CI on the result does. Fast-forward-only is the setting that forces exactly that.
 
 [^robertson]: Seth Robertson, [*Commit Often, Perfect Later, Publish Once — Git Best Practices*](https://sethrobertson.github.io/GitBestPractices/).
