@@ -77,6 +77,10 @@ This isn't only my framing. Anthropic describes agents this way from the start �
 tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
 execution at each step.[^agents]
 
+This is the future of the software engineer: you no longer write the mechanical boilerplate;
+your job is to design the architecture, write the threat models, and build the unforgiving
+feedback loops that keep the agent on track.
+
 ## The loop in practice
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
@@ -85,14 +89,28 @@ of "looks fine, is wrong" into an automatic failure). The projects are the evide
 subject. The rest of the article is about engineering that ground truth: making the
 environment answer "is this wrong?" honestly and cheaply.
 
-## Half one: a safe language to generate
+None of the specific tools is the point — they're what a safe language and an honest
+environment happen to look like for native-memory Java. Your context will pick differently: a
+web service has no C offsets to get wrong, but it has API contracts, database migrations, and
+load behavior — each with its own way of looking fine and being wrong. The question that
+transfers is: which kind of "looks fine, is wrong" does *my* code produce, and what turns it
+into an automatic, readable failure?
 
-The old way to do off-heap or native interop in Java was `sun.misc.Unsafe`, hand-written JNI,
-and `ByteBuffer` tricks. All three projects avoid all of it. The shared toolkit:
+## First half: a safe language to generate
 
-- `MemorySegment` — typed, bounds-checked handle to off-heap or mapped memory.
-- `Arena` — deterministic lifetime: close it, free the segments. No `Cleaner` guesswork.
-- `Linker`/`downcallHandle` — call C directly, no glue `.so`.
+All three libraries work with *native memory* — memory outside the Java heap, where the
+garbage collector doesn't watch over you and a wrong address doesn't throw an exception, it
+silently corrupts data. Two of them also call C functions directly. The old way to do this in
+Java was `sun.misc.Unsafe`, hand-written JNI glue, and `ByteBuffer` tricks — tools that assume
+you make no mistakes and stay silent when you do. All three projects avoid all of it and use
+the FFM API instead:
+
+- `MemorySegment` — a handle to native memory that knows its own size: every read and write is
+  bounds-checked.
+- `Arena` — ties memory to a scope: close the arena and everything allocated in it is freed,
+  at a moment you choose — not whenever the garbage collector gets around to it.
+- `Linker` — calls a C function directly from Java, with no hand-written C glue to compile,
+  ship, and load.
 
 Why it matters *for generated code*: with `Unsafe`, a wrong offset is silent memory
 corruption — the worst thing to hand an agent, because nothing complains.
@@ -104,10 +122,9 @@ long v = unsafe.getLong(base + offset);
 long v = segment.get(JAVA_LONG, offset);   // IndexOutOfBoundsException if out of range
 ```
 
-The language doing the catching is the cheapest tool in the harness. JDK 25 baseline, no
-compatibility layers, `--enable-native-access` where downcalls happen.
+The language doing the catching is the cheapest tool in the harness.
 
-## Half two: the harness that closes the loop
+## Second half: the harness that closes the loop
 
 Each tool converts one category of "looks fine, is wrong" into a failure the agent can read
 and fix on its own:
@@ -207,16 +224,6 @@ Both assert and never generate — on drift they print the exact rows to add or 
 failure the agent closes like any other. Argue once, then let the build remember — the same
 move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3).
 
-## Feed the agent ground truth, not room to guess
-
-Many failures weren't bad reasoning — they were the agent *inventing* a fact it should have
-looked up. vortex-java's `CLAUDE.md` is blunt: *"Never reverse-engineer wire formats by
-probing bytes. Read the [...] Rust source for the exact schema, then implement from spec"* —
-and hands over the access path (`gh api repos/spiraldb/vortex/contents/<path>`).
-A format inferred from examples is right until the one example you didn't have; a format read
-from the spec is just right. Same split as the oracle: Rust source is ground truth for
-*behavior*, the Rust binary for *bytes*.
-
 ## Where the human stayed
 
 Both newer READMEs draw the same line — Claude Code implements, humans own architecture:
@@ -244,7 +251,8 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
   project's golden files.
 - A precise contract plus a checklist is what an agent works through best;
   "make it secure" is not.
-- Feed the agent ground truth — the spec, the source — instead of room to guess.
+- Feed the agent ground truth — the spec, the source — instead of room to guess: a format
+  inferred from examples is right until the one example you didn't have.[^groundtruth]
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
 - The agent runs inside the loop; choosing the loop stays the engineer's job.
@@ -261,3 +269,10 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
 [^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents) (December 2024).
 
 [^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022).
+
+[^groundtruth]: Many failures weren't bad reasoning — they were the agent *inventing* a fact
+    it should have looked up. vortex-java's `CLAUDE.md` is blunt: *"Never reverse-engineer wire
+    formats by probing bytes. Read the [...] Rust source for the exact schema, then implement
+    from spec"* — and hands over the access path
+    (`gh api repos/spiraldb/vortex/contents/<path>`). Same split as the oracle: the Rust source
+    is ground truth for *behavior*, the Rust binary for *bytes*.
