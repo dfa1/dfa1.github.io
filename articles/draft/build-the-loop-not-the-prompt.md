@@ -17,8 +17,8 @@ a tight loop of tools to catch it when it's wrong.*
 
 ## The thesis
 
-AI coding is not "use a better model." It's "build a feedback loop the model can close by
-itself."[^validation] The agent proposes; something else has to say whether the proposal is
+AI coding is not "use a better model to create an app with a single prompt." It's "build a
+feedback loop the model can close by itself."[^validation] The agent proposes; something else has to say whether the proposal is
 wrong — cheaply, automatically, before a human looks.
 
 Everyone already runs a version of this loop by hand:
@@ -51,6 +51,10 @@ replacing that step with machinery:
                  └─────────── human steers ◄──────────────┘
 ```
 
+This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
+tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
+execution at each step.[^agents]
+
 Why not just write better prompts? Because a prompt is open-loop control: it improves the
 average and can't limit the worst case. A better prompt raises the hit rate; the misses still
 ship unless something catches them — and with generated code the failures that hurt are
@@ -65,11 +69,6 @@ doesn't: a tuned prompt is spent on the one task it was written for; a fitness f
 paying every session. The harness even writes the prompts — a readable failure message is the
 most precise instruction an agent ever gets.
 
-This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
-tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
-execution at each step.[^agents] The whole article below is about engineering that ground
-truth: making the environment answer "is this wrong?" honestly and cheaply.
-
 To be fair, nothing about the loop itself is new. Compilers, CI, code review, the
 bug → failing test → fix cycle — software engineering has always run on feedback loops;
 [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) is two years of building exactly
@@ -81,12 +80,8 @@ accident — ready for agents.
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
 of "looks fine, is wrong" into an automatic failure). The projects are the evidence, not the
-subject.
-
-The idea is also to keep the agent from copy-pasting too much code, and to reuse existing code
-as much as possible. Sonar cheaply detects large chunks of copy-pasted code, while PIT flags
-tests that check nothing. Parameterized tests and property-based testing give coverage across
-many possible inputs at low cost.
+subject. The rest of the article is about engineering that ground truth: making the
+environment answer "is this wrong?" honestly and cheaply.
 
 ## Half one: a safe language to generate
 
@@ -168,7 +163,8 @@ implementation breaks it:
 This is what actually caught the dictionary bug: it round-tripped fine *within Java*; only the
 Rust cross-check showed the bug was in the writer. `@ParameterizedTest` scales it cheaply —
 one body, every data type, column size, and encoding as parameters, run both directions: a
-combinatorial space no hand-written cases would cover. zstd-java uses the same idea with a
+combinatorial space no hand-written cases would cover (property-based testing pushes the same
+idea further). zstd-java uses the same idea with a
 different oracle — the upstream
 [**zstd golden corpus**](https://github.com/dfa1/zstd-java/blob/main/integration-tests/src/test/java/io/github/dfa1/zstd/it/GoldenCorpusTest.java),
 the same known-good compressed files the C project uses in its own regression suite:
@@ -184,7 +180,8 @@ of range. The checklist became a steady stream of commits — `cap array-node re
 exactly what an agent works through best; "make it secure" is not.
 
 **Sonar is the cheap broad sweep.** Static analysis finds security hotspots, leaks, and
-questionable concurrency far cheaper than tests or review, and the agent acts on each finding
+questionable concurrency far cheaper than tests or review — and it flags large chunks of
+copy-pasted code, a habit agents fall into easily. The agent acts on each finding
 directly.
 Pairs with [the compiler is part of your security
 team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team):
@@ -248,10 +245,15 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
 - The docs are part of the harness: fitness functions keep the agent's ground truth —
   `CLAUDE.md`, ADRs, `docs/*.md` — from drifting away from the code.
 
+---
+
 [^harness]: A *harness* is the set of straps that lets you control a horse and put it to work.
     Software borrowed the word for the rig around code under test — the *test harness* — and AI
     tooling extended it to everything wrapped around a model: tools, checks, permissions, the
     loop itself. Both original senses apply here: it constrains the agent, and it puts it to work.
+
 [^validation]: Michael Webster (CircleCI), [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/) — the same argument at team scale.
+
 [^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents) (December 2024).
+
 [^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022).
