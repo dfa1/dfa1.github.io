@@ -73,17 +73,12 @@ replacing that step with machinery:
                  └─────────── human steers ◄──────────────┘
 ```
 
-This isn't only my framing. Anthropic describes agents this way from the start — LLMs using
-tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
-execution at each step.[^agents]
-
-
 ## The loop in practice
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
 of "looks fine, is wrong" into an automatic failure). The projects are the evidence, not the
-subject. The rest of the article is about engineering that ground truth: making the
+subject. The rest of the article is about engineering the ground truth: making the
 environment answer "is this wrong?" honestly and cheaply.
 
 None of the specific tools is the point — they're what a safe language and an honest
@@ -263,8 +258,6 @@ feedback loops that keep the agent on track.
     loop itself. Both original senses apply here: it constrains the agent, and it puts it to work.
 
 [^validation]: Michael Webster (CircleCI), [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/) — the same argument at team scale.
-
-[^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents) (December 2024).
 
 [^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022).
 
