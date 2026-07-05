@@ -95,7 +95,7 @@ A rule is a substitute for judgment, and the mistake is confusing the two: a che
 
 ## Closing
 
-This is what I've written down. None of it is original — most of it was earned the slow way, by being wrong about it first. And the work I'm proudest of isn't code at all: it's the team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — mentorship is how impact compounds.
+This is what I've written down. Reading it back, rule 0 is the glue: the rewrite you refused, the workaround you kept, the standard the build enforces — each holds only as long as its written *why*. That's why it's numbered zero: it comes before the rules, because without it they don't stay rules for long. None of it is original — most of it was earned the slow way, by being wrong about it first. And the work I'm proudest of isn't code at all: it's the team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — mentorship is how impact compounds.
 
 The list is not finished. It will not be next year either. That's the point.
 
