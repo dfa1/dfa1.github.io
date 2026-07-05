@@ -78,7 +78,7 @@ The milestone that stood out most: the team started treating bugs as opportuniti
 
 We started to run.
 
-Our efforts started to pay dividends, along with a migration from SVN to Git. Both changed how the team worked more than any code change had. Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
+Our efforts started to pay dividends. Setting up Jenkins and migrating from SVN to Git changed how the team worked more than any code change had: Jenkins meant every commit was verified automatically; Git meant branching was cheap enough to use. To enable continuous integration, we started deploying the master branch to UAT daily — possible thanks to Jenkins, RPMs, and Puppet.
 
 `Flyway` was introduced to manage database migrations — before this, schema changes were applied by hand with no versioning, which meant different environments could silently diverge. MyISAM tables in MySQL were converted to InnoDB, restoring transactional guarantees that had been missing. This allowed us to catch database migration issues early.
 
