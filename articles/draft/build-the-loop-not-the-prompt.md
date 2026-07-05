@@ -66,8 +66,8 @@ replacing that step with machinery:
 ```
         ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
         │  AI agent   │ ──────────────────► │  harness                         │
-        │             │                     │  language · tests · PIT · Sonar  │
-        │  fixes it   │ ◄────────────────── │  cross-impl oracle · ADR         │
+        │             │                     │  language, tests, mutation       │
+        │  fixes it   │ ◄────────────────── │  cross-impl oracle, ADR, Sonar   │
         └─────────────┘   readable failure  └──────────────────────────────────┘
                  ▲                                        │
                  └─────────── human steers ◄──────────────┘
@@ -77,9 +77,6 @@ This isn't only my framing. Anthropic describes agents this way from the start �
 tools on environmental feedback in a loop, gaining "ground truth" from tool calls and code
 execution at each step.[^agents]
 
-This is the future of the software engineer: you no longer write the mechanical boilerplate;
-your job is to design the architecture, write the threat models, and build the unforgiving
-feedback loops that keep the agent on track.
 
 ## The loop in practice
 
@@ -179,8 +176,8 @@ implementation breaks it:
    vortex-rust  ──writes──►  file  ──reads──►  vortex-java     ┘ divergence = bug on one side
 ```
 
-This is what actually caught the dictionary bug: it round-tripped fine *within Java*; only the
-Rust cross-check showed the bug was in the writer. `@ParameterizedTest` scales it cheaply —
+This is what actually caught several bugs, the dictionary bug included: files round-tripped
+fine *within Java*; only the Rust cross-check surfaced them. `@ParameterizedTest` scales it cheaply —
 one body, every data type, column size, and encoding as parameters, run both directions: a
 combinatorial space no hand-written cases would cover (property-based testing pushes the same
 idea further). zstd-java uses the same idea with a
@@ -226,10 +223,6 @@ move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3
 
 ## Where the human stayed
 
-Both newer READMEs draw the same line — Claude Code implements, humans own architecture:
-*"all decisions are human-driven"* (vortex-java), *"Claude Code for implementation — C header
-mapping, test generation, docs"* (zstd-java).
-
 The mechanical binding work — allocate arena, copy in, invoke, check error pointer, free — is
 boring, repetitive, auditable: ideal for an agent. What stayed human: the type-safe API shapes,
 the "should this exist at all" decisions, the benchmark design, and *choosing the harness
@@ -239,23 +232,27 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
 
 ## Lessons
 
+These were earned on these three projects; adapt them to yours:
+
 - AI coding is loop-building, not prompt-writing; the loop predates the agent —
   agents change the economics, not the principle.
-- Pick a language that turns silent corruption into readable failures:
-  `MemorySegment` over `Unsafe`.
+- Get an oracle the agent can't fake: a second implementation, or the upstream
+  project's golden files.
 - For FFM, integration tests are mandatory: wrong native types compile fine and
   fail at runtime.
 - Read mutation survivors three ways: edge case → test, dead clause → delete,
   equivalent heuristic → leave it.
-- Get an oracle the agent can't fake: a second implementation, or the upstream
-  project's golden files.
 - A precise contract plus a checklist is what an agent works through best;
-  "make it secure" is not.
+  "make it secure" or "make it fast" is not.
 - Feed the agent ground truth — the spec, the source — instead of room to guess: a format
   inferred from examples is right until the one example you didn't have.[^groundtruth]
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
-- The agent runs inside the loop; choosing the loop stays the engineer's job.
+- The agent runs inside the loop; choosing the loop is the engineer's job.
+
+This is the future of the software engineer: you no longer write the mechanical boilerplate;
+your job is to design the architecture, write the threat models, and build the unforgiving
+feedback loops that keep the agent on track.
 
 ---
 
