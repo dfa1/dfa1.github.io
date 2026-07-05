@@ -1,6 +1,6 @@
 # Earn Your Rules
 
-*9 May 2026*
+*4 July 2026*
 
 *Once in a while, someone shares an "X rules of software engineering" list and I find myself agreeing with about a third of it. The rest is either too generic to act on, or too specific to someone else's context to be useful in mine. This is my pass through one such list[^kamina] — keeping what I've actually had to write down somewhere, dropping what I haven't, and rewriting the rest in my own language.*
 
