@@ -8,8 +8,8 @@
 [vortex-java](https://github.com/dfa1/vortex-java), and
 [zstd-java](https://github.com/dfa1/zstd-java).
 Most of the code was written by an AI agent. The lesson that stuck wasn't about the model:
-an agent is only as good as the harness around it — a safe language to write in, and a tight
-loop of tools to catch it when it's wrong.*
+an agent is only as good as the harness[^harness] around it — a safe language to write in, and
+a tight loop of tools to catch it when it's wrong.*
 
 ---
 
@@ -38,7 +38,7 @@ Everyone already runs a version of this loop by hand:
 ```
 
 The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
-scale is who provides it: a human, reading every output, every round. The whole game is
+scale is who provides it: a human, reading every output, every round. The whole point is
 replacing that step with machinery:
 
 ```
@@ -52,16 +52,16 @@ replacing that step with machinery:
 ```
 
 Why not just write better prompts? Because a prompt is open-loop control: it improves the
-average and can't bound the worst case. A better prompt raises the hit rate; the misses still
+average and can't limit the worst case. A better prompt raises the hit rate; the misses still
 ship unless something catches them — and with generated code the failures that hurt are
 exactly the ones that *look* fine. The model doesn't know it's wrong; only the environment
 does.
 
-The deeper reason is an asymmetry: verification is cheaper than generation. A prompt exhaustive
-enough to need no checking would have to anticipate every failure mode in advance, in prose. A
+The deeper reason is an asymmetry: checking is cheaper than generating. A prompt complete
+enough to need no checking would have to predict every possible failure in advance, in prose. A
 compiler, a mutation run, a cross-implementation round-trip check the same properties
 mechanically, on every change, forever. And harness effort compounds where prompt effort
-doesn't: a tuned prompt is consumed by the task it was written for; a fitness function keeps
+doesn't: a tuned prompt is spent on the one task it was written for; a fitness function keeps
 paying every session. The harness even writes the prompts — a readable failure message is the
 most precise instruction an agent ever gets.
 
@@ -83,14 +83,15 @@ generated code to be silently catastrophic) and **a harness of tools** (each tur
 of "looks fine, is wrong" into an automatic failure). The projects are the evidence, not the
 subject.
 
-So the idea is to avoid AI to copy paste too much code, and to reuse existing code as much as
-possible. Sonar is a cheap way to detect large chunks of copy-pasted code where PIT will
-flag ineffective tests. Parametrized tests and property based testing are great ways to have test coverage across a lot of possible inputs.
+The idea is also to keep the agent from copy-pasting too much code, and to reuse existing code
+as much as possible. Sonar cheaply detects large chunks of copy-pasted code, while PIT flags
+tests that check nothing. Parameterized tests and property-based testing give coverage across
+many possible inputs at low cost.
 
 ## Half one: a safe language to generate
 
-The old way to do off-heap or native interop in Java was `sun.misc.Unsafe`, hand-rolled JNI,
-and `ByteBuffer` tricks. All three projects refuse it. The shared toolkit:
+The old way to do off-heap or native interop in Java was `sun.misc.Unsafe`, hand-written JNI,
+and `ByteBuffer` tricks. All three projects avoid all of it. The shared toolkit:
 
 - `MemorySegment` — typed, bounds-checked handle to off-heap or mapped memory.
 - `Arena` — deterministic lifetime: close it, free the segments. No `Cleaner` guesswork.
@@ -100,18 +101,19 @@ Why it matters *for generated code*: with `Unsafe`, a wrong offset is silent mem
 corruption — the worst thing to hand an agent, because nothing complains.
 
 ```java
-// Unsafe: a bad offset corrupts memory and limps on
+// Unsafe: a bad offset corrupts memory and keeps going
 long v = unsafe.getLong(base + offset);
 // MemorySegment: a bad offset throws, with a stack trace the agent can read and fix
 long v = segment.get(JAVA_LONG, offset);   // IndexOutOfBoundsException if out of range
 ```
 
 The language doing the catching is the cheapest tool in the harness. JDK 25 baseline, no
-shims, `--enable-native-access` where downcalls happen.
+compatibility layers, `--enable-native-access` where downcalls happen.
 
 ## Half two: the harness that closes the loop
 
-Each tool converts one category of "looks fine, is wrong" into a readable failure:
+Each tool converts one category of "looks fine, is wrong" into a failure the agent can read
+and fix on its own:
 
 | Tool | Catches | Agent can't fake it because |
 |---|---|---|
@@ -128,8 +130,8 @@ a wrong `FunctionDescriptor` type-checks fine and crashes when called (map `size
 No suite means the human *is* the test runner.
 
 **Mutation testing keeps the tests honest — and finds real bugs.** PIT flips a condition or
-drops a line; if no test fails, the test was theater. The headline payoff in vortex-java was a
-shippable bug ([`473256b1`](https://github.com/dfa1/vortex-java/commit/473256b1f745f90592aad305811d41752a2f128d)).
+drops a line; if no test fails, the test was just for show. The biggest payoff in vortex-java
+was [a shippable bug](https://github.com/dfa1/vortex-java/commit/473256b1f745f90592aad305811d41752a2f128d).
 The format can store a column with few distinct values as a *dictionary* — the values once,
 plus compact codes pointing at them. The writer happily dictionary-encoded small-integer
 columns; the reader's fast-path decoder only knew how to unpack the wider numeric types. So a
@@ -141,46 +143,49 @@ says it directly: *"read survivors as a simplify-first signal, not only a test-g
 
 | Survivor means | Do | Example |
 |---|---|---|
-| Real boundary case | add a test | the dictionary bug; column-statistics gaps (`a60f9502`, `474beabf`) |
-| Dead clause | **delete it** | `36328285`: redundant `offset > fileSize` check, mutations 110→106 |
-| Interchangeable heuristic | leave it | two encoders, equally valid output (#174) |
+| Real boundary case | add a test | the dictionary bug; gaps in column statistics |
+| Dead clause | **delete it** | a redundant `offset > fileSize` check — four mutants gone |
+| Interchangeable heuristic | leave it | two encoders, equally valid output |
 
 The deletion is the instructive case. Mutating `offset > fileSize` never changed an outcome:
 once `length >= 0`, an offset past `fileSize` makes `fileSize - offset` negative, so the
 existing `length > fileSize - offset` clause already fires. The clause was unreachable;
-removing it *eliminated* four dead mutants instead of papering over them with unkillable
+removing it *eliminated* four dead mutants instead of hiding them behind unkillable
 tests. An agent's reflex is to assert on every survivor — which grows unkillable tests around
-dead code and freezes heuristics into false contracts. (That's why #173/#174 are coverage
+dead code and freezes heuristics into false contracts. (Most survivors were coverage
 hardening, not bug fixes: the dictionary bug was the exception that paid for the loop.)
 
-**Cross-implementation interop is the oracle the agent can't fake.** A test the agent wrote,
-judged by the agent's own code, is a closed circle — both sides can be wrong together. A
-second implementation breaks it:
+**Cross-implementation interop is the oracle the agent can't fake.** An *oracle*, in testing
+jargon, is an independent source of the correct answer. A test the agent wrote, judged by the
+agent's own code, is a closed circle — both sides can be wrong together. A second
+implementation breaks it:
 
 ```
    vortex-java  ──writes──►  file  ──reads──►  vortex-rust     ┐
    vortex-rust  ──writes──►  file  ──reads──►  vortex-java     ┘ divergence = bug on one side
 ```
 
-This is what actually nailed the dictionary bug: it round-tripped fine *within Java*; only the
-Rust cross-check exposed the writer as the outlier. `@ParameterizedTest` scales it cheaply —
+This is what actually caught the dictionary bug: it round-tripped fine *within Java*; only the
+Rust cross-check showed the bug was in the writer. `@ParameterizedTest` scales it cheaply —
 one body, every data type, column size, and encoding as parameters, run both directions: a
 combinatorial space no hand-written cases would cover. zstd-java uses the same idea with a
-different oracle — the upstream **zstd golden corpus**, a set of known-good compressed files
-shipped by the project: decompress one and you must get the documented bytes back.
-[Verify the corpus is wired; cite the test.]
+different oracle — the upstream
+[**zstd golden corpus**](https://github.com/dfa1/zstd-java/blob/main/integration-tests/src/test/java/io/github/dfa1/zstd/it/GoldenCorpusTest.java),
+the same known-good compressed files the C project uses in its own regression suite:
+decompress one and you must get the documented bytes back.
 
 **Write the threat model down, then let the agent execute it.** vortex-java's `TODO.md` states
 a hard contract: *the reader parses untrusted binary input; every malformed file must fail with
 one clean `VortexException` — never a raw out-of-bounds, out-of-memory, or stack-overflow
 crash.* Under it, a checklist of hostile inputs to defend against — string offsets that run
 backward or past the buffer, dictionary codes pointing outside the value table, bit-widths out
-of range. The spec became a wall of executed commits — `cap array-node recursion depth`,
+of range. The checklist became a steady stream of commits — `cap array-node recursion depth`,
 `validate segment specs`, `sanitize HTTP Content-Range`. A precise contract plus a checklist is
-exactly what an agent grinds through best; "make it secure" is not.
+exactly what an agent works through best; "make it secure" is not.
 
-**Sonar is the cheap broad sweep.** Static analysis finds security hotspots, leaks, and dodgy
-concurrency far cheaper than tests or review, and the agent acts on each finding directly.
+**Sonar is the cheap broad sweep.** Static analysis finds security hotspots, leaks, and
+questionable concurrency far cheaper than tests or review, and the agent acts on each finding
+directly.
 Pairs with [the compiler is part of your security
 team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team):
 push detection left and automate it.
@@ -189,15 +194,14 @@ push detection left and automate it.
 check on an architectural characteristic — here, the characteristic is documentation accuracy.
 The stakes are higher than a stale README: `CLAUDE.md`, the ADRs, and `docs/*.md` are what the
 agent reads every session, so a claim that drifted from the code is bad ground truth delivered
-automatically. vortex-java gives the docs a compiler
-([`08b6cd59`](https://github.com/dfa1/vortex-java/commit/08b6cd59c44f8306aa985a17289f4a0b7134adee)):
+automatically. vortex-java
+[gives the docs a compiler](https://github.com/dfa1/vortex-java/commit/08b6cd59c44f8306aa985a17289f4a0b7134adee):
 every project FQN in the living docs must resolve against the codebase, every
 `META-INF/services` mention must name a real file, relative links must not dangle, and every
 backticked `Class.method(...)` claim must name a real method. The first run caught 11 fossils
 that a manual audit had missed the same day — imports from a pre-refactor package layout,
-`Registry.*` claims from two renames ago, an API that no longer existed. A second fitness
-function
-([`a1505349`](https://github.com/dfa1/vortex-java/commit/a1505349fcc4a60b2914247a4636e85ee4028718))
+`Registry.*` claims from two renames ago, an API that no longer existed. A
+[second fitness function](https://github.com/dfa1/vortex-java/commit/a1505349fcc4a60b2914247a4636e85ee4028718)
 guards completeness where the first guards accuracy: the encodings table in
 `docs/compatibility.md` must list exactly the encodings the code registers via `ServiceLoader`.
 Both assert and never generate — on drift they print the exact rows to add or fix, a readable
@@ -222,7 +226,8 @@ mapping, test generation, docs"* (zstd-java).
 
 The mechanical binding work — allocate arena, copy in, invoke, check error pointer, free — is
 boring, repetitive, auditable: ideal for an agent. What stayed human: the type-safe API shapes,
-the "should this exist at all" calls, the benchmark design, and *choosing the harness itself*.
+the "should this exist at all" decisions, the benchmark design, and *choosing the harness
+itself*.
 The agent runs inside the loop; deciding what the loop is remains the engineer's job. Builds on
 [Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code).
 
@@ -235,14 +240,18 @@ The agent runs inside the loop; deciding what the loop is remains the engineer's
   exception. "No Unsafe" is engineering, not branding.
 - Integration tests are mandatory for FFM: wrong types pass compilation, fail at runtime.
 - A mutation survivor has three responses, one of which is "add a test": edge → test; dead
-  clause → delete (`36328285`); equivalent heuristic → leave it. An agent that only knows "add
-  a test" grows unkillable tests around dead code.
+  clause → delete; equivalent heuristic → leave it. An agent that only knows "add a test"
+  grows unkillable tests around dead code.
 - An independent implementation is the oracle the agent can't fake; `@ParameterizedTest` scales
   it across the whole matrix for the cost of one test body.
 - Feed ground truth (read the spec) so the agent looks facts up instead of inventing them.
 - The docs are part of the harness: fitness functions keep the agent's ground truth —
   `CLAUDE.md`, ADRs, `docs/*.md` — from drifting away from the code.
 
+[^harness]: A *harness* is the set of straps that lets you control a horse and put it to work.
+    Software borrowed the word for the rig around code under test — the *test harness* — and AI
+    tooling extended it to everything wrapped around a model: tools, checks, permissions, the
+    loop itself. Both original senses apply here: it constrains the agent, and it puts it to work.
 [^validation]: Michael Webster (CircleCI), [*AI Works, Pull Requests Don't*](https://www.infoq.com/presentations/ai-sdlc-pull-request/) — the same argument at team scale.
 [^agents]: Anthropic, [*Building Effective Agents*](https://www.anthropic.com/research/building-effective-agents) (December 2024).
 [^ford]: Neal Ford, Rebecca Parsons, Patrick Kua, [*Building Evolutionary Architectures*](https://www.oreilly.com/library/view/building-evolutionary-architectures-2nd/9781492097532/) (O'Reilly, 2nd ed. 2022).
