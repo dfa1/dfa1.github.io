@@ -97,8 +97,6 @@ A rule is an aid to judgment, and the mistake is confusing the two: a checklist 
 
 This is what I've written down. Reading it back, rule 0 is the glue: the rewrite you refused, the workaround you kept, the standard the build enforces — each holds only as long as its written *why*. That's why it's numbered zero: it comes before the rules, because without it they don't stay rules for long. None of it is original — most of it was earned the slow way, by being wrong about it first. And the work I'm proudest of isn't code at all: it's the team I left behind in [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) — mentorship is how impact compounds.
 
-The list is not finished. It will not be next year either. That's the point.
-
 ---
 
 [^kamina]: Adapted from [18 Subtle Rules of Software Engineering](https://kaminagroup.com/content/69/18-subtle-rules-of-software-engineering/), filtered through what I've actually had to write down.
