@@ -54,7 +54,7 @@ After a few days of setup, we could create a new environment with a single `pupp
 
 A UAT (User Acceptance Test) environment came online — for the first time, there was a place to verify changes without blocking pre-production, usually reserved for hot fixes.
 
-[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. Until that point we were replacing custom libs with external libs, but in this case the logic was trivial conditions:
+[Drools](https://www.drools.org/), a rules engine used for a small part of the business logic, was removed and replaced with simple Java validation logic. It was pulling a large number of extra JARs — Eclipse JDT, ANTLR, ASM, protobuf, xstream, commons-\* and more. It had likely been intended for broader use, but the team had no need for it beyond the narrow case. Until that point we had been replacing custom code with external libraries; this went in the opposite direction, because every rule was a trivial condition like this:
 
 ```
 rule "No Gold Customers"
@@ -65,6 +65,8 @@ then
    errors.add("Invalid status");
 end
 ```
+
+Rules like this became a few lines of plain Java — no engine, no extra JARs.
 
 The application produced documents for Word/Excel using [OpenOffice](https://www.openoffice.org/) and ODT templates[^odt]: the OpenOffice process was unstable due to memory leaks inside the process itself, which couldn't be fixed directly. What worked was:
 - restarting the service daily (the leak was small — a few KB per invocation)
@@ -84,7 +86,7 @@ Our efforts started to pay dividends. Setting up Jenkins and migrating from SVN 
 
 I remember setting up a Jenkins job to gamify the `Java 8` migration: every morning we tracked how many files remained to migrate. We dropped a custom library that emulated lambdas using bytecode generation at runtime — [Lambdaj](https://code.google.com/archive/p/lambdaj/) — and all uses of the Joda-Time library (this caused a few easy-to-fix regressions, but the team started using Java 8 in production — a big selling point internally).
 
-All new code required unit tests — not as a rule handed down, but as a shared expectation the team had started to own.
+All new code required unit tests — documented as an acceptance criterion for new work, but by then it was less a rule handed down than a shared expectation the team had started to own.
 
 Stateful DAOs — a pattern that had caused unit-of-work problems throughout the codebase — were systematically removed. The DAOs were duplicating what the Hibernate `Session` already provides: identity map, dirty tracking, first-level cache. Except they did it with bugs. The fix was to delete the custom state management and rely on the `Session` directly.
 
