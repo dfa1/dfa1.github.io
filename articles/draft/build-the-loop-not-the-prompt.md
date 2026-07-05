@@ -20,6 +20,26 @@ AI coding is not "use a better model." It's "build a feedback loop the model can
 itself."[^validation] The agent proposes; something else has to say whether the proposal is
 wrong — cheaply, automatically, before a human looks.
 
+Everyone already runs a version of this loop by hand:
+
+```
+                                                     does it meet the
+                                                    required standard?
+                                                            ╱╲
+        ┌──────────┐            ┌──────────┐               ╱  ╲
+        │  Prompt  │ ─────────► │  Output  │ ────────────►╱    ╲
+        └──────────┘            └──────────┘              ╲    ╱
+              ▲                                            ╲  ╱
+              │                                             ╲╱
+              │                                              │ no
+              └───────────── provide feedback ◄──────────────┘
+                             (very important)
+```
+
+The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
+scale is who provides it: a human, reading every output, every round. The whole game is
+replacing that step with machinery:
+
 ```
         ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
         │  AI agent   │ ──────────────────► │  harness                         │
