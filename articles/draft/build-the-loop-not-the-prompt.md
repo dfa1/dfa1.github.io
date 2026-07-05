@@ -224,8 +224,7 @@ The mechanical binding work — allocate arena, copy in, invoke, check error poi
 boring, repetitive, auditable: ideal for an agent. What stayed human: the type-safe API shapes,
 the "should this exist at all" calls, the benchmark design, and *choosing the harness itself*.
 The agent runs inside the loop; deciding what the loop is remains the engineer's job. Builds on
-[Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code). [Add what's
-new across three repos: did the harness transfer between projects?]
+[Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code).
 
 ## Lessons
 
