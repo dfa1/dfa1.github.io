@@ -17,7 +17,7 @@
 - [2. But be willing to delete what you wrote last quarter — dependencies included.](#rule-2)
 - [3. Coding standards exist to argue once, not every PR.](#rule-3)
 - [4. Commit messages are documentation.](#rule-4)
-- [5. Move complexity from runtime into code, where it can be read.](#rule-5)
+- [5. Make the implicit explicit.](#rule-5)
 - [6. Fix root causes. Symptoms come back.](#rule-6)
 - [7. Ship small, ship often. If merging hurts, do it more often.](#rule-7)
 
@@ -34,6 +34,8 @@ There are many mechanisms — code comments, a project wiki — but my favorite 
 > *Early on, one of the developers proposed a full rewrite. […] Starting clean felt like the obvious answer. It wasn't.* — [The Slow Fix § Tactical and Strategic](https://dfa1.github.io/articles/the-slow-fix#tactical-and-strategic)
 
 The full rewrite is the single worst strategic mistake a team can make[^spolsky]. The old system contains years of accumulated domain knowledge — bugs that turned into features, edge cases silently handled, compensations for upstream failures. Throw it away and you won't know what you've lost until production tells you. You don't get to a simple system by demanding simplicity at the start: you get there by living through the complexity, understanding it, and having the patience to remove what doesn't earn its place.
+
+A rule needs boundaries to be guidance rather than dogma, so here are mine: a rewrite is right when the platform underneath is dead, when the system is small enough that its tests are its spec, or when the domain knowledge you'd be preserving is already lost. Outside those cases, a rewrite doesn't buy a fresh start — it throws away everything the system has learned.
 
 ### 2. But be willing to delete what you wrote last quarter — dependencies included. {#rule-2}
 
@@ -57,11 +59,11 @@ Formatting is the easy case. Neal Ford's *fitness functions*[^ford] extend the s
 
 JIRA reference, brief summary, then the *why* — what was the problem, what was the solution, what trade-offs were made. `Fix` and `Updates...` are noise that you'll regret in two years when `git blame` is your only witness. None of this means agonizing over every local commit: commit often, perfect later, publish once[^robertson]. The history you publish is the documentation; the history you keep while working is scaffolding — rebase the second into the first before it leaves your machine.
 
-### 5. Move complexity from runtime into code, where it can be read. {#rule-5}
+### 5. Make the implicit explicit. {#rule-5}
 
 > *Isolated DTOs are what an independent release cycle looks like in practice, in the presence of breaking changes. The duplication is the solution.* — [Make the Implicit Explicit § Versioned endpoints](https://dfa1.github.io/articles/make-the-implicit-explicit#versioned-endpoints)
 
-This one is harder to explain: by *runtime* I mean production — the external integrations, the dependencies, the extension points that only show up when the system runs. Understand them, document them, then make them *explicit* in the code.
+The implicit is production behavior: the external integrations, the dependencies, the extension points that only show up when the system runs — complexity you can only observe. Understand it, document it, then make it *explicit* in the code, where you can read it.
 
 Versioned endpoints, isolated DTOs, decorator stacks — they look like more moving parts. Operationally, they are simpler, because the complexity is now visible: read it, test it, reason about it. The opposite — a single unversioned endpoint, DTOs shared to avoid minor duplication, no monitoring — looks "simple," but it is what produces incidents and deployments that have to be coordinated across every consumer.
 
@@ -72,6 +74,8 @@ Versioned endpoints, isolated DTOs, decorator stacks — they look like more mov
 This is my favorite: every problem is an opportunity to understand your system a bit better. Often the root cause is easy to see; sometimes it is not, and fixing it requires discipline and perseverance — two of the qualities I value most in software engineers.
 
 Restarting the job that dies every week is not a fix; it is a schedule. The cause is still there, producing the next failure, while workarounds accumulate around it — extra code whose only purpose is to survive a bug nobody understood. Empty `catch` blocks are where that road ends: a team that has stopped asking why and just wants to look good.
+
+And sometimes the workaround is the right call: the root cause sits in a vendor library, and fixing it would cost more than the scheduled restart over the system's remaining life. The difference between that and decay is rule 0 — a workaround with a written why is a decision you can revisit; one without is just the first layer of sediment.
 
 Fixing root causes makes you a better engineer; explaining the process to others — what to check, in which order, and why — makes the whole team better.
 
