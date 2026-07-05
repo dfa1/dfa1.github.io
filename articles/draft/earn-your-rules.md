@@ -1,6 +1,6 @@
 # Earn Your Rules
 
-*The engineering rules I'd defend in review.*
+*Eight engineering rules, each with a reason and the story where it was earned.*
 
 *9 May 2026*
 
