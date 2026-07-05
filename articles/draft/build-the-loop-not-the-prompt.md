@@ -109,11 +109,12 @@ the FFM API instead:
 - `Linker` — calls a C function directly from Java, with no hand-written C glue to compile,
   ship, and load.
 
-Why it matters *for generated code*: with `Unsafe`, a wrong offset is silent memory
-corruption — the worst thing to hand an agent, because nothing complains.
+Why it matters *for generated code*: with `Unsafe`, a wrong offset either takes down the
+whole JVM — a native crash dump, not a stack trace — or, worse, silently corrupts memory.
+Neither failure is one the agent can read and fix.
 
 ```java
-// Unsafe: a bad offset corrupts memory and keeps going
+// Unsafe: a bad offset crashes the JVM or silently corrupts memory
 long v = unsafe.getLong(base + offset);
 // MemorySegment: a bad offset throws, with a stack trace the agent can read and fix
 long v = segment.get(JAVA_LONG, offset);   // IndexOutOfBoundsException if out of range
