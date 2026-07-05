@@ -10,6 +10,17 @@
   <id>https://dfa1.github.io/feed.xml</id>
 
   <entry>
+    <title>Earn Your Rules</title>
+    <link href="https://dfa1.github.io/articles/earn-your-rules"/>
+    <id>https://dfa1.github.io/articles/earn-your-rules</id>
+    <updated>2026-07-04T00:00:00Z</updated>
+    <published>2026-07-04T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Once in a while, someone shares an "X rules of software engineering" list and I find myself agreeing with about a third of it. This is my pass through one such list — keeping what I've actually had to write down somewhere, dropping what I haven't, and rewriting the rest in my own language. Each rule opens with an extract from the story where it was earned.</summary>
+  </entry>
+  <entry>
     <title>Decouple Allocations from Request Volume</title>
     <link href="https://dfa1.github.io/articles/decouple-allocations-from-request-volume"/>
     <id>https://dfa1.github.io/articles/decouple-allocations-from-request-volume</id>
