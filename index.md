@@ -37,9 +37,9 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 - [The Slow Fix](articles/the-slow-fix) (2018)
 - [The road from Java 8 to Java 11](https://github.com/dfa1/the_road_from_java8_to_java11) (2018) [PDF](the_road_from_java8_to_java11.pdf) [HTML](the_road_from_java8_to_java11.html)
 
-## Presentations
+## Public presentations
 
-All presentations made with [reveal.js](https://revealjs.com)
+All my public presentations made with [reveal.js](https://revealjs.com)
 
 - Migrate a big insurance webapp from Hibernate 3.x to Hibernate 5.x (no public slides), [@exmachina.ch](https://exmachina.ch) (2017)
 - [Spring Boot](https://dfa1.github.io/exmeeting-spring-boot/), [@exmachina.ch](https://exmachina.ch) (2016)
