@@ -56,8 +56,16 @@ bug → failing test → fix cycle — software engineering has always run on fe
 [The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) is two years of building exactly
 this machinery with only humans in it. What the agent changes is the economics: it writes code
 faster than anyone can read it, so a loop that used to be good practice becomes the
-precondition. A team that already had tight feedback loops for its humans is — almost by
-accident — ready for agents.
+precondition. A team that already had tight automatic feedback loops for its humans is —
+almost by accident — ready for agents. But this is only true when "tight feedback loops" means
+something specific — not "we communicate well" or "we do good code reviews." The only loops
+that matter are:
+
+- automatic
+- cheap
+- repeatable
+- unambiguous
+- machine-readable
 
 The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
 scale is who provides it: a human, reading every output, every round. The whole point is
@@ -134,10 +142,9 @@ and fix on its own:
 integration tests catch the binding that crashes at runtime. For FFM this is non-negotiable —
 a wrong `FunctionDescriptor` type-checks fine and crashes when called (map `size_t` to
 `JAVA_INT` instead of `JAVA_LONG`: green unit tests, a corrupt round-trip on a large buffer).
-No suite means the human *is* the test runner.
 
-**Mutation testing keeps the tests honest — and finds real bugs.** PIT flips a condition or
-drops a line; if no test fails, the test was just for show. The biggest payoff in vortex-java
+**Mutation testing keeps the tests honest — and finds real bugs.** [PIT](https://pitest.org/)
+flips a condition or drops a line; if no test fails, the test was just for show. The biggest payoff in vortex-java
 was [a shippable bug](https://github.com/dfa1/vortex-java/commit/473256b1f745f90592aad305811d41752a2f128d).
 The format can store a column with few distinct values as a *dictionary* — the values once,
 plus compact codes pointing at them. The writer happily dictionary-encoded small-integer
@@ -145,8 +152,9 @@ columns; the reader's fast-path decoder only knew how to unpack the wider numeri
 small-integer column produced a file the reader then refused to open — *"unsupported type for
 lazy dict"* — one you could write but never read back.
 
-But a survivor has *three* meanings, and only one is "add a test." vortex-java's `CLAUDE.md`
-says it directly: *"read survivors as a simplify-first signal, not only a test-gap signal."*
+A mutant that no test kills — a *survivor* — has three meanings, and only one is "add a
+test." vortex-java's `CLAUDE.md` says it directly: *"read survivors as a simplify-first
+signal, not only a test-gap signal."*
 
 | Survivor means | Do | Example |
 |---|---|---|
@@ -154,13 +162,14 @@ says it directly: *"read survivors as a simplify-first signal, not only a test-g
 | Dead clause | **delete it** | a redundant `offset > fileSize` check — four mutants gone |
 | Interchangeable heuristic | leave it | two encoders, equally valid output |
 
-The deletion is the instructive case. Mutating `offset > fileSize` never changed an outcome:
-once `length >= 0`, an offset past `fileSize` makes `fileSize - offset` negative, so the
-existing `length > fileSize - offset` clause already fires. The clause was unreachable;
-removing it *eliminated* four dead mutants instead of hiding them behind unkillable
-tests. An agent's reflex is to assert on every survivor — which grows unkillable tests around
-dead code and freezes heuristics into false contracts. (Most survivors were coverage
-hardening, not bug fixes: the dictionary bug was the exception that paid for the loop.)
+The deletion is the instructive case. One bounds check turned out to be unreachable — every
+input that could trip it was already rejected by an earlier check. Mutating it never changed
+any outcome, so no test could ever kill those mutants. The fix was not a cleverer test; it was
+deleting the clause: four dead mutants gone, along with the dead code. An agent's reflex is
+the opposite — write a test for every survivor — which wraps dead code in tests that assert
+nothing and turns arbitrary implementation choices into promises the code never made. (Most
+survivors led to better tests rather than bug fixes: the dictionary bug was the exception that
+paid for the loop.)
 
 **Cross-implementation interop is the oracle the agent can't fake.** An *oracle*, in testing
 jargon, is an independent source of the correct answer. A test the agent wrote, judged by the
@@ -219,12 +228,12 @@ move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3
 
 ## Where the human stayed
 
+This builds on [Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code).
 The mechanical binding work — allocate arena, copy in, invoke, check error pointer, free — is
 boring, repetitive, auditable: ideal for an agent. What stayed human: the type-safe API shapes,
 the "should this exist at all" decisions, the benchmark design, and *choosing the harness
 itself*.
-The agent runs inside the loop; deciding what the loop is remains the engineer's job. Builds on
-[Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code).
+The agent runs inside the loop; deciding what the loop is remains the engineer's job.
 
 ## Lessons
 
