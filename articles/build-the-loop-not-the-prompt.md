@@ -3,7 +3,7 @@
 *6 July 2026*
 
 *Recently I built three small Java libraries using JDK 25 and the
-[FFM - Foreign Function & Memory API](https://openjdk.org/jeps/454):
+[Foreign Function & Memory API (FFM)](https://openjdk.org/jeps/454):
 [rocksdbffm](https://github.com/dfa1/rocksdbffm),
 [vortex-java](https://github.com/dfa1/vortex-java), and
 [zstd-java](https://github.com/dfa1/zstd-java).
@@ -48,9 +48,9 @@ doesn't: a tuned prompt is spent on the one task it was written for; a fitness f
 paying every session. The harness even writes the prompts — a readable failure message is the
 most precise instruction an agent ever gets.
 
-The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
+The *provide feedback* step is the part that matters. What doesn't
 scale is who provides it: a human, reading every output, every round. The whole point is
-replacing that step with harness:
+replacing that step with a harness:
 
 ```
         ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
@@ -62,9 +62,8 @@ replacing that step with harness:
                  └─────────── human steers ◄──────────────┘
 ```
 
-
 To be fair, nothing about the loop itself is new. Compilers, CI, code review, the
-bug → failing test → fix cycle — software engineering has always run on feedback loops;
+bug → failing test → fix cycle — software engineering has always run on feedback loops.
 What the agent changes is the economics: it writes code
 faster than anyone can read it or review it, so a loop that used to be good practice becomes
 the precondition. A team that already had tight automatic feedback loops for its humans is —
@@ -82,7 +81,7 @@ that matter are:
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
-of "looks fine, is wrong" into an automatic failure). Please note that the projects are the
+of "looks fine, is wrong" into an automatic failure). The projects are the
 evidence, not the subject. The rest of the article is about engineering the ground truth:
 making the environment answer "is this wrong?" honestly and cheaply.
 
@@ -91,7 +90,7 @@ environment happen to look like for native-memory Java. Your context will pick d
 web service has no C offsets to get wrong, but it has API contracts, database migrations, and
 load behavior — each with its own way of looking fine and being wrong. The question that
 transfers is: which kind of "looks fine, is wrong" does *my* code produce, and what turns it
-into a feedback?
+into feedback?
 
 ## First half: a safe language to generate
 
@@ -175,7 +174,7 @@ implementation breaks it:
 ```
 
 This is what actually caught several bugs, the dictionary bug included: files round-tripped
-fine *within Java*; only the Rust cross-check surfaced them. Junit `@ParameterizedTest` is a cheap way to scale these checks:
+fine *within Java*; only the Rust cross-check surfaced them. JUnit `@ParameterizedTest` is a cheap way to scale these checks:
 one body, every data type, column size, and encoding as parameters, run both directions: a
 combinatorial space no hand-written cases would cover (property-based testing pushes the same
 idea further). zstd-java uses the same idea with a
@@ -187,9 +186,9 @@ decompress one and you must get the documented bytes back.
 **Write the threat model down, then let the agent execute it.** vortex-java's `TODO.md` states
 a hard contract: *the reader parses untrusted binary input; every malformed file must fail with
 one clean `VortexException` — never a raw out-of-bounds, out-of-memory, or stack-overflow
-crash*. Why I added it? Because I got an agent trying to reverse-engineering the binary format
-by using variations of all possible bytes.
-This failure eventually becomea steady stream of commits — `cap array-node recursion depth`,
+crash*. Why did I add it? Because I caught an agent trying to reverse-engineer the binary
+format by probing variations of all possible bytes.
+That failure eventually became a steady stream of commits — `cap array-node recursion depth`,
 `validate segment specs`, `sanitize HTTP Content-Range`. A precise contract plus a checklist is
 exactly what an agent works through best; "make it secure" is too generic.
 
@@ -225,24 +224,30 @@ boring, repetitive, auditable: ideal for an agent. What stayed human: the type-s
 the "should this exist at all" decisions, the benchmark design, and *choosing the harness
 itself*.
 
-
 ## Lessons
 
 These were earned on these three projects:
 
 - AI coding is loop-building, not prompt-writing.
-- agents change the economics, not the good engineering principles.
+- Agents change the economics, not good engineering principles.
 - Feed the agent ground truth — the spec, the source — instead of room to guess: a format
   inferred from examples is right until the one example you didn't have.[^groundtruth]
 - Mutation testing is a great tool to control the work of the agents: edge case → test,
   dead clause → delete, equivalent heuristic → leave it.
-- Sonar is a great companion to tame accidental complexity (i.e. copy-pasted code, test coverage, non-idiomatic code, security analysis, etc): those are good feedback for the agents.
+- Sonar is a great companion to tame accidental complexity (e.g. copy-pasted code, test
+  coverage, non-idiomatic code, security hotspots): each finding is good feedback for the
+  agent.
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
 
-This is the future of the software engineer: no longer writes the mechanical boilerplate;
+This is the future of the software engineer: no longer writing the mechanical boilerplate;
 the job is to design the architecture, write the threat models, and build the unforgiving
 feedback loops that keep the agents on track.
+
+And still, I want to write code by hand from time to time. That's why the agent must respect
+the project's code style, and why generated code must stay readable — open to human
+inspection and debugging. A codebase only the agent can navigate fails the day a human has to
+step back in.
 
 ---
 

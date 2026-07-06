@@ -77,4 +77,4 @@ All my public presentations made with [reveal.js](https://revealjs.com)
 
 > *If you think good architecture is expensive, try bad architecture.* — Brian Foote and Joseph Yoder, [Big Ball of Mud](https://www.laputan.org/mud/)
 
-Updated: 4 July 2026
+Updated: 6 July 2026
