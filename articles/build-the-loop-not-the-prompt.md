@@ -130,7 +130,7 @@ and fix on its own:
 | Mutation testing (PIT) | assertion-free tests; dead code | mutants must be killed, not just covered |
 | Sonar | security hotspots, leaks, null, concurrency | external ruleset |
 | Cross-impl oracle | bytes/behavior that disagree with the reference | a second, independent implementation |
-| Docs fitness functions | documentation that drifted from the code | FQNs, links, and tables asserted against the codebase |
+| Docs fitness functions | documentation that drifted from the code | class names, links, and tables asserted against the codebase |
 
 **Integration tests are the self-correction signal.** Unit tests catch the local mistake;
 integration tests catch the binding that crashes at runtime. In the context of FFM, this is non-negotiable —
@@ -211,7 +211,7 @@ The stakes are higher than a stale README: `CLAUDE.md`, the ADRs, and `docs/*.md
 agent reads every session, so a claim that drifted from the code is bad ground truth delivered
 automatically. vortex-java
 [gives the docs a compiler](https://github.com/dfa1/vortex-java/commit/08b6cd59c44f8306aa985a17289f4a0b7134adee):
-every project FQN in the living docs must resolve against the codebase, every
+every fully qualified class name in the living docs must resolve against the codebase, every
 `META-INF/services` mention must name a real file, relative links must not dangle, and every
 backticked `Class.method(...)` claim must name a real method. The first run caught 11 fossils
 that a manual audit had missed the same day — imports from a pre-refactor package layout,
