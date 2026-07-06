@@ -228,8 +228,6 @@ itself*.
 
 These were earned on these three projects:
 
-- AI coding is loop-building, not prompt-writing.
-- Agents change the economics, not good engineering principles.
 - Feed the agent ground truth — the spec, the source — instead of room to guess: a format
   inferred from examples is right until the one example you didn't have.[^groundtruth]
 - Mutation testing is a great tool to control the work of the agents: edge case → test,
@@ -240,14 +238,16 @@ These were earned on these three projects:
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
 
-This is the future of the software engineer: no longer writing the mechanical boilerplate;
-the job is to design the architecture, write the threat models, and build the unforgiving
-feedback loops that keep the agents on track.
+The agent changed the economics, not the principles. Our job didn't disappear — it moved: we
+no longer write the mechanical parts; we write the harness that makes the mechanical parts
+safe.
 
-And still, I want to write code by hand from time to time. That's why the agent must respect
-the project's code style, and why generated code must stay readable — open to human
-inspection and debugging. A codebase only the agent can navigate fails the day a human has to
-step back in.
+And yes — we still write code by hand sometimes. That's why the harness must preserve
+readability and style: a codebase only the agent can navigate is a codebase no human can
+save.
+
+The agent proposes; the harness decides. In the end, the harness is the work — the agent just
+runs inside it. Build the loop, and the prompt becomes just another detail.
 
 ---
 
