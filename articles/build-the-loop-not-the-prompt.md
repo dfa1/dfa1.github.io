@@ -238,6 +238,8 @@ These were earned on these three projects:
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
 
+## Closing
+
 The agent changed the economics, not the principles. Our job didn't disappear — it moved: we
 no longer write the mechanical parts; we write the harness that makes the mechanical parts
 safe.
