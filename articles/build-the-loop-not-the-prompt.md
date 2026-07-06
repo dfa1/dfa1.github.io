@@ -1,9 +1,9 @@
 # Build the Loop, Not the Prompt
 
-*27 June 2026*
+*6 July 2026*
 
 *Recently I built three small Java libraries using JDK 25 and the
-[Foreign Function & Memory API](https://openjdk.org/jeps/454):
+[FFM - Foreign Function & Memory API](https://openjdk.org/jeps/454):
 [rocksdbffm](https://github.com/dfa1/rocksdbffm),
 [vortex-java](https://github.com/dfa1/vortex-java), and
 [zstd-java](https://github.com/dfa1/zstd-java).
@@ -32,7 +32,6 @@ Everyone already runs a version of this loop by hand:
               │                                             ╲╱
               │                                              │ no
               └───────────── provide feedback ◄──────────────┘
-                             (very important)
 ```
 
 Why not just write better prompts? Because a prompt is open-loop control: it improves the
@@ -41,7 +40,7 @@ ship unless something catches them — and with generated code the failures that
 exactly the ones that *look* fine. The model doesn't know it's wrong; only the environment
 does.
 
-The deeper reason is an asymmetry: checking is cheaper than generating. A prompt complete
+The deeper reason is an asymmetry: *checking is cheaper than generating*. A prompt complete
 enough to need no checking would have to predict every possible failure in advance, in prose. A
 compiler, a mutation run, a cross-implementation round-trip check the same properties
 mechanically, on every change, forever. And harness effort compounds where prompt effort
@@ -49,25 +48,9 @@ doesn't: a tuned prompt is spent on the one task it was written for; a fitness f
 paying every session. The harness even writes the prompts — a readable failure message is the
 most precise instruction an agent ever gets.
 
-To be fair, nothing about the loop itself is new. Compilers, CI, code review, the
-bug → failing test → fix cycle — software engineering has always run on feedback loops;
-[The Slow Fix](https://dfa1.github.io/articles/the-slow-fix) is two years of building exactly
-this machinery with only humans in it. What the agent changes is the economics: it writes code
-faster than anyone can read it, so a loop that used to be good practice becomes the
-precondition. A team that already had tight automatic feedback loops for its humans is —
-almost by accident — ready for agents. But this is only true when "tight feedback loops" means
-something specific — not "we communicate well" or "we do good code reviews." The only loops
-that matter are:
-
-- automatic
-- cheap
-- repeatable
-- unambiguous
-- machine-readable
-
 The emphasis on *provide feedback* is right — feedback is the part that matters. What doesn't
 scale is who provides it: a human, reading every output, every round. The whole point is
-replacing that step with machinery:
+replacing that step with harness:
 
 ```
         ┌─────────────┐   proposes change   ┌──────────────────────────────────┐
@@ -79,20 +62,36 @@ replacing that step with machinery:
                  └─────────── human steers ◄──────────────┘
 ```
 
+
+To be fair, nothing about the loop itself is new. Compilers, CI, code review, the
+bug → failing test → fix cycle — software engineering has always run on feedback loops;
+What the agent changes is the economics: it writes code
+faster than anyone can read it or review it, so a loop that used to be good practice becomes
+the precondition. A team that already had tight automatic feedback loops for its humans is —
+almost by accident — ready for agents. But this is only true when "tight feedback loops" means
+something specific — not "we communicate well" or "we do good code reviews." The only loops
+that matter are:
+
+- automatic
+- cheap
+- repeatable
+- unambiguous
+- machine-readable
+
 ## The loop in practice
 
 Two things made the loop work across all three projects: **a safe language** (fewer ways for
 generated code to be silently catastrophic) and **a harness of tools** (each turning a class
-of "looks fine, is wrong" into an automatic failure). The projects are the evidence, not the
-subject. The rest of the article is about engineering the ground truth: making the
-environment answer "is this wrong?" honestly and cheaply.
+of "looks fine, is wrong" into an automatic failure). Please note that the projects are the
+evidence, not the subject. The rest of the article is about engineering the ground truth:
+making the environment answer "is this wrong?" honestly and cheaply.
 
 None of the specific tools is the point — they're what a safe language and an honest
 environment happen to look like for native-memory Java. Your context will pick differently: a
 web service has no C offsets to get wrong, but it has API contracts, database migrations, and
 load behavior — each with its own way of looking fine and being wrong. The question that
 transfers is: which kind of "looks fine, is wrong" does *my* code produce, and what turns it
-into an automatic, readable failure?
+into a feedback?
 
 ## First half: a safe language to generate
 
@@ -121,8 +120,6 @@ long v = unsafe.getLong(base + offset);
 long v = segment.get(JAVA_LONG, offset);   // IndexOutOfBoundsException if out of range
 ```
 
-The language doing the catching is the cheapest tool in the harness.
-
 ## Second half: the harness that closes the loop
 
 Each tool converts one category of "looks fine, is wrong" into a failure the agent can read
@@ -137,7 +134,7 @@ and fix on its own:
 | Docs fitness functions | documentation that drifted from the code | FQNs, links, and tables asserted against the codebase |
 
 **Integration tests are the self-correction signal.** Unit tests catch the local mistake;
-integration tests catch the binding that crashes at runtime. For FFM this is non-negotiable —
+integration tests catch the binding that crashes at runtime. In the context of FFM, this is non-negotiable —
 a wrong `FunctionDescriptor` type-checks fine and crashes when called (map `size_t` to
 `JAVA_INT` instead of `JAVA_LONG`: green unit tests, a corrupt round-trip on a large buffer).
 
@@ -165,9 +162,7 @@ input that could trip it was already rejected by an earlier check. Mutating it n
 any outcome, so no test could ever kill those mutants. The fix was not a cleverer test; it was
 deleting the clause: four dead mutants gone, along with the dead code. An agent's reflex is
 the opposite — write a test for every survivor — which wraps dead code in tests that assert
-nothing and turns arbitrary implementation choices into promises the code never made. (Most
-survivors led to better tests rather than bug fixes: the dictionary bug was the exception that
-paid for the loop.)
+nothing and turns arbitrary implementation choices into promises the code never made.
 
 **Cross-implementation interop is the oracle the agent can't fake.** An *oracle*, in testing
 jargon, is an independent source of the correct answer. A test the agent wrote, judged by the
@@ -180,7 +175,7 @@ implementation breaks it:
 ```
 
 This is what actually caught several bugs, the dictionary bug included: files round-tripped
-fine *within Java*; only the Rust cross-check surfaced them. `@ParameterizedTest` scales it cheaply —
+fine *within Java*; only the Rust cross-check surfaced them. Junit `@ParameterizedTest` is a cheap way to scale these checks:
 one body, every data type, column size, and encoding as parameters, run both directions: a
 combinatorial space no hand-written cases would cover (property-based testing pushes the same
 idea further). zstd-java uses the same idea with a
@@ -192,19 +187,16 @@ decompress one and you must get the documented bytes back.
 **Write the threat model down, then let the agent execute it.** vortex-java's `TODO.md` states
 a hard contract: *the reader parses untrusted binary input; every malformed file must fail with
 one clean `VortexException` — never a raw out-of-bounds, out-of-memory, or stack-overflow
-crash.* Under it, a checklist of hostile inputs to defend against — string offsets that run
-backward or past the buffer, dictionary codes pointing outside the value table, bit-widths out
-of range. The checklist became a steady stream of commits — `cap array-node recursion depth`,
+crash*. Why I added it? Because I got an agent trying to reverse-engineering the binary format
+by using variations of all possible bytes.
+This failure eventually becomea steady stream of commits — `cap array-node recursion depth`,
 `validate segment specs`, `sanitize HTTP Content-Range`. A precise contract plus a checklist is
-exactly what an agent works through best; "make it secure" is not.
+exactly what an agent works through best; "make it secure" is too generic.
 
 **Sonar is the cheap broad sweep.** Static analysis finds security hotspots, leaks, and
 questionable concurrency far cheaper than tests or review — and it flags large chunks of
 copy-pasted code, a habit agents fall into easily. The agent acts on each finding
 directly.
-Pairs with [the compiler is part of your security
-team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team):
-push detection left and automate it.
 
 **Fitness functions keep the documentation honest.** Neal Ford's term[^ford] for an automated
 check on an architectural characteristic — here, the characteristic is documentation accuracy.
@@ -224,38 +216,33 @@ Both assert and never generate — on drift they print the exact rows to add or 
 failure the agent closes like any other. Argue once, then let the build remember — the same
 move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3).
 
-## Where the human stayed
+## The role of human engineers
 
-This builds on [Coding with Claude Code](https://dfa1.github.io/articles/coding-with-claude-code).
+The agent runs inside the loop; deciding what the loop is remains the engineer's job.
+
 The mechanical binding work — allocate arena, copy in, invoke, check error pointer, free — is
 boring, repetitive, auditable: ideal for an agent. What stayed human: the type-safe API shapes,
 the "should this exist at all" decisions, the benchmark design, and *choosing the harness
 itself*.
-The agent runs inside the loop; deciding what the loop is remains the engineer's job.
+
 
 ## Lessons
 
-These were earned on these three projects; adapt them to yours:
+These were earned on these three projects:
 
-- AI coding is loop-building, not prompt-writing; the loop predates the agent —
-  agents change the economics, not the principle.
-- Get an oracle the agent can't fake: a second implementation, or the upstream
-  project's golden files.
-- For FFM, integration tests are mandatory: wrong native types compile fine and
-  fail at runtime.
-- Read mutation survivors three ways: edge case → test, dead clause → delete,
-  equivalent heuristic → leave it.
-- A precise contract plus a checklist is what an agent works through best;
-  "make it secure" or "make it fast" is not.
+- AI coding is loop-building, not prompt-writing.
+- agents change the economics, not the good engineering principles.
 - Feed the agent ground truth — the spec, the source — instead of room to guess: a format
   inferred from examples is right until the one example you didn't have.[^groundtruth]
+- Mutation testing is a great tool to control the work of the agents: edge case → test,
+  dead clause → delete, equivalent heuristic → leave it.
+- Sonar is a great companion to tame accidental complexity (i.e. copy-pasted code, test coverage, non-idiomatic code, security analysis, etc): those are good feedback for the agents.
 - Docs are part of the harness: fitness functions keep `CLAUDE.md`, ADRs, and
   `docs/*.md` true.
-- The agent runs inside the loop; choosing the loop is the engineer's job.
 
-This is the future of the software engineer: you no longer write the mechanical boilerplate;
-your job is to design the architecture, write the threat models, and build the unforgiving
-feedback loops that keep the agent on track.
+This is the future of the software engineer: no longer writes the mechanical boilerplate;
+the job is to design the architecture, write the threat models, and build the unforgiving
+feedback loops that keep the agents on track.
 
 ---
 
