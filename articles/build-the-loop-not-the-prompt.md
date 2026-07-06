@@ -13,8 +13,6 @@ a tight loop of tools to catch it when it's wrong.*
 
 ---
 
-<!-- Working title above. Alternatives: "Give the Agent a Harness" · "Let the Tools Correct the Agent" -->
-
 ## The thesis
 
 AI coding is not "use a better model to create an app with a single prompt." It's "build a

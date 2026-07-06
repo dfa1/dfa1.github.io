@@ -10,6 +10,17 @@
   <id>https://dfa1.github.io/feed.xml</id>
 
   <entry>
+    <title>Build the Loop, Not the Prompt</title>
+    <link href="https://dfa1.github.io/articles/build-the-loop-not-the-prompt"/>
+    <id>https://dfa1.github.io/articles/build-the-loop-not-the-prompt</id>
+    <updated>2026-06-27T00:00:00Z</updated>
+    <published>2026-06-27T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Recently I built three small Java libraries using JDK 25 and the Foreign Function &amp; Memory API: rocksdbffm, vortex-java, and zstd-java. Most of the code was written by an AI agent. The lesson that stuck wasn't about the model: an agent is only as good as the harness around it — a safe language to write in, and a tight loop of tools to catch it when it's wrong.</summary>
+  </entry>
+  <entry>
     <title>Earn Your Rules</title>
     <link href="https://dfa1.github.io/articles/earn-your-rules"/>
     <id>https://dfa1.github.io/articles/earn-your-rules</id>

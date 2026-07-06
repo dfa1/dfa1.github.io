@@ -22,6 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [Build the Loop, Not the Prompt](articles/build-the-loop-not-the-prompt) (2026)
 - [Earn Your Rules](articles/earn-your-rules) (2026)
 - [Rethink Domain Primitives with Valhalla](articles/rethink-domain-primitives-with-valhalla) (2026)
 - [The Cost of Implicitness](articles/the-cost-of-implicitness) (2026)
