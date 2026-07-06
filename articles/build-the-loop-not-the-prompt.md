@@ -183,11 +183,13 @@ different oracle — the upstream
 the same known-good compressed files the C project uses in its own regression suite:
 decompress one and you must get the documented bytes back.
 
-And the oracle can scale. The next step for vortex-java is
-[reading the whole Raincloud corpus](https://github.com/dfa1/vortex-java/issues/205) — 247
+And the oracle can scale. vortex-java is now
+[reading the Raincloud corpus](https://github.com/dfa1/vortex-java/issues/205) — 247
 real-world datasets, each built as both Parquet and Vortex — and checking every value against
-the Parquet sibling. Same principle, stronger oracle: real-world data finds the encodings and
-edge cases no synthetic fixture would think to cover.
+the Parquet sibling. The first ten datasets took minutes to check and surfaced six gaps across
+four reader bugs. The best of them: unsigned bytes rendered as signed, so the value 132 came
+back as −124 — while every value up to 127 was correct. Silent corruption, invisible to
+synthetic fixtures, caught by real-world data on the first sweep.
 
 **Write the threat model down, then let the agent execute it.** vortex-java's `TODO.md` states
 a hard contract: *the reader parses untrusted binary input; every malformed file must fail with
