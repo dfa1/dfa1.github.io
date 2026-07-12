@@ -11,8 +11,8 @@
 
   <entry>
     <title>Build the Loop, Not the Prompt</title>
-    <link href="https://dfa1.github.io/articles/build-the-loop-not-the-prompt"/>
-    <id>https://dfa1.github.io/articles/build-the-loop-not-the-prompt</id>
+    <link href="https://dfa1.github.io/articles/build-the-loop-not-the-prompt.html"/>
+    <id>https://dfa1.github.io/articles/build-the-loop-not-the-prompt.html</id>
     <updated>2026-07-06T00:00:00Z</updated>
     <published>2026-07-06T00:00:00Z</published>
     <author>
@@ -22,8 +22,8 @@
   </entry>
   <entry>
     <title>Earn Your Rules</title>
-    <link href="https://dfa1.github.io/articles/earn-your-rules"/>
-    <id>https://dfa1.github.io/articles/earn-your-rules</id>
+    <link href="https://dfa1.github.io/articles/earn-your-rules.html"/>
+    <id>https://dfa1.github.io/articles/earn-your-rules.html</id>
     <updated>2026-07-04T00:00:00Z</updated>
     <published>2026-07-04T00:00:00Z</published>
     <author>
@@ -33,8 +33,8 @@
   </entry>
   <entry>
     <title>Decouple Allocations from Request Volume</title>
-    <link href="https://dfa1.github.io/articles/decouple-allocations-from-request-volume"/>
-    <id>https://dfa1.github.io/articles/decouple-allocations-from-request-volume</id>
+    <link href="https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html"/>
+    <id>https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html</id>
     <updated>2023-11-30T00:00:00Z</updated>
     <published>2023-11-30T00:00:00Z</published>
     <author>
@@ -44,8 +44,8 @@
   </entry>
   <entry>
     <title>Rethink Domain Primitives with Valhalla</title>
-    <link href="https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla"/>
-    <id>https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla</id>
+    <link href="https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla.html"/>
+    <id>https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla.html</id>
     <updated>2026-05-16T00:00:00Z</updated>
     <published>2026-05-16T00:00:00Z</published>
     <author>
@@ -55,8 +55,8 @@
   </entry>
   <entry>
     <title>The Cost of Implicitness</title>
-    <link href="https://dfa1.github.io/articles/the-cost-of-implicitness"/>
-    <id>https://dfa1.github.io/articles/the-cost-of-implicitness</id>
+    <link href="https://dfa1.github.io/articles/the-cost-of-implicitness.html"/>
+    <id>https://dfa1.github.io/articles/the-cost-of-implicitness.html</id>
     <updated>2026-05-09T00:00:00Z</updated>
     <published>2026-05-09T00:00:00Z</published>
     <author>
@@ -66,8 +66,8 @@
   </entry>
   <entry>
     <title>The Slow Fix</title>
-    <link href="https://dfa1.github.io/articles/the-slow-fix"/>
-    <id>https://dfa1.github.io/articles/the-slow-fix</id>
+    <link href="https://dfa1.github.io/articles/the-slow-fix.html"/>
+    <id>https://dfa1.github.io/articles/the-slow-fix.html</id>
     <updated>2026-04-30T00:00:00Z</updated>
     <published>2026-04-30T00:00:00Z</published>
     <author>
@@ -77,8 +77,8 @@
   </entry>
   <entry>
     <title>Make the Implicit Explicit</title>
-    <link href="https://dfa1.github.io/articles/make-the-implicit-explicit"/>
-    <id>https://dfa1.github.io/articles/make-the-implicit-explicit</id>
+    <link href="https://dfa1.github.io/articles/make-the-implicit-explicit.html"/>
+    <id>https://dfa1.github.io/articles/make-the-implicit-explicit.html</id>
     <updated>2026-04-23T00:00:00Z</updated>
     <published>2022-06-10T00:00:00Z</published>
     <author>
@@ -88,8 +88,8 @@
   </entry>
   <entry>
     <title>From BPF to eBPF, Twenty Years Later</title>
-    <link href="https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later"/>
-    <id>https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later</id>
+    <link href="https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later.html"/>
+    <id>https://dfa1.github.io/articles/from-bpf-to-ebpf-twenty-years-later.html</id>
     <updated>2026-04-19T00:00:00Z</updated>
     <published>2026-04-19T00:00:00Z</published>
     <author>
@@ -99,8 +99,8 @@
   </entry>
   <entry>
     <title>Java + RocksDB - JNI</title>
-    <link href="https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni"/>
-    <id>https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni</id>
+    <link href="https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html"/>
+    <id>https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html</id>
     <updated>2026-04-11T00:00:00Z</updated>
     <published>2026-04-11T00:00:00Z</published>
     <author>
@@ -110,8 +110,8 @@
   </entry>
   <entry>
     <title>Coding with Claude Code: A Week on hosh</title>
-    <link href="https://dfa1.github.io/articles/coding-with-claude-code"/>
-    <id>https://dfa1.github.io/articles/coding-with-claude-code</id>
+    <link href="https://dfa1.github.io/articles/coding-with-claude-code.html"/>
+    <id>https://dfa1.github.io/articles/coding-with-claude-code.html</id>
     <updated>2026-03-29T00:00:00Z</updated>
     <published>2026-03-29T00:00:00Z</published>
     <author>
@@ -121,8 +121,8 @@
   </entry>
   <entry>
     <title>Your Compiler is already part of your Security Team</title>
-    <link href="https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team"/>
-    <id>https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team</id>
+    <link href="https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html"/>
+    <id>https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html</id>
     <updated>2026-04-17T00:00:00Z</updated>
     <published>2021-01-04T00:00:00Z</published>
     <author>
@@ -132,8 +132,8 @@
   </entry>
   <entry>
     <title>Write Down the Why</title>
-    <link href="https://dfa1.github.io/articles/write-down-the-why"/>
-    <id>https://dfa1.github.io/articles/write-down-the-why</id>
+    <link href="https://dfa1.github.io/articles/write-down-the-why.html"/>
+    <id>https://dfa1.github.io/articles/write-down-the-why.html</id>
     <updated>2020-10-01T00:00:00Z</updated>
     <published>2020-10-01T00:00:00Z</published>
     <author>
@@ -143,8 +143,8 @@
   </entry>
   <entry>
     <title>The Joy of Proper Encapsulation</title>
-    <link href="https://dfa1.github.io/articles/the-joy-of-proper-encapsulation"/>
-    <id>https://dfa1.github.io/articles/the-joy-of-proper-encapsulation</id>
+    <link href="https://dfa1.github.io/articles/the-joy-of-proper-encapsulation.html"/>
+    <id>https://dfa1.github.io/articles/the-joy-of-proper-encapsulation.html</id>
     <updated>2026-03-27T00:00:00Z</updated>
     <published>2026-03-27T00:00:00Z</published>
     <author>

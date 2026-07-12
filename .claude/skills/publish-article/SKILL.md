@@ -27,7 +27,7 @@ Rename `articles/draft/<slug>.md` → `articles/<slug>.md` using `git mv` so the
 In the `## Writings` section, prepend a new bullet **at the top** of the list:
 
 ```
-- [<Title>](articles/<slug>) (<Year>)
+- [<Title>](articles/<slug>.html) (<Year>)
 ```
 
 Also update the `Updated:` line at the bottom of `index.md` to the article's date formatted as
@@ -41,8 +41,8 @@ Also update the `Updated:` line at the bottom of `index.md` to the article's dat
 ```xml
   <entry>
     <title><Title></title>
-    <link href="https://dfa1.github.io/articles/<slug>"/>
-    <id>https://dfa1.github.io/articles/<slug></id>
+    <link href="https://dfa1.github.io/articles/<slug>.html"/>
+    <id>https://dfa1.github.io/articles/<slug>.html</id>
     <updated><ISO date>T00:00:00Z</updated>
     <published><ISO date>T00:00:00Z</published>
     <author>
@@ -60,7 +60,7 @@ Append a new `<url>` block **before the closing `</urlset>` tag**:
 
 ```xml
   <url>
-    <loc>https://dfa1.github.io/articles/<slug></loc>
+    <loc>https://dfa1.github.io/articles/<slug>.html</loc>
     <lastmod><ISO date></lastmod>
   </url>
 ```

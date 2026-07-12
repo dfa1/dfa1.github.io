@@ -46,11 +46,17 @@ When a file path is given without explicit instruction, treat it as a review req
 - End-note paragraphs (attribution, further reading, phrase coinage) are missed footnote opportunities — convert them; do not leave them unanchored at the bottom
 - Dated update sections (`### Update on ...`) are a different pattern — leave them as-is
 
+## Article URLs
+
+- Jekyll's default permalink (and the `<link rel="canonical">` tag it emits via `jekyll-seo-tag`) is `https://dfa1.github.io/articles/<slug>.html` — **always with the `.html` extension**
+- Every reference to an article URL — `index.md` Writings links, `feed.xml` `<link>`/`<id>`, `sitemap.xml` `<loc>` — must use the `.html` form to match the canonical tag
+- Omitting `.html` creates a canonical mismatch: Google treats the extension-less URL as a duplicate of the canonical `.html` page and may not index it, even though GitHub Pages serves both URLs with `200 OK`
+
 ## feed.xml
 
 - Format: Atom 1.0
 - Feed `<id>`: `https://dfa1.github.io/feed.xml`
-- Entry `<id>`: full article URL, e.g. `https://dfa1.github.io/articles/the-slow-fix`
+- Entry `<id>`: full article URL with `.html`, e.g. `https://dfa1.github.io/articles/the-slow-fix.html`
 - Do **not** use `urn:uuid:` prefix unless the value is an actual UUID — `urn:uuid:slug` is invalid and fails W3C feed validation, which causes Feedly and other readers to not show previews
 - Entry `<summary>`: plain text excerpt shown as preview in feed readers
 
