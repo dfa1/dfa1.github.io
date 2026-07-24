@@ -2,46 +2,76 @@
 
 *24 July 2026*
 
-*For years, getting native-level performance out of Java meant reaching for `sun.misc.Unsafe` or writing JNI glue — trading safety and a sane build for speed. The Foreign Function & Memory API removes that trade-off, and once [Zig](https://ziglang.org/) is the C compiler, even the native build stops being a problem. This is what I learned building [rocksdbffm](https://github.com/dfa1/rocksdbffm), [zstd-java](https://github.com/dfa1/zstd-java), and a couple of smaller experiments.*
+*For years, getting native-level performance out of Java meant reaching for `sun.misc.Unsafe` or writing JNI glue — trading safety and a sane build for speed. The Foreign Function & Memory API removes that trade-off. To see how far, I wrapped [Zstandard](https://github.com/facebook/zstd) as [zstd-java](https://github.com/dfa1/zstd-java): no JNI, no `Unsafe`, no hand-written C — and, once [Zig](https://ziglang.org/) is the compiler, no build matrix either. Here is what that costs, and what it buys.*
 
 ---
 
 ## Beyond `Unsafe` and JNI
 
-Historically, extreme performance in Java meant picking your poison:
+Historically, calling a C library like zstd from Java meant picking your poison:
 
 * `sun.misc.Unsafe` gave you raw off-heap pointers with zero bounds checking, silent memory corruption on a mistake, and a hard dependency on an unsupported internal API.
-* JNI meant a C/C++ bridge layer, a cross-compilation toolchain, and blind spots where a single mismanaged pointer crashed the whole JVM.
+* JNI meant a C bridge layer, a generated header to keep in sync, a cross-compilation toolchain, and blind spots where a single mismanaged pointer crashed the whole JVM.
 
-The [Foreign Function & Memory (FFM) API](https://openjdk.org/jeps/454) replaces both with one standard model. `rocksdbffm` (C++) and `zstd-java` (C) use it to drop JNI and `Unsafe` entirely: they bind directly to the native headers and get off-heap access with explicit spatial bounds, temporal lifecycles, and thread confinement enforced by the JVM.
+The [Foreign Function & Memory (FFM) API](https://openjdk.org/jeps/454) — final in JDK 22, and shipped in the first LTS to carry it stably, JDK 25 — replaces both with one standard model. There is no C to write. Each zstd function is declared as a `MethodHandle`, its signature transcribed straight from the [zstd manual](https://facebook.github.io/zstd/doc/api_manual_latest.html):
+
+```java
+// size_t ZSTD_compress(void* dst, size_t dstCap, const void* src, size_t srcSize, int level)
+static final MethodHandle COMPRESS =
+        NativeLibrary.lookup("ZSTD_compress",
+                FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
+```
+
+The comment is the C prototype; the `FunctionDescriptor` is the same prototype in Java. That is the entire binding — no `.c` file, no generated header, no glue object to compile.
+
+## Where the safety lives
+
+Calling that handle is where `Unsafe` used to earn its name. Under FFM the dangerous parts are pinned down by the types instead:
+
+```java
+public static byte[] compress(byte[] src, ZstdCompressionLevel level) {
+    try (Arena arena = Arena.ofConfined()) {
+        MemorySegment in   = copyIn(arena, src);
+        ZstdByteSize bound = compressBound(new ZstdByteSize(src.length));
+        MemorySegment out  = arena.allocate(bound.value());
+        long written = NativeCall.checkReturnValue(() -> (long) Bindings.COMPRESS.invokeExact(
+                out, bound.value(), in, (long) src.length, level.value()));
+        return copyOut(out, written);
+    }
+}
+```
+
+Three guarantees `Unsafe` never gave you, all visible in that block:
+
+- **Spatial bounds.** A `MemorySegment` knows its own size; an out-of-range access throws instead of corrupting the heap. Zero-copy entry points additionally reject a heap segment where a native address is required, rather than passing a bad pointer to C.
+- **Temporal lifecycle.** The `Arena` owns the off-heap memory. Close it — here, at the end of the `try` — and every segment it handed out is invalidated; a use-after-free is an exception, not a segfault.
+- **Thread confinement.** `Arena.ofConfined()` binds the memory to one thread. Touch it from another and the JVM stops you at the boundary.
+
+Safety you can also *choose* to be explicit about. zstd frames record their decompressed size in the header, so the convenient path trusts it — fine for frames you produced. For input you do not control, that trust is a decompression bomb: a hostile header can declare a huge size and force the matching allocation. The API makes the safe path a separate, harder-to-misuse overload:
+
+```java
+byte[] out = Zstd.decompress(frame);                          // trusts the header
+byte[] out = Zstd.decompress(frame, new ZstdByteSize(maxLen)); // caps the allocation
+```
+
+The native library itself is bundled in the jar and loaded once through `SymbolLookup.libraryLookup` — there is deliberately no path override, because loading native code is arbitrary code execution and the loader trusts only the signed artifact on the classpath.
 
 ## Skip the sysroot
 
 FFM handles the calling side. The other half of wrapping a C library is building that C library, and that is where cross-compilation usually turns into a matrix of OS-specific CI runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem mostly disappears.
 
-`zig cc` and `zig c++` are drop-in replacements for `cc`/`c++` that bundle clang, their own libc, and the headers for every target Zig supports — inside the Zig toolchain download itself. Point `CC` at `zig cc -target aarch64-linux-gnu` from any host, macOS or Linux, and it just works: no `apt install gcc-aarch64-linux-gnu`, no manually assembled sysroot, no target-specific Docker image.
-
-`rocksdbffm` uses it as a drop-in for RocksDB's own `Makefile`-driven build:
-
-```bash
-# scripts/build-rocksdb.sh
-export CC="zig cc -target $ZIG_TARGET"
-export CXX="zig c++ -target $ZIG_TARGET"
-export PORTABLE=1
-```
-
-`zstd-java` skips the C build system entirely — `zstd` is vendored as plain source, and the script globs the `.c` files and compiles each one directly:
+`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target Zig supports — inside the toolchain download itself. `zstd-java` skips zstd's build system entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
 
 ```bash
 # scripts/build-zstd.sh
+export CC="zig cc -target $ZIG_TARGET"
 SRCS=$(find "$ZSTD_LIB/common" "$ZSTD_LIB/compress" "$ZSTD_LIB/decompress" \
             "$ZSTD_LIB/dictBuilder" -name '*.c' | sort)
 ...
 zig cc -target "$ZIG_TARGET" $CFLAGS -c "$src" -o "$out"
 ```
 
-Once cross-compiling is just a `-target` string, adding a platform is a line in a `case`
-statement, not a new CI runner. `zstd-java` maps six classifiers to six Zig target triples:
+Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not a new CI runner. `zstd-java` maps six classifiers to six Zig target triples:
 
 ```bash
 osx-aarch64)     ZIG_TARGET="aarch64-macos"
@@ -52,37 +82,31 @@ windows-x86_64)  ZIG_TARGET="x86_64-windows-gnu"
 windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
 ```
 
-That last pair is the one that stood out: a working Windows `.dll`, correctly populated PE
-export table included, produced from a Linux or macOS runner — no MinGW install, no Wine, no
-Windows box anywhere in the pipeline. `rocksdbffm` covers the four Unix classifiers the same
-way. Neither project runs one job per OS to get there[^ci]; one host builds every target,
-because nothing about the build depends on which OS it's running on.
+That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced from a Linux or macOS runner — no MinGW install, no Wine, no Windows box anywhere in the pipeline. Neither this project nor its C++ sibling [rocksdbffm](https://github.com/dfa1/rocksdbffm) runs one job per OS to get there[^ci]; one host builds every target, because nothing about the build depends on which OS it runs on.
 
-One caveat: both target `x86_64-linux-gnu`/`aarch64-linux-gnu`, not `-musl`. The resulting
-`.so` still dynamically links glibc and expects a compatible one on the runtime host — Zig can
-target `-musl` for a fully static, distro-independent Linux binary, but neither project takes
-that step here.
+One caveat: the Linux targets are `-gnu`, not `-musl`. The resulting `.so` still dynamically links glibc and expects a compatible one on the runtime host — Zig can target `-musl` for a fully static binary, but the project does not take that step here.
 
-The best compliment I can give a build tool is that it stopped being interesting to think
-about. And it is not just two small libraries: Uber has compiled every line of C/C++ in its Go
-monorepo with `zig cc`, for both x86_64 and arm64, since January 2023[^uber]. The experience
-generalizes past C, too — swap the language and the same essay gets written again[^justwork].
+And it is not a niche trick: Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64, since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same essay gets written again[^justwork].
 
-## Compile-time guarantees over runtime failures
+## What it costs
 
-Replacing the low-level mechanics is only half the point; the other half is using modern Java idioms to make bad states impossible to represent. In a traditional native wrapper, calling a write on a read-only handle compiles fine and fails at runtime. Domain primitives, records, and tight class hierarchies lift those checks to compile time.
+The pitch is only honest with numbers, so `zstd-java` ships a JMH suite that pits its FFM path against [zstd-jni](https://github.com/luben/zstd-jni) — the mature JNI binding — with **both sides linking the same zstd 1.5.7**, so any gap is binding overhead, not codec version[^bench].
 
-That is the idea behind [refined-type](https://github.com/dfa1/refined-type), an experiment built on Project Valhalla previews that pushes domain constraints into the type system. Instead of passing an arbitrary `long` for a block size and hoping, validation happens at instantiation and illegal states stop compiling.
+The fair comparison is best against best: zstd-java's zero-copy `MemorySegment` API against zstd-jni's own zero-copy direct-`ByteBuffer` API, neither allocating per call. Throughput in ops/ms, higher is better:
 
-## Native throughput without native code
+| case (payload) | zstd-java `MemorySegment` | zstd-jni `ByteBuffer` | edge |
+|----------------|--------------------------:|----------------------:|-----:|
+| compress `http` (1.2 KiB)         | 353.6 | 322.1 | +9.8% |
+| decompress `http`                 | 922.7 | 750.8 | +22.9% |
+| decompress `large-literal` (200 KiB) | 56.1 | 55.6 | +0.9% (tie) |
 
-Aligning Java abstractions with hardware realities — mechanical sympathy — sometimes means you do not need native code at all. [vortex-java](https://github.com/dfa1/vortex-java) is a pure-Java implementation with no native bindings, no JNI, and no `Unsafe`. It relies on `MemorySegment` and zero-copy semantics to move data.
+Allocation is a dead heat: `gc.alloc.rate.norm` is ~0 B/op on both sides — both paths are genuinely zero-copy. The throughput edge is pure per-call overhead, and it behaves exactly the way FFM-vs-JNI should: biggest on the smallest, call-overhead-dominated payloads (+10–23%), shrinking to nothing once compute or memory bandwidth dominates. There is no free lunch at 64 MiB; there is a real one when you are calling into zstd a million times on small records.
 
-The point of all this is stewardship. Scaling horizontally by throwing cloud nodes at inefficient code buys time while inflating the bill. Rewriting hot paths around lean, zero-copy layouts cuts the compute footprint and keeps the code safe, readable, and idiomatic for everyone else on the team.
+The one claim that does *not* survive scrutiny: an early version of this benchmark reported the `MemorySegment` path as "allocation-free versus JNI." True — but only against zstd-jni's convenient `byte[]` API, which allocates the output every call; against its zero-copy `ByteBuffer` path the allocation advantage vanishes. The honest headline is narrower: **match on allocation, lead modestly on call overhead.**
 
 ## The path forward
 
-"Java is slow," "off-heap requires `Unsafe`," "native integration is dangerous" — all of it belongs in the past. Modern Java lets you write bare-metal, low-overhead systems code behind safe, strongly typed interfaces, and cross-compile it from a laptop. If you are building data pipelines, storage layers, or high-frequency systems, look at your hot paths: you do not need unsupported internal APIs, and you do not need to accept GC overhead as inevitable.
+"Java is slow," "off-heap requires `Unsafe`," "native integration is dangerous" — for this workload, none of it held. One library binds a C codec with no JNI and no `Unsafe`, cross-compiles to six platforms from a laptop, and trades blows with the incumbent while matching it on allocation. If you are wrapping native code from the JVM today, the old trade-off is not the one you are still paying.
 
 ---
 
@@ -91,3 +115,5 @@ The point of all this is stewardship. Scaling horizontally by throwing cloud nod
 [^uber]: Uber Engineering, [*Bootstrapping Uber's Infrastructure on arm64 with Zig*](https://www.uber.com/us/en/blog/bootstrapping-ubers-infrastructure-on-arm64-with-zig/) (2023).
 
 [^justwork]: Loris Cro, [*Zig Makes Go Cross Compilation Just Work*](https://dev.to/kristoff/zig-makes-go-cross-compilation-just-work-29ho) — the same claim, and title, shows up for Rust and other languages once people reach for `zig cc` as their C toolchain.
+
+[^bench]: Golden-corpus run on an Apple M5 (32 GB), JDK 25, zstd-jni 1.5.7-11, JMH 1.37: 3 forks × 3 warmup × 5 measurement iterations with `-prof gc`, error bars are 99.9% confidence intervals. Inputs are real fixtures from zstd's own golden corpus. Full methodology and the wider table in the project's [`docs/benchmarks.md`](https://github.com/dfa1/zstd-java/blob/master/docs/benchmarks.md).
