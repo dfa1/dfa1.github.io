@@ -10,9 +10,9 @@
 
 There's nothing wrong with zstd-jni — it's "the excellent zstd-jni," to quote zstd-java's own README, which doesn't pretend otherwise[^zstd-java-readme]. It's production-ready, tracks the zstd release branch, and compiles down to Java 8 bytecode[^zstd-jni-build] so it runs anywhere from an old Android app to a JDK 25 server. That reach is the point of a JNI binding: it doesn't get to assume anything about the runtime.
 
-zstd-java makes the opposite trade: it assumes JDK 25+, and in exchange it gets three things a JNI binding built for Java 8 compatibility structurally cannot have.
+zstd-java makes the opposite trade, and the downside has to be stated plainly: it does not run on anything older than JDK 25. There's no fallback path, no JNI escape hatch for an older JVM — `java.lang.foreign` isn't there to call. If your deployment target is Java 8, 11, 17, or 21, zstd-jni is still the only option, full stop. In exchange for giving that reach up, zstd-java gets three things a JNI binding built for Java 8 compatibility structurally cannot have.
 
-## Pillar one: FFM instead of JNI
+## Point one: FFM instead of JNI
 
 The [Foreign Function & Memory API](https://openjdk.org/jeps/454) — final in JDK 22, stable in the first LTS to carry it, JDK 25 — replaces the JNI shim with typed Java: a `MethodHandle` bound straight to the C symbol, no `.c` glue file, no generated header.
 
@@ -25,22 +25,35 @@ static final MethodHandle COMPRESS =
 
 That's the entire binding for one function: the comment is the C prototype, the `FunctionDescriptor` is the same prototype in Java. No JNI means no per-platform shared object built from hand-written C++ glue — just the native `libzstd` itself, cross-compiled with Zig for six platforms including a working Windows `.dll` produced on a Linux runner.
 
-It isn't only simpler to build — it holds up on throughput too. Benchmarked against zstd-jni's own zero-copy `ByteBuffer` path, both linking the identical zstd 1.5.7, zstd-java's zero-copy `MemorySegment` path leads by +9.8% compressing a 1.2 KiB payload and +22.9% decompressing it, converging to a tie once the payload grows to 200 KiB and codec throughput dominates the call overhead[^bench]. The full methodology, including the comparisons that came out as honest ties, is in a companion piece, *Breaking Java's Old Trade-off*.
+It isn't only simpler to build — it holds up on throughput too. Benchmarked against zstd-jni's own zero-copy `ByteBuffer` path, both linking the identical zstd 1.5.7, zstd-java's zero-copy `MemorySegment` path leads by +9.8% compressing a 1.2 KiB payload and +22.9% decompressing it, converging to a tie once the payload grows to 200 KiB and codec throughput dominates the call overhead[^bench].
 
-## Pillar two: module support
+Running any of this still requires one extra flag, since FFM downcalls are a restricted operation:
 
-FFM downcalls are a restricted operation — the JVM refuses one without an explicit `--enable-native-access` grant. zstd-java ships a real `module-info.java` that scopes that grant to itself:
+```bash
+java --enable-native-access=ALL-UNNAMED Demo.java
+```
+
+## Point two: module support
+
+`ALL-UNNAMED` grants native access to everything on the classpath — every dependency, not just zstd-java. On the module path, the grant can name a single module instead. zstd-java ships a real `module-info.java` declaring exactly that module:
 
 ```java
-@SuppressWarnings("module") // dfa1 is my username in github
 module io.github.dfa1.zstd {
     exports io.github.dfa1.zstd;
 }
 ```
 
+Run your app against it on the module path and the flag names the module doing the native call, nothing else:
+
+```bash
+java --module-path app.jar:zstd-platform.jar \
+     --enable-native-access=io.github.dfa1.zstd \
+     -m myapp/com.example.Main
+```
+
 One package exported; the `MethodHandle`s that actually touch native memory never leave the module. A caller on the module path grants access to `io.github.dfa1.zstd` by name, not to everything on the classpath[^adr-0011]. zstd-jni has no equivalent — it ships as a plain jar with no `module-info.java`, so on the module path it resolves as an automatic module with a name derived from the jar filename and no export control at all. That's not a knock on zstd-jni; JNI never had a "restricted operation" for a module system to gate. It's a distinction that only exists because FFM created something worth scoping in the first place.
 
-## Pillar three: domain primitives, with value types on the horizon
+## Point three: domain primitives, with value types on the horizon
 
 The public API takes no naked `int` or `long` for a size, a compression level, or a window log — each is a validated `record`:
 
@@ -61,15 +74,17 @@ These are ordinary `record`s today — identity classes, one heap allocation api
 
 ## Proof: vortex-java
 
-The three pillars above aren't a pitch in the abstract — they're why vortex-java's `vortex.zstd` column encoding runs on zstd-java today. Vortex compresses columnar data (dictionaries, delta, FastLanes, and a Zstd fallback among its encodings), and until v0.10.0 that Zstd fallback went through `io.airlift:aircompressor-v3`, a pure-Java Zstd decoder. Migrating it to `io.github.dfa1.zstd:zstd` picked up framed, sliceable payloads, nullable-column support, and shared-dictionary decode in one change[^vortex-changelog]. Consumers pull in exactly one dependency, `zstd-platform`, and get the binding plus native `libzstd` for every supported platform — no per-platform artifact juggling on their side either.
+The three points above aren't a pitch in the abstract — they're why vortex-java's `vortex.zstd` column encoding runs on zstd-java today. Vortex compresses columnar data (dictionaries, delta, FastLanes, and a Zstd fallback among its encodings), and until v0.10.0 that Zstd fallback went through `io.airlift:aircompressor-v3`, a pure-Java Zstd decoder. Migrating it to `io.github.dfa1.zstd:zstd` picked up framed, sliceable payloads, nullable-column support, and shared-dictionary decode in one change[^vortex-changelog]. Consumers pull in exactly one dependency, `zstd-platform`, and get the binding plus native `libzstd` for every supported platform — no per-platform artifact juggling on their side either.
 
 The domain-primitive story carries straight through: a later vortex-java security pass added bounds-checking on each frame's declared uncompressed size before allocating, and overflow-checking the total — the same decompression-bomb concern `ZstdByteSize` exists to catch, now enforced on the vortex-java side of the boundary too[^vortex-security].
 
 Worth being precise about scope here: zstd-jni hasn't gone away from vortex-java entirely. It's still what the Parquet reader uses to decode ZSTD-compressed Parquet pages — an unrelated integration, solving a different problem (reading someone else's file format, not writing Vortex's own). Nothing here claims zstd-jni was replaced project-wide; only the `vortex.zstd` encoding moved.
 
-## Try it
+## What's next
 
-zstd-java is on Maven Central, BSD 3-Clause licensed, JDK 25+ only, and honest about being early: it's for early adopters, not a drop-in swap for an existing zstd-jni integration that needs to keep running on older JVMs. If you're on JDK 25 and starting a new integration, or you want to see what an FFM-based native binding looks like end to end, the [repository](https://github.com/dfa1/zstd-java) has a quickstart, dictionary compression, and a zero-copy `MemorySegment` API to start from.
+zstd-java is at v0.12, pre-1.0. The domain-primitive sweep this release completed was itself 1.0 preparation: replacing naked `int`/`long` at the API boundary means breaking changes, and those are cheaper to make now than after a 1.0 tag asks for stability. vortex-java is the first real consumer, not the intended only one — the project is actively looking for more early adopters on JDK 25+ willing to try an FFM-based alternative to zstd-jni and report back before the API locks down.
+
+zstd-java is on Maven Central, BSD 3-Clause licensed, JDK 25+ only, and honest about being early: it's for early adopters, not a drop-in swap for an existing zstd-jni integration that needs to keep running on older JVMs. If that's you, the [repository](https://github.com/dfa1/zstd-java) has a quickstart, dictionary compression, and a zero-copy `MemorySegment` API to start from — issues and pull requests are welcome.
 
 ---
 
