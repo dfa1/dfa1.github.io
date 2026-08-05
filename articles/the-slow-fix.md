@@ -1,6 +1,6 @@
 # The Slow Fix
 
-*30 April 2026*
+*30 April 2018*
 
 *This is a success story from when I was working as a consultant in the mid-2010s — an extract from notes I took at the time. The inspiration is "The Phoenix Project"[^phoenix] — minus the novel format. The goal here is simpler: document what happened, in case it's useful to someone standing at the same starting point.*
 
