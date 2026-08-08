@@ -48,7 +48,11 @@ document it.
 ## Scoping the pointer to a callback
 
 The most natural design is a callback running inside a well-defined scope, where the data stays
-"pinned" for the callback's duration.
+"pinned" for the callback's duration. Other bindings already commit to that shape: `rust-rocksdb`'s
+`get_pinned` returns a `DBPinnableSlice` implementing `Deref<Target = [u8]>`, length intrinsic to
+the borrow, with no caller-supplied-buffer API at all; `grocksdb` does the same. `rocksdbjni` didn't,
+and upstream regrets it — its own source carries a TODO admitting as much: "we should improve the
+`#get()` API, returning -1 (`RocksDB.NOT_FOUND`) is not very nice."
 
 `withPinned` wraps the handle in a scoped callback instead of returning the raw view:
 
@@ -57,6 +61,19 @@ public <R> Optional<R> withPinned(MemorySegment key, PinnedReader<R> fn) throws 
     return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
 }
 ```
+
+Internally, that call threads two callbacks through one core method — the native downcall and `fn`
+itself:
+
+```java
+private interface PinnedGet {
+    MemorySegment invoke(MemorySegment errptr) throws Throwable;
+}
+```
+
+Called as `withPinned0(err -> (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err), fn)`
+— one callback for the downcall, one for the caller. That double callback comes back into the story
+later, when the GC profiler shows what it actually costs.
 
 `PinnedReader<R>` is `R read(MemorySegment value) throws Exception`. The `MemorySegment` handed to
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
