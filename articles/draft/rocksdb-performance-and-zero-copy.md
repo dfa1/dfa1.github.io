@@ -5,9 +5,8 @@
 *[rocksdbffm](https://github.com/dfa1/rocksdbffm), the FFM-based RocksDB binding I wrote about
 [last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
 genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
-a pointer straight into the block cache, no intermediate copy at all. I benchmarked it against the
-two existing read paths across a size sweep from 8 bytes to 1 MB expecting a clean win everywhere.
-Below 1 KB it was the slowest of the three.*
+a pointer straight into the block cache, no intermediate copy at all. The idea is to try to build
+an high-performance API with Java and FFM.
 
 ---
 
@@ -49,11 +48,7 @@ document it.
 ## Scoping the pointer to a callback
 
 The most natural design is a callback running inside a well-defined scope, where the data stays
-"pinned" for the callback's duration. Other bindings already commit to that shape: `rust-rocksdb`'s
-`get_pinned` returns a `DBPinnableSlice` implementing `Deref<Target = [u8]>`, length intrinsic to
-the borrow, with no caller-supplied-buffer API at all; `grocksdb` does the same. `rocksdbjni` didn't,
-and upstream regrets it — its own source carries a TODO admitting as much: "we should improve the
-`#get()` API, returning -1 (`RocksDB.NOT_FOUND`) is not very nice."
+"pinned" for the callback's duration.
 
 `withPinned` wraps the handle in a scoped callback instead of returning the raw view:
 
@@ -66,6 +61,7 @@ public <R> Optional<R> withPinned(MemorySegment key, PinnedReader<R> fn) throws 
 `PinnedReader<R>` is `R read(MemorySegment value) throws Exception`. The `MemorySegment` handed to
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
 that closes the moment `fn` returns — before the native handle is destroyed via `rocksdb_pinnable_handle_destroy`.
+
 
 ## The benchmark I expected to be boring
 
@@ -132,7 +128,7 @@ does `get_value`'s `size_t* vallen` out-param. The original code allocated both,
 call — but by the time `get_value` runs, `checkError` has already consumed and discarded the
 `errptr` slot. Nothing was using it anymore.
 
-## After the fix
+## The benchmark that surprised me (again!)
 
 Split the "which native symbol" part from the "how the lifetime works" part, without losing the
 guarantee that made the split necessary in the first place:
@@ -161,9 +157,7 @@ that mandated the shared core was specifically about divergent cleanup, not abou
 gets called. And `scratch` — the same slot already holding the (by-now-checked, dead)
 `errptr` — gets reused as `vallen`'s out-param instead of a second `arena.allocate`.
 
-## What it bought
-
-Same benchmark, same machine, same six sizes, GC profiler still attached[^bench-after]:
+Same benchmark, same machine, same six sizes, GC profiler still attached:
 
 | Value size | `byte[]` | `MemorySegment` | `withPinned` | `withPinned` alloc/op | vs `byte[]` | vs `MemorySegment` | `withPinned`/`byte[]` |
 |---|---|---|---|---|---|---|---|
@@ -174,18 +168,35 @@ Same benchmark, same machine, same six sizes, GC profiler still attached[^bench-
 | 64 KB | 327K ops/s | 436K ops/s | 643K ops/s | 288 B (was 416) | +96.4% | +47.5% | 1.96x |
 | 1 MB | 22.0K ops/s | 33.6K ops/s | 77.3K ops/s | 289 B (was 417) | +251.7% | +130.3% | 3.52x |
 
-Cutting the fixed cost from ~400 bytes to ~265–290 didn't just make the small-value case a little
-better — it flipped it. `withPinned` now wins at every size, including the two where it used to
-lose outright. The large-size gains grew too, more than the allocation delta alone predicts; some
-of that is ordinary fork-to-fork JMH variance rather than the fix itself, worth stating plainly
-rather than overclaiming a single benchmark run[^variance].
+So avoiding lambda with capture  and one extra allocation in the hot-path really helped.
 
 ## Conclusion
+
+Design zero-copy data access is not easy but highly rewarding activity.
 
 The FFM bindings for RocksDB now have a clean way to express zero-copy semantics that, on this
 benchmark run, beat the alternatives at every size — especially the large values: the Java layer
 hands back a `MemorySegment`, and the rule is simple: don't store it, just read the data.
 
+Take a value stored as a raw 8-byte epoch-millis long and read back as a `java.time.Instant`. The
+`byte[]` path allocates an array just to hand it straight to `getLong()` and throw it away:
+
+```java
+byte[] raw = rocksdb.get(key);
+Instant createdAt = Instant.ofEpochMilli(ByteBuffer.wrap(raw).getLong());
+```
+
+The `get(key, fn)` overload parses the long straight out of the pinned view — no array ever exists:
+
+```java
+Instant createdAt = rocksdb.get(key, memorySegment -> Instant.ofEpochMilli(memorySegment.get(JAVA_LONG, 0)))
+    .orElseThrow();
+```
+
+Same design is also applied to the `RocksIterator` and most likely will be applied everywhere else.
+
+If you work with RocksDB in Java and/or you want a concrete project to learn FFM with, [take a look](https://github.com/dfa1/rocksdbffm).
+
+
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
-[^variance]: JMH fork-to-fork variance is real at this sample size (2 forks); the small-to-medium-size improvement tracks the ~128 B/op allocation reduction directly and is the one this change specifically targets, which is the claim this post is actually making. The large-size deltas are directionally consistent with that but noisier than the allocation numbers alone would predict, and a rerun with more forks would narrow the error bars before I'd treat the exact percentages as more than approximate.
