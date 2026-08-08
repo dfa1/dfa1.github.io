@@ -1,0 +1,220 @@
+# Zero-Copy Isn't Zero-Allocation
+
+*8 August 2026*
+
+*[rocksdbffm](https://github.com/dfa1/rocksdbffm), the FFM-based RocksDB binding I wrote about
+[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
+genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
+a pointer straight into the block cache, no intermediate copy at all. I benchmarked it against the
+two existing read paths across a size sweep from 8 bytes to 1 MB expecting a clean win everywhere.
+Below 1 KB it was the slowest of the three.*
+
+---
+
+## The new C API
+
+RocksDB grew a pair of functions purpose-built for zero-copy reads[^c-header]:
+
+```c
+rocksdb_pinnable_handle_t* rocksdb_get_pinned_v2(
+    rocksdb_t* db, const rocksdb_readoptions_t* options,
+    const char* key, size_t keylen, char** errptr);
+
+const char* rocksdb_pinnable_handle_get_value(
+    const rocksdb_pinnable_handle_t* handle, size_t* vallen);
+
+void rocksdb_pinnable_handle_destroy(rocksdb_pinnable_handle_t* handle);
+```
+
+Semantics that matter and aren't visible from the signatures: a `NULL` return means either
+"not found" or "error," distinguished only by `errptr`, so it has to be checked first. And the
+pointer `get_value` hands back is only valid until `destroy` runs — `destroy` drops the block-cache
+reference, and the bytes can be evicted immediately after.
+
+That second point is the whole design problem. In Java, "valid until you call this other function"
+is exactly the kind of contract that turns into a use-after-free the first time a caller stores the
+pointer somewhere and reads it later. The API needed to make that mistake impossible, not just
+document it.
+
+## Scoping the pointer to a callback
+
+`withPinned` wraps the handle in a scoped callback instead of returning the raw view:
+
+```java
+public <R> Optional<R> withPinned(MemorySegment key, PinnedReader<R> fn) throws Exception {
+    return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
+}
+```
+
+`PinnedReader<R>` is `R read(MemorySegment value) throws Exception`. The `MemorySegment` handed to
+`fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
+that closes the moment `fn` returns — before the native handle is destroyed, deliberately in that
+order[^withpinned0]:
+
+```java
+} finally {
+    arena.close();
+    if (!MemorySegment.NULL.equals(handle)) {
+        MH_PINNABLE_HANDLE_DESTROY.invokeExact(handle);
+    }
+}
+```
+
+Reversed, there would be a window where a still-valid `MemorySegment` points at block-cache memory
+the handle already released — a silent use-after-free. With the arena closing first, a view that
+escapes the callback fails loudly the moment it's touched: `IllegalStateException` if used after
+`withPinned` returns, `WrongThreadException` if handed to another thread. Both are asserted directly
+in tests, not just claimed[^escape-tests]. A pointer contract turns into a type-system-enforced one.
+
+## The benchmark I expected to be boring
+
+Three read paths do the same thing with different cost profiles: `get(byte[])` allocates and
+returns a new array on every call; `get(MemorySegment, MemorySegment)` copies into a buffer the
+caller preallocated once; `withPinned` copies nothing at all. I expected `withPinned` to win, and
+to win more as values got bigger — more bytes not copied should mean more time saved.
+
+A JMH size sweep from 8 bytes to 1 MB on an Apple M5 MacBook, GC profiler attached, said
+otherwise[^bench-before]:
+
+| Value size | `byte[]` | `MemorySegment` | `withPinned` | `withPinned` alloc/op | vs `byte[]` | vs `MemorySegment` | `withPinned`/`byte[]` |
+|---|---|---|---|---|---|---|---|
+| 8 B | 6.87M ops/s | 7.53M ops/s | 6.29M ops/s | 392 B | -8.4% | -16.4% | 0.92x |
+| 16 B | 7.05M ops/s | 6.79M ops/s | 6.52M ops/s | 392 B | -7.5% | -4.0% | 0.92x |
+| 1 KB | 4.81M ops/s | 4.89M ops/s | 5.09M ops/s | 288 B | +5.9% | +4.1% | 1.06x |
+| 4 KB | 3.09M ops/s | 4.04M ops/s | 4.39M ops/s | 416 B | +42.0% | +8.8% | 1.42x |
+| 64 KB | 336K ops/s | 452K ops/s | 700K ops/s | 416 B | +108.1% | +54.9% | 2.08x |
+| 1 MB | 26.2K ops/s | 33.3K ops/s | 76.4K ops/s | 417 B | +191.4% | +129.5% | 2.91x |
+
+At 8 and 16 bytes, the zero-copy path was the *slowest* of the three — 0.92x `byte[]`. Not by a
+rounding error, by 8 to 16 percent.
+
+## What the GC profiler actually measured
+
+Throughput alone doesn't say why. `gc.alloc.rate.norm` — bytes allocated per operation — filled in
+the rest of the picture. Restated alongside `byte[]` and `MemorySegment`'s own allocation curves:
+
+| Value size | `byte[]` alloc/op | `MemorySegment` alloc/op | `withPinned` alloc/op |
+|---|---|---|---|
+| 8 B | 168 B | 96 B | 392 B |
+| 16 B | 176 B | 296 B | 392 B |
+| 1 KB | 1,184 B | 296 B | 288 B |
+| 4 KB | 4,256 B | 296 B | 416 B |
+| 64 KB | 65,696 B | 296 B | 416 B |
+| 1 MB | 1,048,738 B | 297 B | 417 B |
+
+`byte[]`'s curve is exactly `value_size + ~160 B` — a heap array that grows with the payload, plus
+constant `PinnableSlice` bookkeeping. `MemorySegment`'s is flat, since the buffer is preallocated
+once outside the benchmark loop and reused. `withPinned`'s is *also* flat — proof it never touches
+the value bytes — but flat at roughly 400 bytes, not zero. "Zero-copy" describes what happens to
+the value. It says nothing about what happens to the call.
+
+Two things were allocating on every single invocation, neither of them the value:
+
+**A closure per call.** The two public overloads — plain key, and key plus column family — shared
+one core method that owned the arena-then-destroy lifetime logic, so a divergence between their
+`finally` blocks couldn't happen by construction[^design-constraint]. The mechanism was a
+`PinnedGet` functional interface:
+
+```java
+private interface PinnedGet {
+    MemorySegment invoke(MemorySegment errptr) throws Throwable;
+}
+```
+
+Called as `withPinned0(err -> (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err), fn)`.
+That lambda captures `db`, `readOpts`, and `key` — three references, non-static, a fresh closure
+object on every call. The mechanism built to guarantee the *safety* property was quietly taxing
+the *performance* property it wasn't supposed to touch at all.
+
+**Two native scratch allocations where one would do.** `errptr` needs an 8-byte native slot; so
+does `get_value`'s `size_t* vallen` out-param. The original code allocated both, separately, every
+call — but by the time `get_value` runs, `checkError` has already consumed and discarded the
+`errptr` slot. Nothing was using it anymore.
+
+## The fix
+
+Split the "which native symbol" part from the "how the lifetime works" part, without losing the
+guarantee that made the split necessary in the first place:
+
+```java
+static <R> Optional<R> withPinned(MemorySegment db, MemorySegment readOpts,
+                                   MemorySegment key, PinnedReader<R> fn) throws Exception {
+    Arena arena = Arena.ofConfined();
+    MemorySegment scratch = errHolder(arena);
+    MemorySegment handle;
+    try {
+        handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), scratch);
+    } catch (Throwable t) {
+        arena.close();
+        throw RocksDBException.wrap("get_pinned failed", t);
+    }
+    return withPinned0(arena, scratch, handle, fn);
+}
+```
+
+The two overloads now do their own downcall directly — a few duplicated lines — and hand the
+already-obtained `arena`, `scratch`, and `handle` to `withPinned0` as plain arguments. The
+finally-block ordering that arena-close-before-destroy depends on still lives in exactly one
+place, unchanged. What moved outside the shared method was never the risk; the code review comment
+that mandated the shared core was specifically about divergent cleanup, not about which symbol
+gets called[^issue-55]. And `scratch` — the same slot already holding the (by-now-checked, dead)
+`errptr` — gets reused as `vallen`'s out-param instead of a second `arena.allocate`.
+
+## What it bought
+
+Same benchmark, same machine, same six sizes, GC profiler still attached[^bench-after]:
+
+| Value size | `byte[]` | `MemorySegment` | `withPinned` | `withPinned` alloc/op | vs `byte[]` | vs `MemorySegment` | `withPinned`/`byte[]` |
+|---|---|---|---|---|---|---|---|
+| 8 B | 6.53M ops/s | 6.54M ops/s | 8.18M ops/s | 264 B (was 392) | +25.3% | +25.0% | 1.25x |
+| 16 B | 6.26M ops/s | 5.47M ops/s | 7.50M ops/s | 264 B (was 392) | +19.7% | +37.2% | 1.20x |
+| 1 KB | 4.78M ops/s | 5.65M ops/s | 6.22M ops/s | 288 B (was 288) | +30.3% | +10.1% | 1.30x |
+| 4 KB | 3.14M ops/s | 3.97M ops/s | 5.37M ops/s | 288 B (was 416) | +70.9% | +35.3% | 1.71x |
+| 64 KB | 327K ops/s | 436K ops/s | 643K ops/s | 288 B (was 416) | +96.4% | +47.5% | 1.96x |
+| 1 MB | 22.0K ops/s | 33.6K ops/s | 77.3K ops/s | 289 B (was 417) | +251.7% | +130.3% | 3.52x |
+
+Cutting the fixed cost from ~400 bytes to ~265–290 didn't just make the small-value case a little
+better — it flipped it. `withPinned` now wins at every size, including the two where it used to
+lose outright. The large-size gains grew too, more than the allocation delta alone predicts; some
+of that is ordinary fork-to-fork JMH variance rather than the fix itself, worth stating plainly
+rather than overclaiming a single benchmark run[^variance].
+
+None of this touched the safety property. The same escape-detection tests — segment used after
+`withPinned` returns throws `IllegalStateException`, segment handed to another thread throws
+`WrongThreadException` — pass unchanged before and after[^escape-tests]. The refactor moved
+allocations, not invariants.
+
+## The lesson
+
+"Zero-copy" is a claim about the payload, and it's easy to let it stand in for a claim about the
+call — they're not the same claim, and a benchmark that only measures throughput can't tell them
+apart. A confined `Arena` per call is the mechanism that makes an escaped view fail loudly instead
+of corrupting memory, and that mechanism has a real, measurable cost independent of how many bytes
+it's guarding. At 1 MB that cost is noise. At 8 bytes it was most of the story — enough to make the
+"faster" API measurably slower than the naive one.
+
+The fix wasn't "avoid the arena" — the arena is what makes the API safe to use, and giving that up
+was never on the table. It was finding the allocations *riding along* with the arena that had
+nothing to do with safety: a closure that existed to share code, not to enforce an invariant, and
+a duplicate scratch buffer nobody needed twice. The GC profiler is what separated those from the
+one allocation that actually mattered. Throughput alone would have said "zero-copy is a wash below
+1 KB" and left it there — which is also, incidentally, the same instrument that made the case in
+an [earlier post](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html)
+that allocation rate and request rate are two different numbers worth measuring separately, not one
+number wearing two names.
+
+[^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
+
+[^withpinned0]: [`RocksDB.withPinned0`](https://github.com/dfa1/rocksdbffm/blob/f3d4cef/core/src/main/java/io/github/dfa1/rocksdbffm/RocksDB.java), rocksdbffm, as of commit f3d4cef ([PR #57](https://github.com/dfa1/rocksdbffm/pull/57), open at time of writing). The javadoc on the method spells out the ordering constraint directly: "do not reorder this, and do not refactor into try-with-resources (which would destroy the handle first)."
+
+[^escape-tests]: [`WithPinnedTest`](https://github.com/dfa1/rocksdbffm/blob/f3d4cef/core/src/test/java/io/github/dfa1/rocksdbffm/WithPinnedTest.java), rocksdbffm — `withPinned_segmentUsedAfterReturn_throwsIllegalStateException` and `withPinned_segmentUsedFromAnotherThread_throwsWrongThreadException`. Both asserted to fail with the expected exception type, not just "some exception."
+
+[^design-constraint]: [Issue #55](https://github.com/dfa1/rocksdbffm/issues/55): "Everything after the downcall is identical between them, so the lifetime logic must exist in exactly one place. Do not copy-paste the body — a divergence between the two `finally` blocks is precisely the bug this design exists to prevent."
+
+[^bench-before]: [`FfmBenchmark`](https://github.com/dfa1/rocksdbffm/blob/0cfd631/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBenchmark.java) `readsBlobViaByteArray`/`readsBlobViaMemorySegment`/`readsBlobViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `blobValueSize`. Pre-optimization numbers from commit [0cfd631](https://github.com/dfa1/rocksdbffm/commit/0cfd631), 2 forks, 5 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5.
+
+[^issue-55]: Commit [f3d4cef](https://github.com/dfa1/rocksdbffm/commit/f3d4cef), rocksdbffm: "The lifetime-critical part — the finally block that closes the arena before destroying the handle — still lives in exactly one place, which was the actual constraint from #55."
+
+[^bench-after]: Same benchmark and machine as above, post-optimization numbers from the run accompanying commit [f3d4cef](https://github.com/dfa1/rocksdbffm/commit/f3d4cef).
+
+[^variance]: JMH fork-to-fork variance is real at this sample size (2 forks); the small/medium-size improvement tracks the ~128 B/op allocation reduction directly and is the one this change specifically targets, which is the claim this post is actually making. The large-size deltas are directionally consistent with that but noisier than the allocation numbers alone would predict, and a rerun with more forks would narrow the error bars before I'd treat the exact percentages as more than approximate.
