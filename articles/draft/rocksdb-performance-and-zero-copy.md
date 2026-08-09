@@ -5,8 +5,8 @@
 *[rocksdbffm](https://github.com/dfa1/rocksdbffm), the FFM-based RocksDB binding I wrote about
 [last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
 genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
-a pointer straight into the block cache, no intermediate copy at all. The idea is to try to build
-an high-performance API with Java and FFM.
+a pointer straight into the block cache, no intermediate copy at all. The idea is to build
+a high-performance API with Java and FFM.
 
 ---
 
@@ -79,7 +79,6 @@ later, when the GC profiler shows what it actually costs.
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
 that closes the moment `fn` returns — before the native handle is destroyed via `rocksdb_pinnable_handle_destroy`.
 
-
 ## The benchmark I expected to be boring
 
 Three read paths do the same thing with different cost profiles: `get(byte[])` allocates and
@@ -117,10 +116,12 @@ the rest of the picture. Restated alongside `byte[]` and `MemorySegment`'s own a
 | 1 MB | 1,048,738 B | 297 B | 417 B |
 
 `byte[]`'s curve is exactly `value_size + ~160 B` — a heap array that grows with the payload, plus
-constant `PinnableSlice` bookkeeping. `MemorySegment`'s is flat, since the buffer is preallocated
-once outside the benchmark loop and reused. `withPinned`'s is *also* flat — proof it never touches
-the value bytes — but flat at roughly 400 bytes, not zero. "Zero-copy" describes what happens to
-the value. It says nothing about what happens to the call.
+constant `PinnableSlice` bookkeeping. `MemorySegment`'s stays flat regardless of value size, since the
+destination buffer is preallocated once outside the benchmark loop and handed in by the caller — what
+little is left to allocate is native-call bookkeeping, not the value, which is also why the 8 B row
+dips to 96 B instead of the usual ~296 B: less bookkeeping for the smallest call. `withPinned`'s is
+*also* flat — proof it never touches the value bytes — but flat at roughly 400 bytes, not zero.
+"Zero-copy" describes what happens to the value. It says nothing about what happens to the call.
 
 Two things were allocating on every single invocation, neither of them the value:
 
@@ -185,11 +186,97 @@ Same benchmark, same machine, same six sizes, GC profiler still attached:
 | 64 KB | 327K ops/s | 436K ops/s | 643K ops/s | 288 B (was 416) | +96.4% | +47.5% | 1.96x |
 | 1 MB | 22.0K ops/s | 33.6K ops/s | 77.3K ops/s | 289 B (was 417) | +251.7% | +130.3% | 3.52x |
 
-So avoiding lambda with capture  and one extra allocation in the hot-path really helped.
+So avoiding the lambda's capture and the one extra allocation in the hot path really helped.
+
+## What's next: `copy_into_buffer` and better return types
+
+The same RocksDB release also grew `rocksdb_get_into_buffer`[^get-into-buffer]: one native call that
+copies straight into a caller-provided buffer, returns `1`/`0` for fit-or-not, and always sets
+`vallen` to the real value size — no pin, read pointer, destroy round trip:
+
+```c
+/* Direct get into caller-provided buffer.
+   Returns 1 if value fits in buffer, 0 if buffer too small.
+   Sets *vallen to actual value size.
+   If buffer is too small, no data is copied but *vallen is set. */
+extern ROCKSDB_LIBRARY_API unsigned char rocksdb_get_into_buffer(
+    rocksdb_t* db, const rocksdb_readoptions_t* options, const char* key,
+    size_t keylen, char* buffer, size_t buffer_size, size_t* vallen,
+    unsigned char* found, char** errptr);
+
+extern ROCKSDB_LIBRARY_API unsigned char rocksdb_get_into_buffer_cf(
+    rocksdb_t* db, const rocksdb_readoptions_t* options,
+    rocksdb_column_family_handle_t* column_family, const char* key,
+    size_t keylen, char* buffer, size_t buffer_size, size_t* vallen,
+    unsigned char* found, char** errptr);
+```
+
+The implementation is a thin wrapper over the same `PinnableSlice`-based `Get` used everywhere
+else — a `memcpy` happens only if the caller's buffer is already big enough, otherwise the real size
+comes back for free in `*vallen`[^get-into-buffer-impl]:
+
+```c
+unsigned char rocksdb_get_into_buffer(rocksdb_t* db,
+                                      const rocksdb_readoptions_t* options,
+                                      const char* key, size_t keylen,
+                                      char* buffer, size_t buffer_size,
+                                      size_t* vallen, unsigned char* found,
+                                      char** errptr) {
+  PinnableSlice pinnable_val;
+  Status s = db->rep->Get(options->rep, db->rep->DefaultColumnFamily(),
+                          Slice(key, keylen), &pinnable_val);
+  if (s.ok()) {
+    *found = 1;
+    *vallen = pinnable_val.size();
+    if (buffer_size >= pinnable_val.size()) {
+      memcpy(buffer, pinnable_val.data(), pinnable_val.size());
+      return 1;  // Success - data copied
+    }
+    return 0;  // Buffer too small
+  } else {
+    *found = 0;
+    *vallen = 0;
+    if (!s.IsNotFound()) {
+      SaveError(errptr, s);
+    }
+    return 0;
+  }
+}
+```
+
+`rocksdb_get_into_buffer_cf` is the same body against a caller-supplied column family instead of
+`DefaultColumnFamily()`.
+
+Early benchmarking against the current `byte[]` path shows it ~13.6% faster at identical allocation
+per op, purely from collapsing three native calls into one[^get-into-buffer-bench].
+
+The catch is the return shape: a fit-or-too-small flag plus two out-params (`vallen`, `found`) doesn't
+fit the `-1`-or-length `int` the rest of the read path still returns. The fix in progress is a sealed
+`CopyResult` — `Copied`, `NotEnoughCapacity(long required)`, `NotFound` — so a `switch` over it is
+exhaustive and no `int` is doing triple duty as length, sentinel, and error code anymore[^sealed-result].
+`CopyResult` documents what happened right in the type instead of leaving it encoded in a number the
+caller has to interpret correctly — the retry path can't be skipped silently, it has to be named as
+its own case:
+
+```java
+ByteBuffer buffer = pool.acquire();
+CopyResult result = rocksdb.get(key, buffer);
+switch (result) {
+    case Copied copied -> process(buffer);
+    case NotEnoughCapacity(long required) -> { /* propagate error or retry with a buffer sized to required */ }
+    case NotFound notFound -> { /* nothing to process */ }
+}
+```
+
+No `default` branch — the compiler rejects the `switch` if a `CopyResult` variant is ever added and
+left unhandled. Same idea as
+[making illegal state unrepresentable](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html):
+once "not enough capacity" is its own type instead of a magic number, forgetting to check it becomes
+a compile error, not a runtime surprise.
 
 ## Conclusion
 
-Design zero-copy data access is not easy but highly rewarding activity.
+Designing zero-copy data access isn't easy — but it's worth it.
 
 The FFM bindings for RocksDB now have a clean way to express zero-copy semantics that, on this
 benchmark run, beat the alternatives at every size — especially the large values: the Java layer
@@ -210,10 +297,19 @@ Instant createdAt = rocksdb.get(key, memorySegment -> Instant.ofEpochMilli(memor
     .orElseThrow();
 ```
 
-Same design is also applied to the `RocksIterator` and most likely will be applied everywhere else.
+The same design is also applied to `RocksIterator`, and will likely extend to the rest of the read path.
 
-If you work with RocksDB in Java and/or you want a concrete project to learn FFM with, [take a look](https://github.com/dfa1/rocksdbffm).
-
+If you work with RocksDB in Java, or want a concrete project to learn FFM with, [take a look](https://github.com/dfa1/rocksdbffm).
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
+
+[^bench-before]: [`FfmBenchmark`](https://github.com/dfa1/rocksdbffm/blob/0cfd631/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBenchmark.java) `readsBlobViaByteArray`/`readsBlobViaMemorySegment`/`readsBlobViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `blobValueSize`. Pre-optimization numbers from commit [0cfd631](https://github.com/dfa1/rocksdbffm/commit/0cfd631), 2 forks, 5 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5.
+
+[^get-into-buffer]: [`rocksdb_get_into_buffer` / `rocksdb_get_into_buffer_cf`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4709-L4722), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1.
+
+[^get-into-buffer-impl]: [`rocksdb_get_into_buffer` / `rocksdb_get_into_buffer_cf`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/db/c.cc#L13618-L13669), `rocksdb/db/c.cc`, RocksDB v11.8.1.
+
+[^get-into-buffer-bench]: [rocksdbffm issue #52](https://github.com/dfa1/rocksdbffm/issues/52): `getViaCopy` (one `rocksdb_get_into_buffer` call into a pre-sized `ByteBuffer`) at 7,454,324 ± 61,687 ops/s vs. `readsBytes` (today's `rocksdb_get_pinned` round trip) at 6,561,700 ± 78,596 ops/s — 5 forks, 10 measurement iterations, non-overlapping 99.9% confidence intervals, identical 192 B/op allocation on both paths.
+
+[^sealed-result]: [rocksdbffm issue #47](https://github.com/dfa1/rocksdbffm/issues/47), "Replace int/long sentinel returns on the read path with a sealed result hierarchy." Proposed shape: `public sealed interface CopyResult permits Copied, NotEnoughCapacity, NotFound`.
 
