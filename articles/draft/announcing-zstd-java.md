@@ -37,7 +37,7 @@ java --enable-native-access=ALL-UNNAMED Demo.java
 
 ## Point two: module support
 
-`ALL-UNNAMED` grants native access to everything on the classpath — every dependency, not just zstd-java. On the module path, the grant can name a single module instead. zstd-java ships a real `module-info.java` declaring exactly that module:
+The native-access flag from point one has a blast-radius problem: `ALL-UNNAMED` grants native access to everything on the classpath, not just zstd-java — every dependency in the app gets the same grant, whether it touches native memory or not. The module path fixes that. There, the grant can name a single module instead of blanket-approving the whole classpath, and zstd-java ships a real `module-info.java` declaring exactly that module:
 
 ```java
 module io.github.dfa1.zstd {
@@ -53,7 +53,7 @@ java --module-path app.jar:zstd-platform.jar \
      -m myapp/com.example.Main
 ```
 
-One package exported; the `MethodHandle`s that actually touch native memory never leave the module[^adr-0011]. zstd-jni has no equivalent — it ships as a plain jar with no `module-info.java`, so on the module path it resolves as an automatic module with a name derived from the jar filename and no export control at all. That's not a knock on zstd-jni: JNI never had a restricted operation for a module system to gate. The distinction only exists because FFM created something worth scoping in the first place.
+The payoff shows up at review time, not runtime: a security reviewer can grep a deployment manifest for one module name instead of auditing every jar on the classpath for what might touch native memory. One package exported; the `MethodHandle`s that actually touch native memory never leave the module[^adr-0011]. zstd-jni has no equivalent — it ships as a plain jar with no `module-info.java`, so on the module path it resolves as an automatic module with a name derived from the jar filename and no export control at all. That's not a knock on zstd-jni: JNI never had a restricted operation for a module system to gate. The distinction only exists because FFM created something worth scoping in the first place.
 
 ## Point three: domain primitives, with value types on the horizon
 
@@ -70,7 +70,32 @@ public record ZstdByteSize(long value) {
 }
 ```
 
-Be precise about what that constructor actually guarantees: non-negativity, nothing more. A hostile zstd frame that declares a large-but-technically-valid decompressed size still constructs a perfectly legal `ZstdByteSize` — the record catches malformed input, not implausible input, and those are different guarantees. The decompression-bomb defense in zstd-java is a separate API decision, not the type's constructor: the one-argument `decompress(byte[])` trusts the frame header's declared size outright, but its javadoc says so and points at the bounded overload, `decompress(byte[], ZstdByteSize)`, which caps the allocation at a bound the caller picks regardless of what the frame claims[^bomb]. The type closes off malformed sizes; deciding how much of an untrusted claim to trust is still a judgment call the API has to expose, not something a validating constructor can absorb on its own.
+The other two follow the same shape, but validate against bounds queried from the linked libzstd itself rather than a fixed constant — a level or window log valid for one build of libzstd isn't hardcoded as valid for every build:
+
+```java
+public record ZstdCompressionLevel(int value) {
+    public ZstdCompressionLevel {
+        if (value < MIN_ACCEPTED || value > MAX_ACCEPTED) {
+            throw new IllegalArgumentException("level " + value + " outside [" + MIN_ACCEPTED + ", " + MAX_ACCEPTED + "]");
+        }
+    }
+    // DEFAULT, FASTEST, MAX ...
+}
+```
+
+```java
+public record ZstdWindowLog(int value) {
+    public ZstdWindowLog {
+        if (value != 0 && (value < MIN_ACCEPTED || value > MAX_ACCEPTED)) {
+            throw new IllegalArgumentException(
+                    "windowLog " + value + " must be 0 or in [" + MIN_ACCEPTED + ", " + MAX_ACCEPTED + "]");
+        }
+    }
+    // AUTO ...
+}
+```
+
+Be precise about what the `ZstdByteSize` constructor actually guarantees: non-negativity, nothing more. A hostile zstd frame that declares a large-but-technically-valid decompressed size still constructs a perfectly legal `ZstdByteSize` — the record catches malformed input, not implausible input, and those are different guarantees. The decompression-bomb defense in zstd-java is a separate API decision, not the type's constructor: the one-argument `decompress(byte[])` trusts the frame header's declared size outright, but its javadoc says so and points at the bounded overload, `decompress(byte[], ZstdByteSize)`, which caps the allocation at a bound the caller picks regardless of what the frame claims[^bomb]. The type closes off malformed sizes; deciding how much of an untrusted claim to trust is still a judgment call the API has to expose, not something a validating constructor can absorb on its own.
 
 zstd-java's v0.12 changelog frames the domain-primitive sweep — `ZstdByteSize`, `ZstdCompressionLevel`, `ZstdWindowLog`, `ZstdMagicVariant`, `ZstdVersion` — as a direct application of the case made in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html)[^changelog].
 
@@ -78,9 +103,7 @@ These are ordinary `record`s today — identity classes, one heap allocation api
 
 ## Proof: vortex-java
 
-The three points above aren't a pitch in the abstract — they're why vortex-java's `vortex.zstd` column encoding runs on zstd-java today. Vortex's columnar encodings include dictionary, delta, FastLanes, and a Zstd fallback, and until v0.10.0 that fallback went through `io.airlift:aircompressor-v3`, a pure-Java Zstd decoder. Migrating it to `io.github.dfa1.zstd:zstd` picked up framed, sliceable payloads, nullable-column support, and shared-dictionary decode in one change[^vortex-changelog]. Consumers pull in exactly one dependency, `zstd-platform`, and get the binding plus native `libzstd` for every supported platform — no per-platform artifact juggling on their side either.
-
-The lesson generalizes further than the boundary it started at. To split a large column into independently decodable frames, `vortex.zstd` writes its own per-frame metadata — an `uncompressed_size` field vortex-java itself defines, not the zstd frame header `ZstdByteSize` guards. A later security fix found that field summed into a `long` with no validation at all before being handed to `arena.allocate`: a crafted value could overflow the running total to a small positive (under-allocating) or simply claim an oversized one[^vortex-security]. `ZstdByteSize` never saw it, because it isn't zstd-java's field to see — vortex.zstd is a format vortex-java layered on top, and every layer that parses a size out of untrusted bytes has to bring its own guard. Domain primitives at one boundary don't propagate to the next one for free.
+The three points above aren't a pitch in the abstract — they're why vortex-java's `vortex.zstd` column encoding runs on zstd-java today. Both are `MemorySegment`-native: vortex-java is 100% Java built on `MemorySegment`/`Arena`, no JNI and no `sun.misc.Unsafe`[^vortex-memorysegment], and zstd-java's `byte[]` convenience methods are themselves thin wrappers over the same `MemorySegment`-based native calls — `MemorySegment` is the primary API, not an alternate path[^zstd-primary]. That match means the integration boundary is a segment handoff, not a copy. Vortex's columnar encodings include dictionary, delta, FastLanes, and a Zstd fallback, and until v0.10.0 that fallback went through `io.airlift:aircompressor-v3`, a pure-Java Zstd decoder. Migrating it to `io.github.dfa1.zstd:zstd` picked up framed, sliceable payloads, nullable-column support, and shared-dictionary decode in one change[^vortex-changelog]. Consumers pull in exactly one dependency, `zstd-platform`, and get the binding plus native `libzstd` for every supported platform — no per-platform artifact juggling on their side either.
 
 Worth being precise about scope here: zstd-jni hasn't gone away from vortex-java entirely. It's still what the Parquet reader uses to decode ZSTD-compressed Parquet pages — an unrelated integration, solving a different problem (reading someone else's file format, not writing Vortex's own). Nothing here claims zstd-jni was replaced project-wide; only the `vortex.zstd` encoding moved.
 
@@ -110,4 +133,6 @@ zstd-java is on Maven Central, BSD 3-Clause licensed, JDK 25+ only, and honest a
 
 [^vortex-changelog]: [CHANGELOG.md](https://github.com/dfa1/vortex-java/blob/master/CHANGELOG.md), vortex-java v0.10.0, 2026-06-26: "The `vortex.zstd` encoding now compresses and decompresses through `io.github.dfa1.zstd:zstd` ... instead of `io.airlift:aircompressor-v3`."
 
-[^vortex-security]: vortex-java commit [2df4e3a7](https://github.com/dfa1/vortex-java/commit/2df4e3a7): "decode summed untrusted per-frame uncompressed_size into a long with no validation, then arena.allocate'd it; a crafted metadata could wrap the total to a small positive (under-allocation) or claim a huge size (allocation DoS)." Fixed alongside [adc445e8](https://github.com/dfa1/vortex-java/commit/adc445e8).
+[^vortex-memorysegment]: [vortex-java README](https://github.com/dfa1/vortex-java#readme): "100% Java, no JNI, no `sun.misc.Unsafe`. Uses the FFM API (`MemorySegment`/`Arena`, Java 25+)."
+
+[^zstd-primary]: [`Zstd.java`](https://github.com/dfa1/zstd-java/blob/master/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java): every `byte[]` overload opens an `Arena` and allocates `MemorySegment`s internally to make the same native call the `MemorySegment` API exposes directly — the `byte[]` path is a convenience wrapper, not a separate implementation.
