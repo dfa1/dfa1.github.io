@@ -5,14 +5,14 @@
 *[rocksdbffm](https://github.com/dfa1/rocksdbffm), the FFM-based RocksDB binding I wrote about
 [last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
 genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
-a pointer straight into the block cache, no intermediate copy at all. The idea is to build
-a high-performance API with Java and FFM.
+a pointer straight into the block cache, no intermediate copy at all. Getting that pointer into Java
+safely turned out to be the easy part. Making it fast was where the surprises were — twice.*
 
 ---
 
 ## The new C API
 
-Recently the RocksDB C API added some new functions for zero-copy reads[^c-header]:
+RocksDB v10.9.1 added a family of zero-copy read functions to the C API[^c-header]:
 
 ```c
 /* High-performance zero-copy Get variants
@@ -54,30 +54,23 @@ the borrow, with no caller-supplied-buffer API at all; `grocksdb` does the same.
 and upstream regrets it — its own source carries a TODO admitting as much: "we should improve the
 `#get()` API, returning -1 (`RocksDB.NOT_FOUND`) is not very nice."
 
-`withPinned` wraps the handle in a scoped callback instead of returning the raw view:
+So the public read overload wraps the handle in a scoped callback instead of returning the raw view:
 
 ```java
-public <R> Optional<R> withPinned(MemorySegment key, PinnedReader<R> fn) throws Exception {
+public <R> Optional<R> get(MemorySegment key, Mapper<R> fn) {
     return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
 }
 ```
 
-Internally, that call threads two callbacks through one core method — the native downcall and `fn`
-itself:
+Internally, that call threaded *two* callbacks through one shared core method — one for the native
+downcall, one for the caller's `fn`. That second callback is the interesting one, and it comes back
+into the story later, when the GC profiler shows what it was quietly costing.
 
-```java
-private interface PinnedGet {
-    MemorySegment invoke(MemorySegment errptr) throws Throwable;
-}
-```
-
-Called as `withPinned0(err -> (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err), fn)`
-— one callback for the downcall, one for the caller. That double callback comes back into the story
-later, when the GC profiler shows what it actually costs.
-
-`PinnedReader<R>` is `R read(MemorySegment value) throws Exception`. The `MemorySegment` handed to
+`Mapper<R>` is a single method, `R map(MemorySegment value)`. The `MemorySegment` handed to
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
 that closes the moment `fn` returns — before the native handle is destroyed via `rocksdb_pinnable_handle_destroy`.
+Escaping the view therefore fails loudly rather than reading freed memory: `IllegalStateException` if
+it is used after the call returns, `WrongThreadException` if another thread touches it.
 
 ## The benchmark I expected to be boring
 
@@ -126,9 +119,9 @@ dips to 96 B instead of the usual ~296 B: less bookkeeping for the smallest call
 Two things were allocating on every single invocation, neither of them the value:
 
 **A closure per call.** The two public overloads — plain key, and key plus column family — shared
-one core method that owned the arena-then-destroy lifetime logic, so a divergence between their
-`finally` blocks couldn't happen by construction. The mechanism was a
-`PinnedGet` functional interface:
+one core method (`withPinned0`, `withPinnedCore` in the repo today) that owned the arena-then-destroy
+lifetime logic, so a divergence between their `finally` blocks couldn't happen by construction. The
+mechanism was a `PinnedGet` functional interface:
 
 ```java
 private interface PinnedGet {
@@ -153,7 +146,7 @@ guarantee that made the split necessary in the first place:
 
 ```java
 static <R> Optional<R> withPinned(MemorySegment db, MemorySegment readOpts,
-                                   MemorySegment key, PinnedReader<R> fn) throws Exception {
+                                   MemorySegment key, Mapper<R> fn) {
     try (Arena arena = Arena.ofConfined()) {
         MemorySegment scratch = errHolder(arena);
         MemorySegment handle;
@@ -187,6 +180,19 @@ Same benchmark, same machine, same six sizes, GC profiler still attached:
 | 1 MB | 22.0K ops/s | 33.6K ops/s | 77.3K ops/s | 289 B (was 417) | +251.7% | +130.3% | 3.52x |
 
 So avoiding the lambda's capture and the one extra allocation in the hot path really helped.
+
+One caveat about the right-hand end of that table, because it is easy to quote out of context: the
+`withPinned` benchmark maps with `MemorySegment::byteSize`. It pins the value and reads its *length* —
+it never touches the megabyte itself. That is a real usage pattern (checking a size, reading a header,
+parsing a prefix), and it is the pattern the callback API exists to serve, but it is the best case.
+
+The three columns actually decompose the cost. At 1 MB, `byte[]` both allocates a megabyte on the heap
+and copies into it (22.0K ops/s); `MemorySegment` only copies, into a buffer the caller preallocated
+once (33.6K ops/s); `withPinned` does neither (77.3K ops/s). So dropping the *allocation* alone buys
+roughly 1.5x, and the remaining jump is the copy — which only disappears if you genuinely do not need
+the bytes materialized. If your consumer has to read all 1 MB, the honest number is the middle column,
+not the right one. The GC relief is arguably the better story there anyway: allocation per operation
+falls from a megabyte to a flat ~289 bytes.
 
 ## What's next: `copy_into_buffer` and better return types
 
@@ -279,8 +285,9 @@ a compile error, not a runtime surprise.
 Designing zero-copy data access isn't easy — but it's worth it.
 
 The FFM bindings for RocksDB now have a clean way to express zero-copy semantics that, on this
-benchmark run, beat the alternatives at every size — especially the large values: the Java layer
-hands back a `MemorySegment`, and the rule is simple: don't store it, just read the data.
+benchmark run, beat the alternatives at every size measured — by a little on small values, by a lot
+on large ones, and most decisively on allocation. The Java layer hands back a `MemorySegment`, and
+the rule is simple: don't store it, just read the data.
 
 Take a value stored as a raw 8-byte epoch-millis long and read back as a `java.time.Instant`. The
 `byte[]` path allocates an array just to hand it straight to `getLong()` and throw it away:
@@ -303,7 +310,7 @@ If you work with RocksDB in Java, or want a concrete project to learn FFM with, 
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
-[^bench-before]: [`FfmBenchmark`](https://github.com/dfa1/rocksdbffm/blob/0cfd631/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBenchmark.java) `readsBlobViaByteArray`/`readsBlobViaMemorySegment`/`readsBlobViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `blobValueSize`. Pre-optimization numbers from commit [0cfd631](https://github.com/dfa1/rocksdbffm/commit/0cfd631), 2 forks, 5 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5.
+[^bench-before]: [`FfmBlobSizeBenchmark`](https://github.com/dfa1/rocksdbffm/blob/0cfd631/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBlobSizeBenchmark.java) `readsBlobViaByteArray`/`readsBlobViaMemorySegment`/`readsBlobViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `blobValueSize`. Pre-optimization numbers from commit [0cfd631](https://github.com/dfa1/rocksdbffm/commit/0cfd631), 2 forks, 5 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5. At that commit the benchmark seeded a single key and measured without flushing, so every read resolved from the memtable; absolute throughput is therefore higher than a populated database would give, though all three tiers hit the same memtable and the comparison between them holds. The benchmark has since been renamed `FfmValueSizeBenchmark` and given a populated, flushed and compacted dataset.
 
 [^get-into-buffer]: [`rocksdb_get_into_buffer` / `rocksdb_get_into_buffer_cf`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4709-L4722), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1.
 
