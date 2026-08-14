@@ -6,7 +6,8 @@
 [last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
 genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
 a pointer straight into the block cache, no intermediate copy at all. Getting that pointer into Java
-safely turned out to be the easy part. Making it fast was where the surprises were — twice.*
+safely turned out to be the easy part. Measuring whether it was actually faster is where this went
+sideways, more than once.*
 
 ---
 
@@ -111,10 +112,11 @@ the rest of the picture. Restated alongside `byte[]` and `MemorySegment`'s own a
 `byte[]`'s curve is exactly `value_size + ~160 B` — a heap array that grows with the payload, plus
 constant `PinnableSlice` bookkeeping. `MemorySegment`'s stays flat regardless of value size, since the
 destination buffer is preallocated once outside the benchmark loop and handed in by the caller — what
-little is left to allocate is native-call bookkeeping, not the value, which is also why the 8 B row
-dips to 96 B instead of the usual ~296 B: less bookkeeping for the smallest call. `withPinned`'s is
-*also* flat — proof it never touches the value bytes — but flat at roughly 400 bytes, not zero.
-"Zero-copy" describes what happens to the value. It says nothing about what happens to the call.
+little is left to allocate is native-call bookkeeping, not the value. (The 8 B row's dip to 96 B is
+the one number here I would not build an argument on: re-measuring later with more forks gave a flat
+curve at every size, so that dip was noise rather than a real effect.) `withPinned`'s is *also* flat —
+proof it never touches the value bytes — but flat at roughly 400 bytes, not zero. "Zero-copy"
+describes what happens to the value. It says nothing about what happens to the call.
 
 Two things were allocating on every single invocation, neither of them the value:
 
@@ -193,6 +195,49 @@ roughly 1.5x, and the remaining jump is the copy — which only disappears if yo
 the bytes materialized. If your consumer has to read all 1 MB, the honest number is the middle column,
 not the right one. The GC relief is arguably the better story there anyway: allocation per operation
 falls from a megabyte to a flat ~289 bytes.
+
+## Where it actually stands
+
+Both tables above come from a benchmark that seeded one key and measured without flushing, so every
+read resolved from the memtable. All three tiers hit the same memtable, so the comparison between
+them survives — but the absolute throughput is higher than a real database gives, and one fork is not
+enough to separate tiers that land within a few percent of each other.
+
+Rebuilt against a populated dataset (32 MB, flushed and compacted before measuring) at five forks,
+25 iterations, GC profiler attached[^bench-today]:
+
+| Value size | `byte[]` | `MemorySegment` | `withPinned` | `withPinned` vs `byte[]` |
+|---|---|---|---|---|
+| 8 B | 2,268,074 ± 8,587 | 2,231,895 ± 22,794 | 2,236,311 ± 16,273 | **−1.4%** |
+| 16 B | 1,848,519 ± 7,001 | 1,824,674 ± 24,329 | 1,800,191 ± 9,366 | **−2.6%** |
+| 1 KB | 2,415,181 ± 31,935 | 2,524,256 ± 16,807 | 2,553,068 ± 15,267 | +5.7% |
+| 4 KB | 1,913,045 ± 70,820 | 2,317,311 ± 24,793 | 2,534,819 ± 17,341 | +32.5% |
+| 64 KB | 524,415 ± 1,985 | 820,967 ± 25,206 | 2,665,982 ± 22,768 | +408% |
+| 1 MB | 39,784 ± 139 | 74,513 ± 836 | 2,716,631 ± 36,222 | +6728% |
+
+Zero-copy is *not* free at the small end. At 8 and 16 bytes it loses to the copying path by 1.4% and
+2.6%, and those confidence intervals do not overlap — it is a real effect, not noise. The per-call
+machinery, a confined `Arena` chief among it, costs more than copying eight bytes does. The crossover
+sits somewhere between 16 bytes and 1 KB, and past it the gap opens fast: 32% at 4 KB, 4x at 64 KB,
+68x at 1 MB.
+
+That is the honest shape of the feature. Zero-copy reads are not a blanket win to switch on
+everywhere; they are a large win above roughly a kilobyte, a wash in the hundreds of bytes, and a
+small loss on tiny values. Allocation tells the same story more starkly, and with far less
+measurement noise — it is flat at 224–248 B/op across the whole range, while `byte[]` climbs to just
+over a megabyte per operation:
+
+| Value size | `byte[]` alloc/op | `MemorySegment` alloc/op | `withPinned` alloc/op |
+|---|---|---|---|
+| 8 B | 224 B | 160 B | 224 B |
+| 16 B | 232 B | 160 B | 224 B |
+| 1 KB | 1,240 B | 160 B | 248 B |
+| 4 KB | 4,312 B | 160 B | 248 B |
+| 64 KB | 65,752 B | 160 B | 248 B |
+| 1 MB | 1,048,793 B | 161 B | 248 B |
+
+`byte[]` is exactly `value_size + 216 B`, linear to within a byte across four orders of magnitude.
+If you only remember one row, make it the last one: a megabyte of garbage per read, versus 248 bytes.
 
 ## What's next: `copy_into_buffer` and better return types
 
@@ -284,10 +329,15 @@ a compile error, not a runtime surprise.
 
 Designing zero-copy data access isn't easy — but it's worth it.
 
-The FFM bindings for RocksDB now have a clean way to express zero-copy semantics that, on this
-benchmark run, beat the alternatives at every size measured — by a little on small values, by a lot
-on large ones, and most decisively on allocation. The Java layer hands back a `MemorySegment`, and
-the rule is simple: don't store it, just read the data.
+The FFM bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
+couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
+magnitude on large ones. The Java layer hands back a `MemorySegment`, and the rule is simple: don't
+store it, just read the data.
+
+The measuring was harder than the implementing, and got two answers wrong before it got one right:
+first a lambda capture and a redundant scratch allocation hiding inside a "zero-copy" path, then a
+single-key database quietly turning every read benchmark into a memtable probe. Zero-copy is worth
+doing. It is just worth checking that you built the thing you think you built.
 
 Take a value stored as a raw 8-byte epoch-millis long and read back as a `java.time.Instant`. The
 `byte[]` path allocates an array just to hand it straight to `getLong()` and throw it away:
@@ -311,6 +361,8 @@ If you work with RocksDB in Java, or want a concrete project to learn FFM with, 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
 [^bench-before]: [`FfmBlobSizeBenchmark`](https://github.com/dfa1/rocksdbffm/blob/0cfd631/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBlobSizeBenchmark.java) `readsBlobViaByteArray`/`readsBlobViaMemorySegment`/`readsBlobViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `blobValueSize`. Pre-optimization numbers from commit [0cfd631](https://github.com/dfa1/rocksdbffm/commit/0cfd631), 2 forks, 5 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5. At that commit the benchmark seeded a single key and measured without flushing, so every read resolved from the memtable; absolute throughput is therefore higher than a populated database would give, though all three tiers hit the same memtable and the comparison between them holds. The benchmark has since been renamed `FfmValueSizeBenchmark` and given a populated, flushed and compacted dataset.
+
+[^bench-today]: [`FfmValueSizeBenchmark`](https://github.com/dfa1/rocksdbffm/blob/main/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmValueSizeBenchmark.java) `readsValueViaByteArray`/`readsValueViaMemorySegment`/`readsValueViaPinned`, `@Param({"8","16","1024","4096","65536","1048576"})` on `valueSize`. 5 forks, 3 warmup + 5 measurement iterations at 1 s each, `-prof gc`, JDK 25 on an Apple M5; errors are 99.9% confidence intervals. `setup()` writes a ~32 MB dataset (key count derived from the target size, so it falls as value size rises) and then flushes and compacts before measuring. Because key count varies by row, compare tiers within a row rather than throughput down a column. As in the earlier tables, the `withPinned` tier maps with `MemorySegment::byteSize` and so never materializes the value.
 
 [^get-into-buffer]: [`rocksdb_get_into_buffer` / `rocksdb_get_into_buffer_cf`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4709-L4722), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1.
 
