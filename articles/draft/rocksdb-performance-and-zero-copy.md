@@ -69,9 +69,32 @@ into the story later, when the GC profiler shows what it was quietly costing.
 
 `Mapper<R>` is a single method, `R map(MemorySegment value)`. The `MemorySegment` handed to
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
-that closes the moment `fn` returns — before the native handle is destroyed via `rocksdb_pinnable_handle_destroy`.
-Escaping the view therefore fails loudly rather than reading freed memory: `IllegalStateException` if
-it is used after the call returns, `WrongThreadException` if another thread touches it.
+owned by the caller: `fn` returns, the handle is destroyed in a `finally`, and the arena closes
+immediately after, on the way out. Escaping the view therefore fails loudly rather than silently
+reading freed memory: `IllegalStateException` once the arena closes, `WrongThreadException` if
+another thread touches it.
+
+The pin is what keeps the bytes alive, and it lasts exactly as long as the callback:
+
+```
+withPinned(key, fn) — who holds the bytes, and for how long
+
+   ┌ rocksdb_get_pinned_v2         block-cache page is pinned here
+   │
+   │   fn(view)                    the only window where the pointer
+   │                               is live — reads land in the block
+   │                               cache itself, nothing is copied
+   │
+   ├ rocksdb_pinnable_handle_destroy
+   │                               page unpinned, bytes may be evicted
+   │
+   └ arena.close()                 an escaped view now throws:
+                                   IllegalStateException on this thread,
+                                   WrongThreadException from any other
+```
+
+The narrow gap between `destroy` and `arena.close()` is real, but no caller code runs inside it —
+it is a single native call followed immediately by the resource close, with nothing in between.
 
 ## The benchmark I expected to be boring
 
@@ -79,6 +102,39 @@ Three read paths do the same thing with different cost profiles: `get(byte[])` a
 returns a new array on every call; `get(MemorySegment, MemorySegment)` copies into a buffer the
 caller preallocated once; `withPinned` copies nothing at all. I expected `withPinned` to win, and
 to win more as values got bigger — more bytes not copied should mean more time saved.
+
+Drawn out, the difference is where the value bytes end up:
+
+```
+get(byte[] key) — convenience tier
+
+   JVM heap                 │  native (RocksDB)
+                            │
+   new byte[valueSize] ◄──copy──  pinned block-cache page
+                            │
+   1 value-sized allocation + 1 copy — both grow with the value
+
+
+get(MemorySegment key, MemorySegment dst) — buffer tier
+
+   JVM heap                 │  native (RocksDB)
+                            │
+   caller's dst        ◄──copy──  pinned block-cache page
+   (allocated once)         │
+                            │
+   0 allocations + 1 copy — the copy still grows with the value
+
+
+get(MemorySegment key, Mapper<R> fn) — pinned tier
+
+   JVM heap                 │  native (RocksDB)
+                            │
+   fn(view) ──reads through────►  pinned block-cache page
+                            │
+   0 allocations + 0 copies — flat, whatever the value size
+```
+
+Only the third one is zero-copy in the strict sense: the value never crosses the line.
 
 A JMH size sweep from 8 bytes to 1 MB on an Apple M5 MacBook, GC profiler attached, said
 otherwise[^bench-before]:
