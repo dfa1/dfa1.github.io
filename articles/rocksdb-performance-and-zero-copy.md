@@ -3,7 +3,7 @@
 *8 August 2026*
 
 *[rocksdbffm](https://github.com/dfa1/rocksdbffm), the [FFM-based](https://openjdk.org/jeps/454) [RocksDB](https://rocksdb.org/) binding I wrote about
-[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html). This is my little journey into zero-copy performance.*
+[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html). Here's what it took to get reads down to zero allocations — and what the benchmarks had to say about it.*
 
 ---
 
@@ -31,7 +31,7 @@ Is it possible to do better?
 
 ## The new C API for PinnableSlice
 
-RocksDB v10.9.1 added a family of zero-copy read functions to the C API[^c-header]:
+RocksDB v10.9.1 added a family of zero-copy read functions to the C API[^c-header] (rocksdbffm currently pins v11.8.1, which carries it forward):
 
 ```c
 /* High-performance zero-copy Get variants
@@ -98,6 +98,11 @@ withPinned(key, fn) — who holds the bytes, and for how long
 
 The narrow gap between `destroy` and `arena.close()` is real, but no caller code runs inside it —
 it is a single native call followed immediately by the resource close, with nothing in between.
+
+The flip side of that guarantee is that `fn` should be fast. The block-cache page stays pinned for
+as long as `fn` runs, so doing I/O or anything slow inside it holds that page — and the memory
+budget it counts against — hostage for the duration. Read what you need and get out; don't use the
+callback as a place to do work.
 
 ## The benchmark I expected to be boring
 
@@ -194,7 +199,9 @@ call — but by the time `get_value` runs, `checkError` has already consumed and
 ## The benchmark that surprised me (again!)
 
 Split the "which native symbol" part from the "how the lifetime works" part, without losing the
-guarantee that made the split necessary in the first place:
+guarantee that made the split necessary in the first place. The plain-key overload becomes `map`;
+`withPinnedCore` still owns the arena-then-destroy lifetime, now called directly instead of through
+a lambda:
 
 ```java
 static <R> Optional<R> map(MemorySegment db, MemorySegment readOpts,
@@ -207,7 +214,7 @@ static <R> Optional<R> map(MemorySegment db, MemorySegment readOpts,
         } catch (Throwable t) {
             throw RocksDBException.wrap("get_pinned failed", t);
         }
-        return withPinned0(arena, scratch, handle, fn);
+        return withPinnedCore(arena, scratch, handle, fn);
     }
 }
 ```
@@ -395,13 +402,71 @@ a compile error, not a runtime surprise.
 
 ## Conclusion
 
-Designing zero-copy data access isn't easy, but it's worth it — it makes systems that use it
-more scalable and cheaper, as discussed
+As of **rocksdbffm v0.7**, the zero-copy read path extends across every DB type and `RocksIterator`,
+and a dedicated benchmark puts it up against `rocksdbjni` directly, rather than only against itself.
+Two databases (10,000 and 100,000 keys), two value sizes (8 B and 1 KB), flushed and compacted before
+measuring:
+
+**get(key): throughput (ops/s)**
+
+| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` | zero-copy vs FFM `byte[]` | FFM `byte[]` vs JNI |
+|---|---|---|---|---|---|---|
+| 10,000 | 8 B | 2,392,348 ± 50,772 | 2,118,772 ± 24,575 | 1,644,790 ± 65,168 | −11.4% | +45.5% |
+| 10,000 | 1 KB | 2,430,474 ± 37,736 | 2,325,339 ± 107,314 | 1,658,197 ± 15,656 | −4.3% | +46.6% |
+| 100,000 | 8 B | 2,541,054 ± 49,822 | 2,445,539 ± 19,652 | 1,816,604 ± 10,173 | −3.8% | +39.9% |
+| 100,000 | 1 KB | 1,991,408 ± 29,846 | 2,198,031 ± 15,137 | 1,553,265 ± 19,321 | +10.4% | +28.2% |
+
+**get(key): allocation (bytes/op)**
+
+| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` |
+|---|---|---|---|---|
+| 10,000 | 8 B | 120.0 | 224.0 | 24.0 |
+| 10,000 | 1 KB | 1,136.0 | 248.0 | 1,040.0 |
+| 100,000 | 8 B | 120.0 | 224.0 | 24.0 |
+| 100,000 | 1 KB | 1,136.0 | 248.0 | 1,040.0 |
+
+**`iterator.next()` + `value()`: throughput (ops/s)**
+
+| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` | zero-copy vs FFM `byte[]` | FFM `byte[]` vs JNI |
+|---|---|---|---|---|---|---|
+| 10,000 | 8 B | 12,726,674 ± 70,422 | 13,653,097 ± 103,233 | 7,222,167 ± 56,480 | +7.3% | +76.2% |
+| 10,000 | 1 KB | 6,573,261 ± 39,494 | 10,308,013 ± 67,213 | 4,562,051 ± 58,310 | +56.8% | +44.1% |
+| 100,000 | 8 B | 11,919,850 ± 59,548 | 13,153,151 ± 113,063 | 6,915,553 ± 36,563 | +10.3% | +72.4% |
+| 100,000 | 1 KB | 2,280,381 ± 17,224 | 2,733,714 ± 18,938 | 1,919,130 ± 28,481 | +19.9% | +18.8% |
+
+**`iterator.next()` + `value()`: allocation (bytes/op)**
+
+| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` |
+|---|---|---|---|---|
+| 10,000 | 8 B | 24.0 | 0.0 | 24.0 |
+| 10,000 | 1 KB | 1,040.0 | 0.0 | 1,040.0 |
+| 100,000 | 8 B | 24.0 | 0.0 | 24.0 |
+| 100,000 | 1 KB | 1,040.0 | 0.0 | 1,040.0 |
+
+Iteration is where zero-copy is unambiguous: allocation-free at every scale, and 19–76% faster than
+the JNI binding regardless of whether zero-copy is even used — FFM's plain `byte[]` iteration tier
+already beats JNI on its own. `get` repeats the shape from the single-key and few-thousand-key
+benchmarks above: zero-copy loses to FFM's own `byte[]` tier at 8 bytes (the ~224 B/op fixed cost of
+a per-call `Arena.ofConfined()` outweighs copying 8 bytes), breaks even around 1 KB, and by 100,000
+keys / 1 KB values is 10% ahead. But even FFM's plain `byte[]` tier — no zero-copy involved — beats
+JNI by 28–47% on `get` and by up to 76% on iteration, at every scale tested.
+
+Zero-copy earns its keep above roughly a kilobyte and costs a couple of percent below it — not a
+blanket win, but a real one where it applies. It's worth designing for anyway, because it makes
+systems that use it more scalable and cheaper, as discussed
 [here](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html).
 
 These bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
 couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
 magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it more precisely.
+
+One honest caveat: every number in this article, including the v0.7 scale table above, comes from a
+single machine (an Apple M5 MacBook, macOS arm64) against a database that's small by production
+standards — 10,000 to 100,000 keys, not the millions a real deployment runs against. I'd welcome
+feedback on the benchmark methodology itself (JMH fork/warmup counts, whether flushing and compacting
+before measuring is representative enough, what else should be controlled for), and help running
+`scripts/benchmark.sh ScaleBenchmarkRunner` on Linux and Windows, or against a larger dataset, to see
+whether the shape holds. Open an issue on the repo if you try it.
 
 If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 

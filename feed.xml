@@ -18,7 +18,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>rocksdbffm, the FFM-based RocksDB binding I wrote about last time. This is my little journey into zero-copy performance.</summary>
+    <summary>rocksdbffm, the FFM-based RocksDB binding I wrote about last time. Here's what it took to get reads down to zero allocations — and what the benchmarks had to say about it.</summary>
   </entry>
   <entry>
     <title>Build the Loop, Not the Prompt</title>
