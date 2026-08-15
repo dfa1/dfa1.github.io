@@ -56,4 +56,8 @@
     <loc>https://dfa1.github.io/articles/build-the-loop-not-the-prompt.html</loc>
     <lastmod>2026-07-06</lastmod>
   </url>
+  <url>
+    <loc>https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html</loc>
+    <lastmod>2026-08-08</lastmod>
+  </url>
 </urlset>

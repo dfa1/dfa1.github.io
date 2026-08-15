@@ -3,12 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-07-06T00:00:00Z</updated>
+  <updated>2026-08-08T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>https://dfa1.github.io/feed.xml</id>
 
+  <entry>
+    <title>RocksDB Performance and Zero-Copy</title>
+    <link href="https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html"/>
+    <id>https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html</id>
+    <updated>2026-08-08T00:00:00Z</updated>
+    <published>2026-08-08T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>rocksdbffm, the FFM-based RocksDB binding I wrote about last time. This is my little journey into zero-copy performance.</summary>
+  </entry>
   <entry>
     <title>Build the Loop, Not the Prompt</title>
     <link href="https://dfa1.github.io/articles/build-the-loop-not-the-prompt.html"/>
