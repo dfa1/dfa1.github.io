@@ -2,25 +2,29 @@
 
 *8 August 2026*
 
-*[rocksdbffm](https://github.com/dfa1/rocksdbffm), the FFM-based RocksDB binding I wrote about
-[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html), just picked up a
-genuinely zero-copy read path: RocksDB's C API grew a `rocksdb_pinnable_handle_t` that hands back
-a pointer straight into the block cache, no intermediate copy at all. Getting that pointer into Java
-safely turned out to be the easy part. Measuring whether it was actually faster is where this went
-sideways, more than once.*
+*[rocksdbffm](https://github.com/dfa1/rocksdbffm), the [FFM-based](https://openjdk.org/jeps/454) [RocksDB](https://rocksdb.org/) binding I wrote about
+[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html). This my little journey
+in
+*
 
 ---
 
 ## Context
 
-The library is still a proposal as I want to explore some new trade-off and it is not clear. One of the central
-idea is to express contracts with types i.e. readOnly RocksDB class has no put/delete, pointers
-are not passed as `long`, a read-only database instance does not have delete()/put() that fails at runtime like in `rocksdbjni`, etc.
+The library is still a proposal as I want to explore some new trade-off between proper modelling,
+performance and security by using Java 25.
 
-Like `rocksdjni`, this library exposes every operation in  3 different way, with and without `ColumnFamily`:
+One of the central idea to explore is how to express data contracts with types:
+- readOnly RocksDB class has no put/delete;
+- pointers are not passed as `long`;
+- a read-only database instance does not have delete()/put() that fails at runtime like in `rocksdbjn`;
+- avoid using `int` to deliver errors/domain values;
+- getting good performance without `Unsafe` (see [here](https://openjdk.org/jeps/471)).
+
+Like `rocksdjni`, this library exposes every operation in different ways, with and without `ColumnFamily` and with and without `ReadOptions/WriteOptions`:
 - `byte[] operation(byte[] key)`, return value is allocated on the Java heap;
-- `result operation(ByteBuffer key, ByteBuffer value)`, value is output param
-- `result operation(MemorySegment key, MemorySegment value)`, value is output param
+- `result operation(ByteBuffer key, ByteBuffer value)`, value is output param that must be big enough to hold the value;
+- `result operation(MemorySegment key, MemorySegment value)`, value is output param that must be big enough.
 
 The first one allocates memory proportionally to the request rate so it is not terribly efficient.
 The last two are interesting because they allow to let the user provides the pointer to the
@@ -100,7 +104,8 @@ it is a single native call followed immediately by the resource close, with noth
 
 ## The benchmark I expected to be boring
 
-So let's try to validate the idea with some numbers for the various "styles" of operation.
+So let's try to validate the idea with JMH for the various "styles" of operation.
+The idea is to isolate and measure only the *overhead of the library*, not RocksDB itself.
 Drawn out, the difference is where the value bytes end up:
 
 ```
@@ -133,12 +138,10 @@ get(MemorySegment key, Mapper<R> fn) — pinned tier
    0 allocations + 0 copies — flat, whatever the value size
 ```
 
-Only the third one is zero-copy in the strict sense: the value never crosses the line.
-The `Mapper` receives a "safe" pointer to the memory holding the value and it can be used
-to deserialize the bytes back to Java objects.
+Only the third one is zero-copy in the strict sense: the `Mapper` receives a "safe" pointer
+to the memory holding the value and it can be used to deserialize the bytes back to Java objects.
 
-A JMH benchmark with size sweep from 8 bytes to 1 MB on an Apple M5 MacBook, GC profiler attached,
-said otherwise:
+A JMH benchmark with value size sweep from 8 bytes to 1 MB on an Apple M5 MacBook, GC profiler attached, said otherwise:
 
 | Value size | `byte[]` | `MemorySegment` | zero-copy `Mapper` | zero-copy `Mapper` alloc/op | vs `byte[]` | vs `MemorySegment` | zero-copy `Mapper`/`byte[]` |
 |---|---|---|---|---|---|---|---|
@@ -238,7 +241,7 @@ the bytes materialized. If your consumer has to read all 1 MB, the honest number
 not the right one. The GC relief is arguably the better story there anyway: allocation per operation
 falls from a megabyte to a flat ~289 bytes.
 
-## Benchmark without memtable
+## the final real-world benchmark
 
 Both tables above come from a benchmark that seeded one key and measured without flushing, so every
 read resolved from the memtable. All three tiers hit the same memtable, so the comparison between
@@ -294,25 +297,23 @@ Instant createdAt = Instant.ofEpochMilli(ByteBuffer.wrap(raw).getLong());
 The `get(key, fn)` overload parses the long straight out of the pinned view — no array ever exists:
 
 ```java
-Instant createdAt = rocksdb.get(key, memorySegment -> Instant.ofEpochMilli(memorySegment.get(JAVA_LONG, 0)))
-    .orElseThrow();
+Optional<Instant> createdAt = rocksdb.get(key, memorySegment -> Instant.ofEpochMilli(memorySegment.get(JAVA_LONG, 0)));
 ```
 
 The same design is also applied to `RocksIterator`: it is possible to iterate over key/value
-without every allocating a `byte[]` per item.
+without ever allocating a `byte[]` per item.
 
+## Better return type when data must be copied
 
-## `copy_into_buffer` and better return types
-
-Zero-copy is not always needed: Sometimes data needs to be copied somewhere.
-Initially the library used same zero-copy pattern above:
+Zero-copy is not always needed: often data needs to be copied somewhere.
+Initially, the library used same pin/unpin + copy::
 - pin
 - copy the data into the specified buffer
 - unpin.
 
 Those are 3 native calls per opreration... can we do better?
 
-The same RocksDB release also grew `rocksdb_get_into_buffer`: one native call that
+The same RocksDB release also delivered `rocksdb_get_into_buffer`: one native call that
 copies straight into a caller-provided buffer, returns `1`/`0` for fit-or-not, and always sets
 `vallen` to the real value size — no pin, read pointer, destroy round trip:
 
@@ -363,7 +364,7 @@ unsigned char rocksdb_get_into_buffer(rocksdb_t* db,
 }
 ```
 
-Early benchmark against the current `byte[]` path shows it ~13.6% faster at identical allocation
+Early benchmark against the current `byte[]` path shows it ~15% faster at identical allocation
 per op, purely from collapsing three native calls into one.
 
 The catch is the return shape: a fit-or-too-small flag plus two out-params (`vallen`, `found`) doesn't
@@ -384,11 +385,11 @@ try {
         case NotFound notFound -> { /* nothing to process */ }
    }
 } finally {
-  pool.offer(buffer);
+    pool.release(buffer);
 }
 ```
 
-No `default` branch — the compiler rejects the `switch` if a `CopyResult` variant is ever added and
+No `default` branch because result is a sealed interface so the compiler rejects the `switch` if a `CopyResult` variant is ever added and
 left unhandled. Same idea as
 [making illegal state unrepresentable](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html):
 once "not enough capacity" is its own type instead of a magic number, forgetting to check it becomes
@@ -396,13 +397,14 @@ a compile error, not a runtime surprise.
 
 ## Conclusion
 
-Designing zero-copy data access isn't easy — but it's worth it.
+Designing zero-copy data access isn't easy — but it's worth it to make the systems using it
+more scalable and cheap as discussed
+[here](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html)..
 
-The FFM bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
+These bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
 couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
-magnitude on large ones. The Java layer hands back a `MemorySegment`, and the rule is simple: don't
-store it, just read the data.
+magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same type, when a copy is needed the library can express it more precisely.
 
-If you work with RocksDB in Java, or want a concrete project to learn FFM with, [take a look](https://github.com/dfa1/rocksdbffm).
+If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
