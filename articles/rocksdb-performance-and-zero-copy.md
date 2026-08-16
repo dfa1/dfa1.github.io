@@ -25,7 +25,7 @@ Like `rocksdbjni`, this library exposes every operation in different ways, with 
 The first one allocates memory proportionally to the request rate, so it is not terribly efficient.
 The last two are interesting because they let the user provide the pointer to the memory,
 which can be handled by a pool. This has been discussed [here](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html) and there is a clear trade-off: adding more complexity
-in exchange of better performance.
+in exchange for better performance.
 
 Is it possible to do better?
 
@@ -67,7 +67,7 @@ public <R> Optional<R> get(MemorySegment key, Mapper<R> fn) {
 
 `Mapper<R>` is a single method, `R map(MemorySegment value)`. The `MemorySegment` handed to
 `fn` is bound to a confined [`Arena`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html)
-owned by the caller: `fn` returns, the handle is destroyed in a `finally`, and the arena closes
+owned by the caller: when `fn` returns, the handle is destroyed in a `finally`, and the arena closes
 immediately after, on the way out. Escaping the view therefore fails loudly rather than silently
 reading freed memory: `IllegalStateException` once the arena closes, `WrongThreadException` if
 another thread touches it.
@@ -133,8 +133,7 @@ get(MemorySegment key, Mapper<R> fn) — pinned tier
 ```
 
 Only the third one is zero-copy in the strict sense: the `Mapper` receives a pointer
-to the memory holding the value and it must be used to deserialize the bytes back to Java objects:
-
+to the memory holding the value and it must be used to deserialize the bytes back to Java objects.
 
 A JMH benchmark with a value-size sweep from 8 bytes to 1 MB on an Apple M5 MacBook (I need to repeat those on a desktop machine eventually), GC profiler attached, said otherwise:
 
@@ -166,75 +165,76 @@ constant `PinnableSlice` bookkeeping. `MemorySegment`'s stays flat regardless of
 destination buffer is preallocated once outside the benchmark loop and handed in by the caller — what
 little is left to allocate is native-call bookkeeping, not the value.
 
-It is already good, but two things are allocating on every single invocation, minus few details
-on how to avoid allocating extra objects on the Java side.
+It is already good, but two things still allocate on every single invocation. Here is how to avoid
+that, with a few details on the Java side.
 
 This is roughly the code without any extra helper:
 ```java
 static <R> Optional<R> map(MemorySegment db, MemorySegment readOpts,
-                                   MemorySegment key, Mapper<R> fn) {
+                            MemorySegment key, Mapper<R> fn) {
     try (Arena arena = Arena.ofConfined()) {
         // allocate a pointer (like char*)
         MemorySegment holder = arena.allocate(ValueLayout.ADDRESS);
-		holder.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);
+        holder.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);
         MemorySegment handle;
         try {
             handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), holder);
         } catch (Throwable t) {
             throw RocksDBException.wrap("get_pinned failed", t);
         }
-		RocksDB.checkError(holder);
+        RocksDB.checkError(holder);
         // second allocation
         MemorySegment lenSeg = arena.allocate(ValueLayout.JAVA_LONG);
-		MemorySegment data;
+        MemorySegment data;
         try {
-			data = (MemorySegment) MH_VALUE.invokeExact(ptr(), lenSeg);
-		} catch (Throwable t) {
-			throw RocksDBException.wrap("pinnableslice value failed", t);
-		}
-		long len = lenSeg.get(ValueLayout.JAVA_LONG, 0);
-		MemorySegment view = data.reinterpret(len, arena, null).asReadOnly();
-		R result = fn.map(view);
-		Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
-		return result;
+            data = (MemorySegment) MH_VALUE.invokeExact(ptr(), lenSeg);
+        } catch (Throwable t) {
+            throw RocksDBException.wrap("pinnableslice value failed", t);
+        }
+        long len = lenSeg.get(ValueLayout.JAVA_LONG, 0);
+        MemorySegment view = data.reinterpret(len, arena, null).asReadOnly();
+        R result = fn.map(view);
+        Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
+        return result;
     } finally {
-		try { MH_PINNABLESLICE_DESTROY.invokeExact(ptr); } catch (Throwable t) { /* ignored */ }
+        try { MH_PINNABLESLICE_DESTROY.invokeExact(ptr); } catch (Throwable t) { /* ignored */ }
     }
 }
 ```
 
-the final code is something like:
+The final code is something like:
 ```java
 public <R> Optional<R> get(MemorySegment key, Mapper<R> fn) {
-		return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
-	}
+    return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
+}
 
-// internal plumping
+// internal plumbing
 static <R> Optional<R> withPinned(MemorySegment db, MemorySegment readOpts, MemorySegment key, Mapper<R> fn) {
-	try (Arena arena = Arena.ofConfined()) {
-			MemorySegment err = errHolder(arena);
-			MemorySegment handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err);
-			checkError(err);
-			if (MemorySegment.NULL.equals(handle)) {
-				return Optional.empty();
-			}
-			try (PinnableHandle ph = PinnableHandle.wrap(handle)) {
-				return Optional.of(ph.map(arena, fn, err));
-			}
-		} catch (Throwable t) {
-			throw RocksDBException.wrap("get_pinned failed", t);
-		}
+    try (Arena arena = Arena.ofConfined()) {
+        MemorySegment err = errHolder(arena);
+        MemorySegment handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err);
+        checkError(err);
+        if (MemorySegment.NULL.equals(handle)) {
+            return Optional.empty();
+        }
+        try (PinnableHandle ph = PinnableHandle.wrap(handle)) {
+            return Optional.of(ph.map(arena, fn, err));
+        }
+    } catch (Throwable t) {
+        throw RocksDBException.wrap("get_pinned failed", t);
+    }
+}
 ```
 
-`PinnableHandle` takes onwership of the C pointer and implements also `map` like:
+`PinnableHandle` takes ownership of the C pointer and also implements `map`, like this:
 ```java
-	<R> R map(Arena arena, Mapper<R> fn, MemorySegment vallenOut) {
-		MemorySegment data = value(vallenOut);
-		MemorySegment view = data.reinterpret(vallenOut.get(ValueLayout.JAVA_LONG, 0), arena, null).asReadOnly();
-		R result = fn.map(view);
-		Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
-		return result;
-	}
+<R> R map(Arena arena, Mapper<R> fn, MemorySegment vallenOut) {
+    MemorySegment data = value(vallenOut);
+    MemorySegment view = data.reinterpret(vallenOut.get(ValueLayout.JAVA_LONG, 0), arena, null).asReadOnly();
+    R result = fn.map(view);
+    Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
+    return result;
+}
 ```
 
 ## The final real-world benchmark
@@ -242,7 +242,7 @@ static <R> Optional<R> withPinned(MemorySegment db, MemorySegment readOpts, Memo
 Both tables above come from a benchmark that seeded one key and measured without flushing, so every
 read resolved from the memtable.
 
-Rebuilt against a populated database (few thousand keys, flushed and compacted before measuring)
+Rebuilt against a populated database (a few thousand keys, flushed and compacted before measuring)
 with GC profiler attached:
 
 | Value size | `byte[]` (ops/s) | `MemorySegment` (ops/s) | zero-copy `Mapper` (ops/s) | zero-copy `Mapper` vs `byte[]` |
@@ -294,7 +294,7 @@ Initially, the library used the same pin, copy, unpin pattern:
 
 Those are three native calls per operation: can we do better?
 
-The same RocksDB release also delivered `rocksdb_get_into_buffer`: one native call that
+The same RocksDB release also delivered `rocksdb_get_into_buffer`[^get-into-buffer]: one native call that
 copies straight into a caller-provided buffer, returns `1`/`0` for fit-or-not, and always sets
 `vallen` to the real value size — no pin, read-pointer, destroy round trip:
 
@@ -427,3 +427,5 @@ before measuring is representative enough, what else should be controlled for), 
 whether the shape holds. Open an issue on the repo if you try it.
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
+
+[^get-into-buffer]: [`rocksdb_get_into_buffer` / `rocksdb_get_into_buffer_cf`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4708-L4721), same file, same commit, same PR ([facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911)) as the pinned-handle functions above.
