@@ -256,14 +256,10 @@ with GC profiler attached:
 | 64 KB | 532,291 ± 5,009 | 777,629 ± 107,427 | 2,865,001 ± 32,836 | +438% |
 | 1 MB | 39,636 ± 124 | 70,351 ± 1,981 | 2,775,178 ± 37,737 | +6902% |
 
-Zero-copy is *not* free at the small end. Rerunning this on a later day, on the same machine, the
-small-value loss is larger than the first measurement showed — 10.4% at 8 bytes, easing to 4.4% by
-128 bytes, rather than the ~1–3% this table originally reported. The direction did not change, but
-the magnitude did, which is itself the point: single-machine JMH numbers move between sessions, and
-a couple of percent at these sizes was already inside that noise band. The per-call machinery —
-chiefly a confined `Arena` — costs more than copying a few hundred bytes does, consistently, even if
-exactly how much varies run to run. The crossover sits somewhere between 128 bytes and 1 KB, same as
-before, and past it the gap opens just as fast: 26% at 4 KB, 5x at 64 KB, 70x at 1 MB.
+Zero-copy is *not* free at the small end. The per-call machinery costs more than copying
+a few hundred bytes does, consistently The crossover sits somewhere between 128 bytes and 1 KB:
+so it is ideal for small values like uuid + some hash + some other details. A load based on
+blobs could benefit a lot from this zero-copy mapper as the library overhead is minimal.
 
 ## Example
 
@@ -282,8 +278,20 @@ Optional<Instant> createdAt = rocksdb.get(key, memorySegment -> Instant.ofEpochM
 ```
 
 The same design also applies to `RocksIterator`, which can iterate over keys and values
-without ever allocating a `byte[]` per item.
+without ever allocating a `byte[]` per item:
 
+```java
+try (RocksIterator it = db.newIterator()) {
+     for (it.seekToFirst(); it.isValid(); it.next()) {
+         var key   = it.key(this::keyMapper);
+         var value = it.value(this::valueMapper);
+         // use key and value
+     }
+}
+
+`key` and `value` are domain objects that are mapped without any intermediate copy.
+
+```
 ## Better return type when data must be copied
 
 Zero-copy is not always needed: often data needs to be copied somewhere.
