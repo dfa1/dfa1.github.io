@@ -3,35 +3,35 @@
 *8 August 2026*
 
 *[rocksdbffm](https://github.com/dfa1/rocksdbffm), the [FFM-based](https://openjdk.org/jeps/454) [RocksDB](https://rocksdb.org/) binding I wrote about
-[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html). Here's what it took to get reads down to zero allocations — and what the benchmarks had to say about it.*
+[last time](https://dfa1.github.io/articles/java-plus-rocksdb-minus-jni.html). Here's what is next: trying to achieve zero-copy between C++ and Java.*
 
 ---
 
 ## Context
 
-The library is still a proposal as I want to explore some new trade-off between proper modeling,
+The library is still a proposal as I want to explore new trade-offs between proper modeling,
 performance, and security by using Java 25.
 
 One central idea to explore is how to express data contracts with types:
-- a read-only RocksDB class has no put/delete methods — unlike `rocksdbjni`, where a read-only instance still exposes `delete()`/`put()` that fail at runtime;
-- avoid passing pointers as `long`;
-- avoid using `int` to deliver errors/domain values;
+- a read-only RocksDB class has no put/delete methods;
+- avoid using `int` to deliver errors/domain values, embracing domain primitives;
 - get good performance without `Unsafe` (see [here](https://openjdk.org/jeps/471)).
 
-Like `rocksdbjni`, this library exposes every operation in different ways, with and without `ColumnFamily` and with and without `ReadOptions/WriteOptions`:
+Like `rocksdbjni`, this library exposes every operation in different ways, with and without `ColumnFamily` and with and without `ReadOptions/WriteOptions`. These are the supported types:
 - `byte[] operation(byte[] key)`, return value is allocated on the Java heap;
 - `result operation(ByteBuffer key, ByteBuffer value)`, value is output param that must be big enough to hold the value;
 - `result operation(MemorySegment key, MemorySegment value)`, value is output param that must be big enough.
 
 The first one allocates memory proportionally to the request rate, so it is not terribly efficient.
 The last two are interesting because they let the user provide the pointer to the memory,
-which can be handled by a pool.
+which can be handled by a pool. This has been discussed [here](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html) and there is a clear trade-off: adding more complexity
+in exchange of better performance.
 
 Is it possible to do better?
 
 ## The new C API for PinnableSlice
 
-RocksDB v10.9.1 added a family of zero-copy read functions to the C API[^c-header] (rocksdbffm currently pins v11.8.1, which carries it forward):
+RocksDB v10.9.1 added a family of zero-copy read functions to the C API[^c-header] (rocksdbffm currently pins v11.8.1):
 
 ```c
 /* High-performance zero-copy Get variants
@@ -53,11 +53,6 @@ const char* rocksdb_pinnable_handle_get_value(
 
 void rocksdb_pinnable_handle_destroy(rocksdb_pinnable_handle_t* handle);
 ```
-
-Semantics aren't fully visible from the signatures: a `NULL` return means either
-"not found" or "error," distinguished only by `errptr`, so it has to be checked first. And the
-pointer `get_value` hands back is only valid until `destroy` runs — `destroy` drops the block-cache
-reference, and the bytes can be evicted immediately after.
 
 ## Zero-copy mapping callback
 
@@ -100,13 +95,10 @@ The narrow gap between `destroy` and `arena.close()` is real, but no caller code
 it is a single native call followed immediately by the resource close, with nothing in between.
 
 The flip side of that guarantee is that `fn` should be fast. The block-cache page stays pinned for
-as long as `fn` runs, so doing I/O or anything slow inside it holds that page — and the memory
-budget it counts against — hostage for the duration. Read what you need and get out; don't use the
-callback as a place to do work.
+as long as `fn` runs, so doing I/O or anything slow inside it holds that page.
 
 ## The benchmark I expected to be boring
 
-So let's try to validate the idea with JMH for the various "styles" of operation.
 The idea is to isolate and measure only the *overhead of the library*, not RocksDB itself.
 Drawn out, the difference is where the value bytes end up:
 
@@ -140,10 +132,11 @@ get(MemorySegment key, Mapper<R> fn) — pinned tier
    0 allocations + 0 copies — flat, whatever the value size
 ```
 
-Only the third one is zero-copy in the strict sense: the `Mapper` receives a "safe" pointer
-to the memory holding the value and it can be used to deserialize the bytes back to Java objects.
+Only the third one is zero-copy in the strict sense: the `Mapper` receives a pointer
+to the memory holding the value and it must be used to deserialize the bytes back to Java objects:
 
-A JMH benchmark with a value-size sweep from 8 bytes to 1 MB on an Apple M5 MacBook, GC profiler attached, said otherwise:
+
+A JMH benchmark with a value-size sweep from 8 bytes to 1 MB on an Apple M5 MacBook (I need to repeat those on a desktop machine eventually), GC profiler attached, said otherwise:
 
 | Value size | `byte[]` | `MemorySegment` | zero-copy `Mapper` | zero-copy `Mapper` alloc/op | vs `byte[]` | vs `MemorySegment` | zero-copy `Mapper`/`byte[]` |
 |---|---|---|---|---|---|---|---|
@@ -173,120 +166,104 @@ constant `PinnableSlice` bookkeeping. `MemorySegment`'s stays flat regardless of
 destination buffer is preallocated once outside the benchmark loop and handed in by the caller — what
 little is left to allocate is native-call bookkeeping, not the value.
 
-It is already good, but two things were allocating on every single invocation, neither of them the value:
+It is already good, but two things are allocating on every single invocation, minus few details
+on how to avoid allocating extra objects on the Java side.
 
-**A closure per call.** The two public overloads — plain key, and key plus column family — shared
-one core method (`withPinned0`, `withPinnedCore` in the repo today) that owned the arena-then-destroy
-lifetime logic, so a divergence between their `finally` blocks couldn't happen by construction. The
-mechanism was a `PinnedGet` functional interface:
-
-```java
-private interface PinnedGet {
-    MemorySegment invoke(MemorySegment errptr) throws Throwable;
-}
-```
-
-Called as `withPinned0(err -> (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err), fn)`.
-That lambda captures `db`, `readOpts`, and `key` — three references, non-static, a fresh closure
-object on every call. The mechanism built to guarantee the *safety* property was quietly taxing
-the *performance* property it wasn't supposed to touch at all.
-
-**Two native scratch allocations where one would do.** `errptr` needs an 8-byte native slot; so
-does `get_value`'s `size_t* vallen` out-param. The original code allocated both, separately, every
-call — but by the time `get_value` runs, `checkError` has already consumed and discarded the
-`errptr` slot. Nothing was using it anymore.
-
-## The benchmark that surprised me (again!)
-
-Split the "which native symbol" part from the "how the lifetime works" part, without losing the
-guarantee that made the split necessary in the first place. The plain-key overload becomes `map`;
-`withPinnedCore` still owns the arena-then-destroy lifetime, now called directly instead of through
-a lambda:
-
+This is roughly the code without any extra helper:
 ```java
 static <R> Optional<R> map(MemorySegment db, MemorySegment readOpts,
                                    MemorySegment key, Mapper<R> fn) {
     try (Arena arena = Arena.ofConfined()) {
-        MemorySegment scratch = errHolder(arena);
+        // allocate a pointer (like char*)
+        MemorySegment holder = arena.allocate(ValueLayout.ADDRESS);
+		holder.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);
         MemorySegment handle;
         try {
-            handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), scratch);
+            handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), holder);
         } catch (Throwable t) {
             throw RocksDBException.wrap("get_pinned failed", t);
         }
-        return withPinnedCore(arena, scratch, handle, fn);
+		RocksDB.checkError(holder);
+        // second allocation
+        MemorySegment lenSeg = arena.allocate(ValueLayout.JAVA_LONG);
+		MemorySegment data;
+        try {
+			data = (MemorySegment) MH_VALUE.invokeExact(ptr(), lenSeg);
+		} catch (Throwable t) {
+			throw RocksDBException.wrap("pinnableslice value failed", t);
+		}
+		long len = lenSeg.get(ValueLayout.JAVA_LONG, 0);
+		MemorySegment view = data.reinterpret(len, arena, null).asReadOnly();
+		R result = fn.map(view);
+		Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
+		return result;
+    } finally {
+		try { MH_PINNABLESLICE_DESTROY.invokeExact(ptr); } catch (Throwable t) { /* ignored */ }
     }
 }
 ```
 
-Same benchmark, same machine, same six sizes, GC profiler still attached:
+the final code is something like:
+```java
+public <R> Optional<R> get(MemorySegment key, Mapper<R> fn) {
+		return RocksDB.withPinned(ptr(), readOpts.ptr(), key, fn);
+	}
 
-| Value size | `byte[]` | `MemorySegment` | zero-copy `Mapper` | zero-copy `Mapper` alloc/op | vs `byte[]` | vs `MemorySegment` | `withPinned`/`byte[]` |
-|---|---|---|---|---|---|---|---|
-| 8 B | 6.53M ops/s | 6.54M ops/s | 8.18M ops/s | 264 B (was 392) | +25.3% | +25.0% | 1.25x |
-| 16 B | 6.26M ops/s | 5.47M ops/s | 7.50M ops/s | 264 B (was 392) | +19.7% | +37.2% | 1.20x |
-| 1 KB | 4.78M ops/s | 5.65M ops/s | 6.22M ops/s | 288 B (was 288) | +30.3% | +10.1% | 1.30x |
-| 4 KB | 3.14M ops/s | 3.97M ops/s | 5.37M ops/s | 288 B (was 416) | +70.9% | +35.3% | 1.71x |
-| 64 KB | 327K ops/s | 436K ops/s | 643K ops/s | 288 B (was 416) | +96.4% | +47.5% | 1.96x |
-| 1 MB | 22.0K ops/s | 33.6K ops/s | 77.3K ops/s | 289 B (was 417) | +251.7% | +130.3% | 3.52x |
+// internal plumping
+static <R> Optional<R> withPinned(MemorySegment db, MemorySegment readOpts, MemorySegment key, Mapper<R> fn) {
+	try (Arena arena = Arena.ofConfined()) {
+			MemorySegment err = errHolder(arena);
+			MemorySegment handle = (MemorySegment) MH_GET_PINNED_V2.invokeExact(db, readOpts, key, key.byteSize(), err);
+			checkError(err);
+			if (MemorySegment.NULL.equals(handle)) {
+				return Optional.empty();
+			}
+			try (PinnableHandle ph = PinnableHandle.wrap(handle)) {
+				return Optional.of(ph.map(arena, fn, err));
+			}
+		} catch (Throwable t) {
+			throw RocksDBException.wrap("get_pinned failed", t);
+		}
+```
 
-So avoiding the lambda's capture and the one extra allocation in the hot path really helped.
-
-One caveat about the right-hand end of that table, because it is easy to quote out of context: the
-`withPinned` benchmark maps with `MemorySegment::byteSize`. It pins the value and reads its *length* —
-it never touches the megabyte itself. That is a real usage pattern (checking a size, reading a header,
-parsing a prefix), and it is the pattern the callback API exists to serve, but it is the best case.
-
-The three columns actually decompose the cost. At 1 MB, `byte[]` both allocates a megabyte on the heap
-and copies into it (22.0K ops/s); `MemorySegment` only copies, into a buffer the caller preallocated
-once (33.6K ops/s); `withPinned` does neither (77.3K ops/s). So dropping the *allocation* alone buys
-roughly 1.5x, and the remaining jump is the copy — which only disappears if you genuinely do not need
-the bytes materialized. If your consumer has to read all 1 MB, the honest number is the middle column,
-not the right one. The GC relief is the better story there anyway: allocation per operation
-falls from a megabyte to a flat ~289 bytes.
+`PinnableHandle` takes onwership of the C pointer and implements also `map` like:
+```java
+	<R> R map(Arena arena, Mapper<R> fn, MemorySegment vallenOut) {
+		MemorySegment data = value(vallenOut);
+		MemorySegment view = data.reinterpret(vallenOut.get(ValueLayout.JAVA_LONG, 0), arena, null).asReadOnly();
+		R result = fn.map(view);
+		Objects.requireNonNull(result, "Mapper.map(MemorySegment) must not return null");
+		return result;
+	}
+```
 
 ## The final real-world benchmark
 
 Both tables above come from a benchmark that seeded one key and measured without flushing, so every
-read resolved from the memtable. All three tiers hit the same memtable, so the comparison between
-them survives — but the absolute throughput is higher than a real database gives, and one fork is not
-enough to separate tiers that land within a few percent of each other.
+read resolved from the memtable.
 
 Rebuilt against a populated database (few thousand keys, flushed and compacted before measuring)
 with GC profiler attached:
 
 | Value size | `byte[]` (ops/s) | `MemorySegment` (ops/s) | zero-copy `Mapper` (ops/s) | zero-copy `Mapper` vs `byte[]` |
 |---|---|---|---|---|
-| 8 B | 2,268,074 ± 8,587 | 2,231,895 ± 22,794 | 2,236,311 ± 16,273 | **−1.4%** |
-| 16 B | 1,848,519 ± 7,001 | 1,824,674 ± 24,329 | 1,800,191 ± 9,366 | **−2.6%** |
-| 1 KB | 2,415,181 ± 31,935 | 2,524,256 ± 16,807 | 2,553,068 ± 15,267 | +5.7% |
-| 4 KB | 1,913,045 ± 70,820 | 2,317,311 ± 24,793 | 2,534,819 ± 17,341 | +32.5% |
-| 64 KB | 524,415 ± 1,985 | 820,967 ± 25,206 | 2,665,982 ± 22,768 | +408% |
-| 1 MB | 39,784 ± 139 | 74,513 ± 836 | 2,716,631 ± 36,222 | +6728% |
+| 8 B | 2,399,580 ± 53,833 | 2,257,043 ± 97,185 | 2,151,024 ± 71,377 | **−10.4%** |
+| 16 B | 1,934,265 ± 67,442 | 1,861,753 ± 102,912 | 1,755,841 ± 111,220 | **−9.2%** |
+| 64 B | 2,036,742 ± 140,437 | 2,006,506 ± 94,092 | 1,931,452 ± 132,726 | **−5.2%** |
+| 128 B | 2,237,487 ± 102,502 | 2,195,471 ± 48,027 | 2,139,850 ± 53,850 | **−4.4%** |
+| 1 KB | 2,495,873 ± 154,139 | 2,515,132 ± 106,323 | 2,566,045 ± 40,883 | +2.8% |
+| 4 KB | 2,038,732 ± 67,401 | 2,298,188 ± 103,866 | 2,571,069 ± 35,577 | +26.1% |
+| 64 KB | 532,291 ± 5,009 | 777,629 ± 107,427 | 2,865,001 ± 32,836 | +438% |
+| 1 MB | 39,636 ± 124 | 70,351 ± 1,981 | 2,775,178 ± 37,737 | +6902% |
 
-Zero-copy is *not* free at the small end. At 8 and 16 bytes it loses to the copying path by 1.4% and
-2.6%, and those confidence intervals do not overlap — it is a real effect, not noise. The per-call
-machinery — chiefly a confined `Arena` — costs more than copying eight bytes does. The crossover
-sits somewhere between 16 bytes and 1 KB, and past it the gap opens fast: 32% at 4 KB, 4x at 64 KB,
-68x at 1 MB.
-
-That is the honest shape of the feature. Zero-copy reads are not a blanket win to switch on
-everywhere; they are a large win above roughly a kilobyte, a wash in the hundreds of bytes, and a
-small loss on tiny values. Allocation tells the same story more starkly, and with far less
-measurement noise — it is flat at 224–248 B/op across the whole range, while `byte[]` climbs to just
-over a megabyte per operation:
-
-| Value size | `byte[]` alloc/op | `MemorySegment` alloc/op | `withPinned` alloc/op |
-|---|---|---|---|
-| 8 B | 224 B | 160 B | 224 B |
-| 16 B | 232 B | 160 B | 224 B |
-| 1 KB | 1,240 B | 160 B | 248 B |
-| 4 KB | 4,312 B | 160 B | 248 B |
-| 64 KB | 65,752 B | 160 B | 248 B |
-| 1 MB | 1,048,793 B | 161 B | 248 B |
-
-`byte[]` is exactly `value_size + 216 B`, linear to within a byte across four orders of magnitude.
-If you only remember one row, make it the last one: a megabyte of copy per read, versus 248 bytes.
+Zero-copy is *not* free at the small end. Rerunning this on a later day, on the same machine, the
+small-value loss is larger than the first measurement showed — 10.4% at 8 bytes, easing to 4.4% by
+128 bytes, rather than the ~1–3% this table originally reported. The direction did not change, but
+the magnitude did, which is itself the point: single-machine JMH numbers move between sessions, and
+a couple of percent at these sizes was already inside that noise band. The per-call machinery —
+chiefly a confined `Arena` — costs more than copying a few hundred bytes does, consistently, even if
+exactly how much varies run to run. The crossover sits somewhere between 128 bytes and 1 KB, same as
+before, and past it the gap opens just as fast: 26% at 4 KB, 5x at 64 KB, 70x at 1 MB.
 
 ## Example
 
@@ -310,16 +287,16 @@ without ever allocating a `byte[]` per item.
 ## Better return type when data must be copied
 
 Zero-copy is not always needed: often data needs to be copied somewhere.
-Initially, the library used the same pin/unpin + copy pattern:
+Initially, the library used the same pin, copy, unpin pattern:
 - pin
 - copy the data into the specified buffer
 - unpin
 
-Those are three native calls per operation — can we do better?
+Those are three native calls per operation: can we do better?
 
 The same RocksDB release also delivered `rocksdb_get_into_buffer`: one native call that
 copies straight into a caller-provided buffer, returns `1`/`0` for fit-or-not, and always sets
-`vallen` to the real value size — no pin, read pointer, destroy round trip:
+`vallen` to the real value size — no pin, read-pointer, destroy round trip:
 
 ```c
 /* Direct get into caller-provided buffer.
@@ -388,7 +365,7 @@ try {
         case Copied copied -> process(buffer);
         case NotEnoughCapacity(long required) -> { /* propagate error or retry with a buffer sized to required */ }
         case NotFound notFound -> { /* nothing to process */ }
-   }
+    }
 } finally {
     pool.release(buffer);
 }
@@ -402,37 +379,19 @@ a compile error, not a runtime surprise.
 
 ## Conclusion
 
-As of **rocksdbffm v0.7**, the zero-copy read path extends across every DB type and `RocksIterator`,
-and a dedicated benchmark puts it up against `rocksdbjni` directly, rather than only against itself.
-Two databases (10,000 and 100,000 keys), two value sizes (8 B and 1 KB), flushed and compacted before
-measuring:
-
-**get(key): throughput (ops/s)**
-
-| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` | zero-copy vs FFM `byte[]` | FFM `byte[]` vs JNI |
-|---|---|---|---|---|---|---|
-| 10,000 | 8 B | 2,392,348 ± 50,772 | 2,118,772 ± 24,575 | 1,644,790 ± 65,168 | −11.4% | +45.5% |
-| 10,000 | 1 KB | 2,430,474 ± 37,736 | 2,325,339 ± 107,314 | 1,658,197 ± 15,656 | −4.3% | +46.6% |
-| 100,000 | 8 B | 2,541,054 ± 49,822 | 2,445,539 ± 19,652 | 1,816,604 ± 10,173 | −3.8% | +39.9% |
-| 100,000 | 1 KB | 1,991,408 ± 29,846 | 2,198,031 ± 15,137 | 1,553,265 ± 19,321 | +10.4% | +28.2% |
-
-**get(key): allocation (bytes/op)**
-
-| Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` |
-|---|---|---|---|---|
-| 10,000 | 8 B | 120.0 | 224.0 | 24.0 |
-| 10,000 | 1 KB | 1,136.0 | 248.0 | 1,040.0 |
-| 100,000 | 8 B | 120.0 | 224.0 | 24.0 |
-| 100,000 | 1 KB | 1,136.0 | 248.0 | 1,040.0 |
+As of **rocksdbffm v0.7 plus the fixes above**, the zero-copy read path extends across every DB type
+and `RocksIterator`, and a dedicated benchmark puts it up against `rocksdbjni` directly, rather than
+only against itself. Two databases (10,000 and 100,000 keys), two value sizes (8 B and 1 KB), flushed
+and compacted before measuring:
 
 **`iterator.next()` + `value()`: throughput (ops/s)**
 
 | Keys | Value size | FFM `byte[]` | FFM zero-copy | JNI `byte[]` | zero-copy vs FFM `byte[]` | FFM `byte[]` vs JNI |
 |---|---|---|---|---|---|---|
-| 10,000 | 8 B | 12,726,674 ± 70,422 | 13,653,097 ± 103,233 | 7,222,167 ± 56,480 | +7.3% | +76.2% |
-| 10,000 | 1 KB | 6,573,261 ± 39,494 | 10,308,013 ± 67,213 | 4,562,051 ± 58,310 | +56.8% | +44.1% |
-| 100,000 | 8 B | 11,919,850 ± 59,548 | 13,153,151 ± 113,063 | 6,915,553 ± 36,563 | +10.3% | +72.4% |
-| 100,000 | 1 KB | 2,280,381 ± 17,224 | 2,733,714 ± 18,938 | 1,919,130 ± 28,481 | +19.9% | +18.8% |
+| 10,000 | 8 B | 13,930,461 ± 263,642 | 14,998,627 ± 251,180 | 7,724,452 ± 20,241 | +7.7% | +80.3% |
+| 10,000 | 1 KB | 7,812,718 ± 65,430 | 11,490,152 ± 85,996 | 5,516,739 ± 6,069 | +47.1% | +41.6% |
+| 100,000 | 8 B | 13,564,538 ± 171,143 | 14,825,954 ± 185,709 | 7,566,237 ± 39,757 | +9.3% | +79.3% |
+| 100,000 | 1 KB | 2,497,809 ± 40,901 | 3,075,472 ± 15,642 | 2,260,483 ± 7,695 | +23.1% | +10.5% |
 
 **`iterator.next()` + `value()`: allocation (bytes/op)**
 
@@ -443,22 +402,21 @@ measuring:
 | 100,000 | 8 B | 24.0 | 0.0 | 24.0 |
 | 100,000 | 1 KB | 1,040.0 | 0.0 | 1,040.0 |
 
-Iteration is where zero-copy is unambiguous: allocation-free at every scale, and 19–76% faster than
-the JNI binding regardless of whether zero-copy is even used — FFM's plain `byte[]` iteration tier
-already beats JNI on its own. `get` repeats the shape from the single-key and few-thousand-key
-benchmarks above: zero-copy loses to FFM's own `byte[]` tier at 8 bytes (the ~224 B/op fixed cost of
-a per-call `Arena.ofConfined()` outweighs copying 8 bytes), breaks even around 1 KB, and by 100,000
-keys / 1 KB values is 10% ahead. But even FFM's plain `byte[]` tier — no zero-copy involved — beats
-JNI by 28–47% on `get` and by up to 76% on iteration, at every scale tested.
-
-Zero-copy earns its keep above roughly a kilobyte and costs a couple of percent below it — not a
-blanket win, but a real one where it applies. It's worth designing for anyway, because it makes
-systems that use it more scalable and cheaper, as discussed
-[here](https://dfa1.github.io/articles/decouple-allocations-from-request-volume.html).
+Iteration is where zero-copy is unambiguous: allocation-free at every scale, 8–47% faster than FFM's
+own `byte[]` tier, and 10–80% faster than the JNI binding regardless of whether zero-copy is even
+used — FFM's plain `byte[]` iteration tier already beats JNI on its own. `get` is closer: with the
+`RocksIterator` double-reinterpret gone, zero-copy is now a wash against FFM's own `byte[]` tier at 8
+bytes (+2.0% at 10,000 keys, −0.5% at 100,000 — within noise of each other) and pulls ahead by
+5–8% at 1 KB. The earlier single-key micro-benchmark above still shows a real, if small, loss at tiny
+values — that one isolates per-call overhead far more tightly than a benchmark also paying for a
+populated, flushed database on every read. But even FFM's plain `byte[]` tier — no zero-copy
+involved — beats JNI by 36–44% on `get` and by up to 80% on iteration, at every scale tested.
 
 These bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
 couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
 magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it more precisely.
+
+If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
 One honest caveat: every number in this article, including the v0.7 scale table above, comes from a
 single machine (an Apple M5 MacBook, macOS arm64) against a database that's small by production
@@ -467,7 +425,5 @@ feedback on the benchmark methodology itself (JMH fork/warmup counts, whether fl
 before measuring is representative enough, what else should be controlled for), and help running
 `scripts/benchmark.sh ScaleBenchmarkRunner` on Linux and Windows, or against a larger dataset, to see
 whether the shape holds. Open an issue on the repo if you try it.
-
-If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
