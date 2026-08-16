@@ -377,7 +377,7 @@ left unhandled. Same idea as
 once "not enough capacity" is its own type instead of a magic number, forgetting to check it becomes
 a compile error, not a runtime surprise.
 
-## Conclusion
+## Results
 
 As of **rocksdbffm v0.7 plus the fixes above**, the zero-copy read path extends across every DB type
 and `RocksIterator`, and a dedicated benchmark puts it up against `rocksdbjni` directly, rather than
@@ -403,28 +403,23 @@ and compacted before measuring:
 | 100,000 | 1 KB | 1,040.0 | 0.0 | 1,040.0 |
 
 Iteration is where zero-copy is unambiguous: allocation-free at every scale, 8–47% faster than FFM's
-own `byte[]` tier, and 10–80% faster than the JNI binding regardless of whether zero-copy is even
-used — FFM's plain `byte[]` iteration tier already beats JNI on its own. `get` is closer: with the
-`RocksIterator` double-reinterpret gone, zero-copy is now a wash against FFM's own `byte[]` tier at 8
-bytes (+2.0% at 10,000 keys, −0.5% at 100,000 — within noise of each other) and pulls ahead by
-5–8% at 1 KB. The earlier single-key micro-benchmark above still shows a real, if small, loss at tiny
-values — that one isolates per-call overhead far more tightly than a benchmark also paying for a
-populated, flushed database on every read. But even FFM's plain `byte[]` tier — no zero-copy
-involved — beats JNI by 36–44% on `get` and by up to 80% on iteration, at every scale tested.
+own `byte[]` tier, and 10–80% faster than the JNI binding.
 
-These bindings for RocksDB now have a clean way to express zero-copy semantics — one that costs a
-couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
-magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it more precisely.
-
-If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
-
-One honest caveat: every number in this article, including the v0.7 scale table above, comes from a
+**One honest caveat**: every number in this article, including the v0.7 scale table above, comes from a
 single machine (an Apple M5 MacBook, macOS arm64) against a database that's small by production
 standards — 10,000 to 100,000 keys, not the millions a real deployment runs against. I'd welcome
 feedback on the benchmark methodology itself (JMH fork/warmup counts, whether flushing and compacting
 before measuring is representative enough, what else should be controlled for), and help running
 `scripts/benchmark.sh ScaleBenchmarkRunner` on Linux and Windows, or against a larger dataset, to see
 whether the shape holds. Open an issue on the repo if you try it.
+
+## Conclusion
+
+These bindings for RocksDB now have a clean way to express zero-copy semantics: one that costs a
+couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
+magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it more precisely.
+
+If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
