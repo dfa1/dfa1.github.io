@@ -257,9 +257,9 @@ with GC profiler attached:
 | 1 MB | 39,636 ± 124 | 70,351 ± 1,981 | 2,775,178 ± 37,737 | +6902% |
 
 Zero-copy is *not* free at the small end. The per-call machinery costs more than copying
-a few hundred bytes does, consistently The crossover sits somewhere between 128 bytes and 1 KB:
-so it is ideal for small values like uuid + some hash + some other details. A load based on
-blobs could benefit a lot from this zero-copy mapper as the library overhead is minimal.
+a few hundred bytes does, consistently. The crossover sits somewhere between 128 bytes and 1 KB,
+so it is ideal for small values like a UUID plus a hash plus a few other details. A load based on
+blobs could benefit a lot from this zero-copy mapper, as the library overhead is minimal.
 
 ## Example
 
@@ -423,7 +423,7 @@ whether the shape holds. Open an issue on the repo if you try it.
 
 ## Conclusion
 
-`rocksdb-ffm` now has a clean way to express zero-copy semantics with good overall performance. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it explicitly and with more precise return type (`sealed CopyResult hieararchy`).
+`rocksdb-ffm` now has a clean way to express zero-copy semantics with good overall performance. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it explicitly and with more precise return type (`sealed CopyResult hierarchy`).
 
 If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
