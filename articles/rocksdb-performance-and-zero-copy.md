@@ -288,10 +288,10 @@ try (RocksIterator it = db.newIterator()) {
          // use key and value
      }
 }
+```
 
 `key` and `value` are domain objects that are mapped without any intermediate copy.
 
-```
 ## Better return type when data must be copied
 
 Zero-copy is not always needed: often data needs to be copied somewhere.
