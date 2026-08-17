@@ -423,11 +423,11 @@ whether the shape holds. Open an issue on the repo if you try it.
 
 ## Conclusion
 
-These bindings for RocksDB now have a clean way to express zero-copy semantics: one that costs a
-couple of percent on tiny values, pays for itself somewhere under a kilobyte, and wins by orders of
-magnitude on large ones. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it more precisely.
+`rocksdb-ffm` now has a clean way to express zero-copy semantics with good overall performance. The Java layer hands back a read-only `MemorySegment`, and the rule is simple: don't store it, just read the data. At the same time, when a copy is needed, the library can express it explicitly and with more precise return type (`sealed CopyResult hieararchy`).
 
 If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
+
+---
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
