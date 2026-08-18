@@ -135,7 +135,7 @@ get(MemorySegment key, Mapper<R> fn) — pinned tier
 Only the third one is zero-copy in the strict sense: the `Mapper` receives a pointer
 to the memory holding the value and it must be used to deserialize the bytes back to Java objects.
 
-A JMH benchmark with a value-size sweep from 8 bytes to 1 MB on an Apple M5 MacBook (I need to repeat those on a desktop machine eventually), GC profiler attached, said otherwise:
+A JMH benchmark with a value-size sweep from 8 bytes to 1 MB on an Apple M5 MacBook (I need to repeat those on a desktop machine eventually), GC profiler attached, said otherwise:[^blob-size-bench]
 
 | Value size | `byte[]` | `MemorySegment` | zero-copy `Mapper` | zero-copy `Mapper` alloc/op | vs `byte[]` | vs `MemorySegment` | zero-copy `Mapper`/`byte[]` |
 |---|---|---|---|---|---|---|---|
@@ -243,7 +243,7 @@ Both tables above come from a benchmark that seeded one key and measured without
 read resolved from the memtable.
 
 Rebuilt against a populated database (a few thousand keys, flushed and compacted before measuring)
-with GC profiler attached:
+with GC profiler attached:[^value-size-bench]
 
 | Value size | `byte[]` (ops/s) | `MemorySegment` (ops/s) | zero-copy `Mapper` (ops/s) | zero-copy `Mapper` vs `byte[]` |
 |---|---|---|---|---|
@@ -390,7 +390,7 @@ a compile error, not a runtime surprise.
 As of **rocksdbffm v0.7 plus the fixes above**, the zero-copy read path extends across every DB type
 and `RocksIterator`, and a dedicated benchmark puts it up against `rocksdbjni` directly, rather than
 only against itself. Two databases (10,000 and 100,000 keys), two value sizes (8 B and 1 KB), flushed
-and compacted before measuring:
+and compacted before measuring:[^scale-bench]
 
 **`iterator.next()` + `value()`: throughput (ops/s)**
 
@@ -428,6 +428,12 @@ whether the shape holds. Open an issue on the repo if you try it.
 If you work with RocksDB in Java, or want a concrete project to learn FFM, [take a look](https://github.com/dfa1/rocksdbffm).
 
 ---
+
+[^blob-size-bench]: [`FfmBlobSizeBenchmark`](https://github.com/dfa1/rocksdbffm/blob/8377f4c/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmBlobSizeBenchmark.java), removed in [`38b32e6`](https://github.com/dfa1/rocksdbffm/commit/38b32e6).
+
+[^value-size-bench]: [`FfmValueSizeBenchmark`](https://github.com/dfa1/rocksdbffm/blob/06641f2/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/FfmValueSizeBenchmark.java).
+
+[^scale-bench]: [`ScaleBenchmarkRunner`](https://github.com/dfa1/rocksdbffm/blob/06641f2/benchmarks/src/test/java/io/github/dfa1/rocksdbffm/benchmark/ScaleBenchmarkRunner.java).
 
 [^c-header]: [`rocksdb_get_pinned_v2` / `rocksdb_get_pinned_cf_v2` / `rocksdb_pinnable_handle_get_value` / `rocksdb_pinnable_handle_destroy`](https://github.com/facebook/rocksdb/blob/abeebd9630f11bd08c28b7bd43c7bdfc62050654/include/rocksdb/c.h#L4687-L4707), `rocksdb/include/rocksdb/c.h`, RocksDB v11.8.1 (the version rocksdbffm currently pins). The API was introduced by [facebook/rocksdb#13911](https://github.com/facebook/rocksdb/pull/13911), "optimize C API to reduce memory allocations and using PinnableSlice for zero-copy reads," first shipped in **v10.9.1**. rocksdbffm tracks binding it as [GitHub issue #55](https://github.com/dfa1/rocksdbffm/issues/55).
 
