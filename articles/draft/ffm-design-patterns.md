@@ -10,14 +10,16 @@ library that mallocs on your behalf. This post is about that part.*
 
 ---
 
-The material comes from two small projects: [rocksdbffm](https://github.com/dfa1/rocksdbffm), FFM
-bindings for [RocksDB](https://rocksdb.org/), and [zstd-java](https://github.com/dfa1/zstd-java), FFM
-bindings for [Zstandard](https://facebook.github.io/zstd/). They are useful together because their C
-APIs disagree about almost everything — error reporting, buffer ownership, statefulness — and yet the
-Java-side solutions converged. That convergence is what makes these items rather than anecdotes.
+The material comes from three small projects: [rocksdbffm](https://github.com/dfa1/rocksdbffm), FFM
+bindings for [RocksDB](https://rocksdb.org/), [zstd-java](https://github.com/dfa1/zstd-java), FFM
+bindings for [Zstandard](https://facebook.github.io/zstd/), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm),
+FFM bindings for [LMDB](https://www.lmdb.tech/). They are useful together because their C APIs disagree
+about almost everything — error reporting, buffer ownership, statefulness, transactional structure —
+and yet the Java-side solutions converged on most of the same rules. That convergence is what makes
+these items rather than anecdotes.
 
 The format is borrowed from *Effective Java*: the title of each item is the rule, the body is why it
-earns its place, and the caveats after it are where the cost actually lives. Thirteen items. Every
+earns its place, and the caveats after it are where the cost actually lives. Sixteen items. Every
 example carries the C prototype it binds, copied from `zstd.h` or RocksDB's `c.h` —
 half of FFM is reading a header correctly, and a Java snippet without its prototype hides exactly the
 half that goes wrong.
@@ -510,6 +512,226 @@ projects build their natives this way.
 Not a footnote to the FFM story — a large fraction of the practical benefit, and it gets far less
 attention than the API itself.
 
+### Item 14: Track child handles so a parent's terminal method can neutralize them
+
+`mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close` all return nothing:
+
+```c
+void mdb_env_close(MDB_env *env);
+void mdb_txn_abort(MDB_txn *txn);
+void mdb_cursor_close(MDB_cursor *cursor);
+```
+
+There is nothing in any of those signatures to tell you that calling the first while a
+transaction from that environment is still open is undefined behavior, or that the
+transaction must itself have no open cursors before *it* ends. That rule lives entirely in
+LMDB's prose documentation. Nothing enforced it on the Java side either — every
+`NativeObject` subclass managed its own pointer and nothing else, so a parent's terminal
+method had no way to know a child was still alive. The failure is a two-step one, which
+is what makes it easy to miss in review: the mistake (closing the parent early) and the
+crash (the next, unrelated call on the child) are two different call sites, often two
+different stack traces, sometimes two different threads.
+
+```java
+LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY));
+LmdbDbi dbi = txn.openDatabase(Set.of());
+txn.get(dbi, "key000042".getBytes(UTF_8));   // fine
+
+env.close();
+
+txn.get(dbi, "key000043".getBytes(UTF_8));   // SIGSEGV — mdb_page_search_root+0x2c
+```
+
+The fix is to make the parent actually track what it opened, and give its terminal method
+something to check:
+
+```java
+// LmdbEnv
+private final AtomicInteger openTransactions = new AtomicInteger();
+
+void registerTransaction() {
+    openTransactions.incrementAndGet();
+}
+
+void unregisterTransaction() {
+    openTransactions.decrementAndGet();
+}
+
+@Override
+protected void tryClose(MemorySegment ptr) throws Throwable {
+    int open = openTransactions.get();
+    if (open != 0) {
+        // Do not call mdb_env_close — a still-open transaction may hold a
+        // zero-copy view into the mapping it would free. Leak the native
+        // handle instead of freeing memory a live transaction still depends
+        // on; see Item 16 for why this throws rather than logs.
+        throw new LmdbContractException(/* … */);
+    }
+    try {
+        Bindings.ENV_CLOSE.invokeExact(ptr);
+    } finally {
+        arena.close();
+    }
+}
+```
+
+`LmdbTxn`'s constructor calls `registerTransaction()`; `commit()`, `abort()`, and the
+transaction's own `tryClose()` each call `unregisterTransaction()` — exactly one of the
+three runs per transaction, so the count never drifts. **The safe recovery here is refuse,
+not repair.** An earlier version of this fix force-aborted every still-open transaction
+before actually closing the environment, on the theory that a clean abort beats a leak.
+That version was wrong: LMDB confines a transaction to the thread that began it, so
+force-aborting one from whatever thread happens to be calling `close()` trades a
+predictable crash for an unpredictable one — corrupting LMDB's reader-table bookkeeping,
+or racing a call the owning thread has in flight right now, is strictly worse than the bug
+being fixed. Once a resource can't be reached by a thread that's allowed to touch it,
+*leaving it alone* is the only safe move; the parent still needs to know it happened, which
+is Item 16.[^lmdb-env-close]
+
+The same shape exists one ownership level down — a transaction whose cursor is still open
+when it commits or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue]
+The fix there is the version of this pattern with no leak trade-off at all: neutralizing a
+`LmdbCursor` needs no native call whatsoever (LMDB already frees the C-level cursor struct
+as a side effect of ending the transaction), so it's safe to do from any thread — the
+transaction just swaps the cursor's pointer to `NULL` directly, the same swap
+`NativeObject#close()` already does to itself.
+
+### Item 15: Re-derive an optimization's safety envelope for every capability added after it
+
+Two different hot-path optimizations in lmdb-ffm each had a safety envelope that was
+correct for the call sites that existed when the optimization was written, and wrong the
+moment a new capability was added on top without anyone re-checking it.
+
+The first is `Linker.Option.critical`, applied to `mdb_get` and `mdb_cursor_get` to skip
+the JVM's thread-state transition on every downcall — a real win, 25–33% on
+`benchmark/ReadBenchmark`'s cursor scans. `critical`'s contract is usually read as "keep
+it short," but the JDK's own doc says more: a critical function "does not call back into
+Java (e.g. using an upcall stub)." Nothing about a short-running native call *implies* that
+constraint holds forever — it holds only until something makes that call re-enter Java.
+lmdb-ffm has exactly that something: a custom `LmdbComparator`, installed via
+`mdb_set_compare`, runs as an upcall from inside LMDB's own B+tree search — from inside
+the very `mdb_get`/`mdb_cursor_get` call that was linked as critical. The result isn't a
+segfault, it's a VM-level guarantee failure, because the JVM's own bookkeeping assumed
+the thread never left native code:
+
+```
+# Internal Error (upcallLinker.cpp:77)
+# guarantee(thread->thread_state() == _thread_in_native) failed:
+#     wrong thread state for upcall
+```
+
+The fix links every affected symbol twice — once critical, once plain — and picks between
+them at each call site on a flag that latches the first time a comparator is installed:
+
+```java
+static final MethodHandle GET =
+        NativeLibrary.lookup("mdb_get", GET_DESCRIPTOR);
+static final MethodHandle GET_CRITICAL =
+        NativeLibrary.lookup("mdb_get", GET_DESCRIPTOR,
+                new Linker.Option[] {Linker.Option.critical(false)});
+```
+
+```java
+if (env.usesComparators()) {
+    code = (int) Bindings.GET.invokeExact(ptr(), dbi.handle(), keyVal, dataVal);
+} else {
+    code = (int) Bindings.GET_CRITICAL.invokeExact(ptr(), dbi.handle(), keyVal, dataVal);
+}
+```
+
+A database with no custom comparator — the default, and what the benchmark that
+justified `critical` in the first place actually measures — keeps the fast path; installing a
+comparator gives it up, once, for the rest of that environment's life.[^lmdb-critical-upcall]
+
+The second case is a reused pair of `MDB_val` out-parameter structs, allocated once per
+transaction and per cursor instead of once per call — a ~300x win over allocating a fresh
+`Arena` on every read, per the same benchmark. That reuse is safe for every cursor
+operation whose data parameter is purely an *out*-parameter — which is every operation
+except `GET_BOTH`/`GET_BOTH_RANGE`, which need the caller's data as an *in*-parameter to
+match against. Nothing in the API distinguishes that one operation from the rest, so it
+silently reads whatever the previous call happened to leave in the reused slot — a
+plausible-looking result built from stale state, not from anything the caller asked
+for.[^lmdb-get-both-issue] The same confined `Arena` backing those structs also produces
+an asymmetry nobody designed on purpose: a cross-thread `get()` throws
+`WrongThreadException` before it can reach C, because reading the out-parameter touches
+the confined arena — but a cross-thread `put()` allocates its own scratch `Arena` per call
+and never touches the confined one, so it sails straight through to memory corruption
+instead.[^lmdb-write-thread-issue] Same reused resource, two different call paths, and
+only one of them happened to inherit the arena's protection.
+
+**Neither of these is a bug in the optimization.** Both are correct for the shape of call
+they were measured against. The lesson is that *shape* is exactly what a safety envelope
+is drawn around, and nothing enforces re-checking it when a later change — a new op, a
+new flag, a new call path through the same reused resource — falls outside the shape the
+benchmark exercised. A `critical` binding's envelope is "no upcalls, ever, from this call or
+anything it invokes"; a reused out-parameter's envelope is "every caller of this reused slot
+treats it as pure output." Write down which capabilities were assumed when the
+optimization was accepted, the same way you'd write down its measured cost — and treat
+every new capability as a diff against that list, not as an unrelated addition.
+
+### Item 16: Give a terminal method exactly one named escape hatch through its swallow
+
+"Destructors must not throw" is the right default for a `close()` shared across every
+`NativeObject` subclass — a caller unwinding through a `try`-with-resources block should
+never have a cleanup failure mask the real exception, or blow up a path that was already
+failing. lmdb-ffm's `NativeObject#close()` enforces exactly that:
+
+```java
+public final void close() {
+    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
+    if (!MemorySegment.NULL.equals(p)) {
+        try {
+            tryClose(p);
+        } catch (Throwable _) {
+            // destructors must not throw
+        }
+    }
+}
+```
+
+Item 14's fix breaks that, on purpose, for exactly one case. Refusing to call
+`mdb_env_close` while a transaction is still open (Item 14) is the right recovery — but if
+the caller never finds out, the swallow has traded a crash for something arguably worse: a
+`close()` that returns normally while the object it claims to have closed is still fully
+alive underneath, silently able to mutate the file a caller now believes is safely closed.
+A background log line doesn't fix that either — a caller who wraps `close()` in
+try-with-resources, the idiom this whole API is built around, will never see it. The
+difference that matters is *why* `tryClose` is throwing: an ordinary native-call failure is
+routine and should stay swallowed, but a detected violation of the library's own
+resource-lifetime contract is a bug in the *caller's* code that would otherwise vanish
+without a trace. So `close()` gets one narrow, named carve-out — not a general "rethrow
+on failure" flag, and not a checked exception threading a `throws` clause through every
+`AutoCloseable#close()` in the codebase:
+
+```java
+public final void close() {
+    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
+    if (!MemorySegment.NULL.equals(p)) {
+        try {
+            tryClose(p);
+        } catch (LmdbContractException e) {
+            // The one Throwable this deliberately does not swallow.
+            throw e;
+        } catch (Throwable _) {
+            // destructors must not throw
+        }
+    }
+}
+```
+
+Every existing `tryClose` failure mode — an ordinary native-call error, a double-free
+attempt, anything that isn't a detected contract violation — is swallowed exactly as
+before; there's a regression test locking that in (`closeSwallowsTryCloseFailures`). Only
+`LmdbContractException` escapes, and only after whatever recovery was possible already
+ran, so the caller's own state is always left consistent by the time they catch it —
+never mid-repair.[^lmdb-contract-exception]
+
+The general shape: when a `close()`-style method's contract is "never throws," don't
+relax that contract wholesale the first time you need to report something loud. Give the
+one case that genuinely needs to escape its own type, and let the type itself carry the
+justification for why "destructors must not throw" doesn't apply to it — the exception's
+own javadoc becomes the place that argument lives, not a comment at each throw site.
+
 ## What carried across
 
 Two libraries that agree on nothing at the C level converged on eleven of these items. The two they
@@ -518,12 +740,23 @@ same structural reason: it never takes ownership of memory it did not size, and 
 back on a thread it did not create. That is a useful way to read the list — which items apply is
 decided by the C library's ownership and threading model, not by taste.
 
+lmdb-ffm, FFM bindings for [LMDB](https://www.lmdb.tech/), is a third data point, and it confirms all
+eleven again, unchanged — plus three more (Items 14–16) that neither of the first two projects had
+reason to hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-java each wrap
+a single opaque handle with one lifetime to manage, which is what Items 1–13 are mostly about managing
+correctly. LMDB is transactional — an environment owns transactions, a transaction owns cursors — so
+there are *relationships between* lifetimes as well, and a relationship has no natural place to live
+unless one of the two sides is made to track it explicitly.
+
 One idea runs under the rest. Make the obligation visible where it is incurred: an arena in a
 try-with-resources, a deallocator passed to `reinterpret`, a `Mapper` parameter, a `static final`
-field. Each puts a lifetime or a cost somewhere the compiler or the next reader cannot miss it.
+field, a registration counter checked in a terminal method, an exception type carved through an
+otherwise-total swallow. Each puts a lifetime, a cost, or a contract somewhere the compiler or the
+next reader cannot miss it.
 
-Both libraries are experimental and both are open to contributions, particularly around benchmarking
-the Java-to-native boundary — which is, in the end, the only part of this that is hard to argue about.
+All three libraries are experimental and all three are open to contributions, particularly around
+benchmarking the Java-to-native boundary — which is, in the end, the only part of this that is hard
+to argue about.
 
 ---
 
@@ -544,3 +777,16 @@ the Java-to-native boundary — which is, in the end, the only part of this that
 [^scale-bench]: JMH `ScaleBenchmarkRunner`, `iterator.next()` + `value()`, two databases and two value sizes on an Apple M5 MacBook; numbers and caveats in [RocksDB Performance and Zero-Copy](https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html).
 
 [^zstd-header]: [`zstd.h`](https://github.com/facebook/zstd/blob/dev/lib/zstd.h), in the comment above `ZSTD_CStreamInSize`.
+
+
+[^lmdb-env-close]: [`LmdbEnv#tryClose`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
+
+[^lmdb-cursor-issue]: [Cursor outlives its transaction](https://github.com/dfa1/lmdb-ffm/issues/4), lmdb-ffm issue #4, open at the time of writing.
+
+[^lmdb-critical-upcall]: [Don't call the critical mdb_get/mdb_cursor_get through a comparator](https://github.com/dfa1/lmdb-ffm/pull/14), lmdb-ffm PR #14, merged.
+
+[^lmdb-get-both-issue]: [GET_BOTH and GET_BOTH_RANGE have no way to pass the data they match on](https://github.com/dfa1/lmdb-ffm/issues/12), lmdb-ffm issue #12, open at the time of writing.
+
+[^lmdb-write-thread-issue]: [Cross-thread put corrupts memory while cross-thread read throws](https://github.com/dfa1/lmdb-ffm/issues/8), lmdb-ffm issue #8, open at the time of writing.
+
+[^lmdb-contract-exception]: [`LmdbContractException`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
