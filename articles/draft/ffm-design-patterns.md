@@ -2,33 +2,55 @@
 
 *22 August 2026*
 
-*There is a lot of writing about Java's Foreign Function & Memory API, and almost all of it stops at
-the same place: look up `strlen`, allocate a string in a confined arena, invoke, print the length. The
-API is final, the tutorials are correct, and none of them tell you what to do on day forty — when you
-have three hundred native functions, a callback that outlives the call that registered it, and a C
-library that mallocs on your behalf. This post is about that part.*
+*There is a lot of writing about Java's Foreign Function & Memory API — the result of [Project
+Panama](https://openjdk.org/projects/panama/) — and almost all of it stops at the same place: look up
+`strlen`, allocate a string in a confined arena, invoke, print the length. The API is final, the
+tutorials are correct, and none of them tell you what to do on day forty — when you have three hundred
+native functions, a callback that outlives the call that registered it, and a C library that mallocs
+on your behalf. This post is my running notes on that part.*
 
 ---
+
+These are evolving notes, not a finished catalog — the patterns I currently reach for to keep ownership
+sane, cleanup deterministic, and the public API type-safe when wrapping a C library with FFM. They
+change as the bindings they're drawn from do: an item gets added, revised, or dropped once a fourth
+project proves it wrong. Treat this as where I've landed so far, not a final word.
 
 The material comes from three small projects: [rocksdbffm](https://github.com/dfa1/rocksdbffm), FFM
 bindings for [RocksDB](https://rocksdb.org/), [zstd-ffm](https://github.com/dfa1/zstd-ffm), FFM
 bindings for [Zstandard](https://facebook.github.io/zstd/), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm),
 FFM bindings for [LMDB](https://www.lmdb.tech/). They are useful together because their C APIs disagree
 about almost everything — error reporting, buffer ownership, statefulness, transactional structure —
-and yet the Java-side solutions converged on most of the same rules. That convergence is what makes
-these items rather than anecdotes.
+and yet the Java-side solutions kept converging on the same handful of rules. That convergence is why
+these read as patterns rather than one-off fixes.
 
-The format is borrowed from *Effective Java*: the title of each item is the rule, the body is why it
-earns its place, and the caveats after it are where the cost actually lives. Sixteen items. Every
-example carries the C prototype it binds, copied from `zstd.h` or RocksDB's `c.h` —
-half of FFM is reading a header correctly, and a Java snippet without its prototype hides exactly the
-half that goes wrong.
+The format is borrowed from *Effective Java*: a short title states the pattern, the body explains why
+it earns its place, and the caveats after it are where the cost actually lives. Every example carries
+the C prototype it binds, copied from `zstd.h` or RocksDB's `c.h` — half of FFM is reading a header
+correctly, and a Java snippet without its prototype hides exactly the half that goes wrong.
 
 I'll assume you know what `Arena`, `MemorySegment`, `Linker`, `FunctionDescriptor` and `MethodHandle`
 are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the right starting point, and
 [JEP 454](https://openjdk.org/jeps/454) is unusually readable on the design rationale.
 
-### Item 1: Prefer a confined arena per operation
+## Contents
+
+- [Item 1: Prefer a confined arena per operation](#item-1)
+- [Item 2: Allocate out-params in the calling arena](#item-2)
+- [Item 3: Copy out and free before reaching for anything cleverer](#item-3)
+- [Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret`](#item-4)
+- [Item 5: Give every opaque handle its own arena](#item-5)
+- [Item 6: Scope an upcall stub to the life of the object that uses it](#item-6)
+- [Item 7: Make adopted native threads die before the VM does](#item-7)
+- [Item 8: Keep the generated raw layer out of the public API](#item-8)
+- [Item 9: Translate every C error idiom at a single boundary](#item-9)
+- [Item 10: Expose zero-copy as a declared tier, never as a leak](#item-10)
+- [Item 11: Derive struct accessors from the layout, never from offsets](#item-11)
+- [Item 12: Hold downcall handles in `static final` fields](#item-12)
+- [Item 13: Ship one Java artifact and cross-compile the native library with Zig](#item-13)
+- [Item 14: Track child handles so a parent's terminal method can neutralize them](#item-14)
+
+### Item 1: Prefer a confined arena per operation {#item-1}
 
 The default, and usually the right answer: one arena, one thread, try-with-resources, deterministic
 free at the closing brace. zstd-ffm's one-shot compression path is exactly this:[^zstd-compress]
@@ -63,7 +85,7 @@ Two reasons to prefer confined over shared:
 - `Arena.ofShared()` buys thread-crossing at the cost of a far more expensive close, since deallocation
   has to become globally visible. Reach for it only when a segment genuinely must outlive one thread.
 
-### Item 2: Allocate out-params in the calling arena
+### Item 2: Allocate out-params in the calling arena {#item-2}
 
 C's answer to multiple return values is pointer arguments; the Java-side answer allocates those slots
 in the same confined arena as everything else and never lets them escape it.
@@ -87,7 +109,7 @@ Nothing interesting happens here, which is the point: the slots are scratch spac
 rather than a hand-computed byte count, gone at the closing brace. What comes *out* of them is the
 interesting part.
 
-### Item 3: Copy out and free before reaching for anything cleverer
+### Item 3: Copy out and free before reaching for anything cleverer {#item-3}
 
 When a C function returns a buffer it allocated, the conservative move is to copy it into a `byte[]`
 and free the native memory immediately — ownership begins and ends inside one method.
@@ -111,7 +133,7 @@ and you've re-invented the JNI failure mode.
 Boring and correct, and the default. The next item exists only because the copy is sometimes the cost
 you were trying to avoid.
 
-### Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret`
+### Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret` {#item-4}
 
 RocksDB has a second read path that hands back values it owns rather than copies:
 
@@ -159,7 +181,7 @@ The failure modes, none of them obvious:
 Zstandard never needs any of this — you size the destination yourself with `ZSTD_compressBound`.
 Reaching for a deallocator in a caller-allocates API is a sign you've misread the ownership contract.
 
-### Item 5: Give every opaque handle its own arena
+### Item 5: Give every opaque handle its own arena {#item-5}
 
 Between "lives for one call" and "lives forever" sits the common case: a native object expensive to
 create, reused across many calls, freed explicitly. `ZSTD_CCtx` is the canonical example; `rocksdb_t`
@@ -193,7 +215,7 @@ This is also where you decide the object's thread policy rather than inherit it.
 thread-safe; a confined arena turns misuse into a Java-level exception instead of silent corruption —
 the safety property and the C contract lining up for free.
 
-### Item 6: Scope an upcall stub to the life of the object that uses it
+### Item 6: Scope an upcall stub to the life of the object that uses it {#item-6}
 
 Upcalls are where lifetime stops being about buffers.[^upcall-tutorial] A RocksDB custom comparator is
 registered once and invoked later, during compaction, on a thread you didn't create — the stub must
@@ -231,8 +253,21 @@ Three rules worth bolding in any binding's contributing guide:
   `MethodHandles.insertArguments` gives one stub per instance, each with its own generated code. Once
   there are many, switch to the C idiom: one stub, plus the `void* state` pointer RocksDB passes back,
   keyed into a registry.
+- **A downcall linked `Linker.Option.critical` must never trigger an upcall.** The option skips the
+  JVM's thread-state transition on the assumption the native call never re-enters Java. lmdb-ffm breaks
+  that assumption: a custom `LmdbComparator`, installed via `mdb_set_compare`, runs as an upcall from
+  inside LMDB's own B+tree search — from inside the very `mdb_get`/`mdb_cursor_get` call linked as
+  critical. The result isn't a segfault, it's a VM-level guarantee failure, because HotSpot's own
+  bookkeeping assumed the thread never left native code:
+  ```
+  # Internal Error (upcallLinker.cpp:77)
+  # guarantee(thread->thread_state() == _thread_in_native) failed:
+  #     wrong thread state for upcall
+  ```
+  The fix links the symbol twice — once critical, once plain — and switches to the plain handle for the
+  rest of that environment's life the moment a comparator is installed.[^lmdb-critical-upcall]
 
-### Item 7: Make adopted native threads die before the VM does
+### Item 7: Make adopted native threads die before the VM does {#item-7}
 
 Item 6 keeps the stub alive; this one is about the *thread* that runs it — a lifetime you didn't
 create, can't enumerate, and are responsible for anyway.
@@ -335,7 +370,7 @@ zstd-ffm never hits this, for the same reason it never needs a deallocator: no c
 library-owned threads, so no zstd thread ever becomes a JVM thread. The hazard is specific to bindings
 whose upcalls run on threads the native library created and owns.
 
-### Item 8: Keep the generated raw layer out of the public API
+### Item 8: Keep the generated raw layer out of the public API {#item-8}
 
 jextract generates a faithful mirror of the header. That mirror isn't an API — it's an intermediate
 representation, and shipping it is how `MemorySegment` ends up in application code.
@@ -356,7 +391,7 @@ A small example of the boundary doing real work: rocksdbffm takes `java.nio.file
 C API takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file`
 and makes "absolute or relative?" someone else's already-solved problem.
 
-### Item 9: Translate every C error idiom at a single boundary
+### Item 9: Translate every C error idiom at a single boundary {#item-9}
 
 The pattern the two libraries make legible: the C idioms could hardly be more different, and the Java
 answer is identical.
@@ -405,7 +440,7 @@ Related translations belong in the same place:
   the idiomatic side. Reading it any other way after the downcall is a race — the JVM may have made
   syscalls of its own in between.
 
-### Item 10: Expose zero-copy as a declared tier, never as a leak
+### Item 10: Expose zero-copy as a declared tier, never as a leak {#item-10}
 
 "No `MemorySegment` in public signatures" is the right default and the wrong absolute rule. Some
 callers *want* the segment — streaming to a socket, feeding another native library — and a `byte[]`
@@ -435,7 +470,7 @@ The rule that survives is narrower and more useful than the one I started with:
 Same reasoning applies to zstd-ffm's zero-copy path and zstd's streaming API, where the natural unit
 is a segment pair rather than an array.
 
-### Item 11: Derive struct accessors from the layout, never from offsets
+### Item 11: Derive struct accessors from the layout, never from offsets {#item-11}
 
 Zstd's streaming API is a good counterexample to "always copy out" — driven by two structs whose `pos`
 field the native side advances in place:
@@ -471,7 +506,20 @@ Two things to take from this: the accessors come out of the layout, so padding a
 stay the library's problem, not yours; and the buffers live for the whole stream, not one call, which
 puts them squarely in Item 5 — allocated in the wrapper's arena, closed with it.
 
-### Item 12: Hold downcall handles in `static final` fields
+lmdb-ffm pushes the same reuse further, and shows where it stops paying off. A pair of `MDB_val`
+out-parameter structs, allocated once per transaction and per cursor instead of once per call, is a
+~300x win over a fresh `Arena` on every read. That's safe for every cursor operation whose data field
+is purely an *out*-parameter — every operation except `GET_BOTH`/`GET_BOTH_RANGE`, which need the
+caller's data as an *in*-parameter to match against. Nothing in the API distinguishes that one
+operation from the rest, so it silently reads whatever the previous call left in the reused
+slot.[^lmdb-get-both-issue] The same confined arena backing those structs also produces an asymmetry
+nobody designed on purpose: a cross-thread `get()` throws `WrongThreadException` before it can reach C,
+because reading the output touches the confined arena — but a cross-thread `put()` allocates its own
+scratch arena per call and sails straight through to memory corruption instead.[^lmdb-write-thread-issue]
+A reused struct's safety only holds for as long as every caller treats it the way the optimization
+assumed; check that assumption again each time a new operation is added on top.
+
+### Item 12: Hold downcall handles in `static final` fields {#item-12}
 
 ```c
 size_t ZSTD_compress(void* dst, size_t dstCapacity,
@@ -498,21 +546,57 @@ not rare that performance ends being spent more into the interface, rather than 
 and recommends buffers "as large as practical" to cut round trips.[^zstd-header] FFM makes each
 crossing cheaper, not free — batching at the API level is still the lever with the most travel.
 
-### Item 13: Ship one Java artifact and cross-compile the native library
+### Item 13: Ship one Java artifact and cross-compile the native library with Zig {#item-13}
 
 Half of what makes JNI bindings miserable to maintain isn't the C glue — it's shipping a compiled
 shim per platform, built against whatever Java version users still run. Every target you didn't build
 for is an `UnsatisfiedLinkError` for somebody, and the matrix only grows.
 
 FFM removes the per-platform *Java* artifact — the glue is ordinary Java, compiled once. What remains
-is the C library, and `zig cc` cross-compiles it for every target from one machine — bundling clang
-and libc, no sysroot or system toolchain, including a Windows `.dll` built on a Linux runner. Both
-projects build their natives this way.
+is the C library, and that's where cross-compilation usually turns into a matrix of OS-specific CI
+runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem
+mostly disappears — not a footnote to the FFM story, but a large fraction of the practical benefit,
+and one that gets far less attention than the API itself.
 
-Not a footnote to the FFM story — a large fraction of the practical benefit, and it gets far less
-attention than the API itself.
+`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every
+target Zig supports — inside the toolchain download itself. `zstd-ffm` skips zstd's build system
+entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
 
-### Item 14: Track child handles so a parent's terminal method can neutralize them
+```bash
+# scripts/build-zstd.sh
+export CC="zig cc -target $ZIG_TARGET"
+SRCS=$(find "$ZSTD_LIB/common" "$ZSTD_LIB/compress" "$ZSTD_LIB/decompress" \
+            "$ZSTD_LIB/dictBuilder" -name '*.c' | sort)
+...
+zig cc -target "$ZIG_TARGET" $CFLAGS -c "$src" -o "$out"
+```
+
+Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not
+a new CI runner. For example: `zstd-ffm` maps six classifiers to six Zig target triples:
+
+```bash
+osx-aarch64)     ZIG_TARGET="aarch64-macos"
+osx-x86_64)      ZIG_TARGET="x86_64-macos"
+linux-x86_64)    ZIG_TARGET="x86_64-linux-gnu"
+linux-aarch64)   ZIG_TARGET="aarch64-linux-gnu"
+windows-x86_64)  ZIG_TARGET="x86_64-windows-gnu"
+windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
+```
+
+That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced
+from a Linux or macOS runner — no MinGW install, no Wine, no Windows box anywhere in the pipeline.
+Neither this project nor its C++ sibling [rocksdbffm](https://github.com/dfa1/rocksdbffm) runs one job
+per OS to get there[^ci]; one host builds every target, because nothing about the build depends on
+which OS it runs on.
+
+One note: the Linux targets are `-gnu`, not `-musl`. The resulting `.so` still dynamically links glibc
+and expects a compatible one on the runtime host — Zig can target `-musl` for a fully static binary.
+
+Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64,
+since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same
+essay gets written again[^justwork].
+
+### Item 14: Track child handles so a parent's terminal method can neutralize them {#item-14}
 
 `mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close` all return nothing:
 
@@ -564,7 +648,7 @@ protected void tryClose(MemorySegment ptr) throws Throwable {
         // Do not call mdb_env_close — a still-open transaction may hold a
         // zero-copy view into the mapping it would free. Leak the native
         // handle instead of freeing memory a live transaction still depends
-        // on; see Item 16 for why this throws rather than logs.
+        // on; see below for why this throws rather than logs.
         throw new LmdbContractException(/* … */);
     }
     try {
@@ -585,8 +669,8 @@ force-aborting one from whatever thread happens to be calling `close()` trades a
 predictable crash for an unpredictable one — corrupting LMDB's reader-table bookkeeping,
 or racing a call the owning thread has in flight right now, is strictly worse than the bug
 being fixed. Once a resource can't be reached by a thread that's allowed to touch it,
-*leaving it alone* is the only safe move; the parent still needs to know it happened, which
-is Item 16.[^lmdb-env-close]
+*leaving it alone* is the only safe move — but the parent still needs a way to tell the
+caller it happened, which is the rest of this item.[^lmdb-env-close]
 
 The same shape exists one ownership level down — a transaction whose cursor is still open
 when it commits or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue]
@@ -596,85 +680,10 @@ as a side effect of ending the transaction), so it's safe to do from any thread 
 transaction just swaps the cursor's pointer to `NULL` directly, the same swap
 `NativeObject#close()` already does to itself.
 
-### Item 15: Re-derive an optimization's safety envelope for every capability added after it
-
-Two different hot-path optimizations in lmdb-ffm each had a safety envelope that was
-correct for the call sites that existed when the optimization was written, and wrong the
-moment a new capability was added on top without anyone re-checking it.
-
-The first is `Linker.Option.critical`, applied to `mdb_get` and `mdb_cursor_get` to skip
-the JVM's thread-state transition on every downcall — a real win, 25–33% on
-`benchmark/ReadBenchmark`'s cursor scans. `critical`'s contract is usually read as "keep
-it short," but the JDK's own doc says more: a critical function "does not call back into
-Java (e.g. using an upcall stub)." Nothing about a short-running native call *implies* that
-constraint holds forever — it holds only until something makes that call re-enter Java.
-lmdb-ffm has exactly that something: a custom `LmdbComparator`, installed via
-`mdb_set_compare`, runs as an upcall from inside LMDB's own B+tree search — from inside
-the very `mdb_get`/`mdb_cursor_get` call that was linked as critical. The result isn't a
-segfault, it's a VM-level guarantee failure, because the JVM's own bookkeeping assumed
-the thread never left native code:
-
-```
-# Internal Error (upcallLinker.cpp:77)
-# guarantee(thread->thread_state() == _thread_in_native) failed:
-#     wrong thread state for upcall
-```
-
-The fix links every affected symbol twice — once critical, once plain — and picks between
-them at each call site on a flag that latches the first time a comparator is installed:
-
-```java
-static final MethodHandle GET =
-        NativeLibrary.lookup("mdb_get", GET_DESCRIPTOR);
-static final MethodHandle GET_CRITICAL =
-        NativeLibrary.lookup("mdb_get", GET_DESCRIPTOR,
-                new Linker.Option[] {Linker.Option.critical(false)});
-```
-
-```java
-if (env.usesComparators()) {
-    code = (int) Bindings.GET.invokeExact(ptr(), dbi.handle(), keyVal, dataVal);
-} else {
-    code = (int) Bindings.GET_CRITICAL.invokeExact(ptr(), dbi.handle(), keyVal, dataVal);
-}
-```
-
-A database with no custom comparator — the default, and what the benchmark that
-justified `critical` in the first place actually measures — keeps the fast path; installing a
-comparator gives it up, once, for the rest of that environment's life.[^lmdb-critical-upcall]
-
-The second case is a reused pair of `MDB_val` out-parameter structs, allocated once per
-transaction and per cursor instead of once per call — a ~300x win over allocating a fresh
-`Arena` on every read, per the same benchmark. That reuse is safe for every cursor
-operation whose data parameter is purely an *out*-parameter — which is every operation
-except `GET_BOTH`/`GET_BOTH_RANGE`, which need the caller's data as an *in*-parameter to
-match against. Nothing in the API distinguishes that one operation from the rest, so it
-silently reads whatever the previous call happened to leave in the reused slot — a
-plausible-looking result built from stale state, not from anything the caller asked
-for.[^lmdb-get-both-issue] The same confined `Arena` backing those structs also produces
-an asymmetry nobody designed on purpose: a cross-thread `get()` throws
-`WrongThreadException` before it can reach C, because reading the out-parameter touches
-the confined arena — but a cross-thread `put()` allocates its own scratch `Arena` per call
-and never touches the confined one, so it sails straight through to memory corruption
-instead.[^lmdb-write-thread-issue] Same reused resource, two different call paths, and
-only one of them happened to inherit the arena's protection.
-
-**Neither of these is a bug in the optimization.** Both are correct for the shape of call
-they were measured against. The lesson is that *shape* is exactly what a safety envelope
-is drawn around, and nothing enforces re-checking it when a later change — a new op, a
-new flag, a new call path through the same reused resource — falls outside the shape the
-benchmark exercised. A `critical` binding's envelope is "no upcalls, ever, from this call or
-anything it invokes"; a reused out-parameter's envelope is "every caller of this reused slot
-treats it as pure output." Write down which capabilities were assumed when the
-optimization was accepted, the same way you'd write down its measured cost — and treat
-every new capability as a diff against that list, not as an unrelated addition.
-
-### Item 16: Give a terminal method exactly one named escape hatch through its swallow
-
-"Destructors must not throw" is the right default for a `close()` shared across every
-`NativeObject` subclass — a caller unwinding through a `try`-with-resources block should
-never have a cleanup failure mask the real exception, or blow up a path that was already
-failing. lmdb-ffm's `NativeObject#close()` enforces exactly that:
+"Destructors must not throw" is otherwise the right default for a `close()` shared across
+every `NativeObject` subclass — a caller unwinding through a `try`-with-resources block
+should never have a cleanup failure mask the real exception, or blow up a path that was
+already failing. lmdb-ffm's `NativeObject#close()` enforces exactly that:
 
 ```java
 public final void close() {
@@ -689,9 +698,9 @@ public final void close() {
 }
 ```
 
-Item 14's fix breaks that, on purpose, for exactly one case. Refusing to call
-`mdb_env_close` while a transaction is still open (Item 14) is the right recovery — but if
-the caller never finds out, the swallow has traded a crash for something arguably worse: a
+The refuse-not-repair fix above breaks that default, on purpose, for exactly one case. If
+the caller never finds out that `mdb_env_close` was refused, the swallow has traded a
+crash for something arguably worse: a
 `close()` that returns normally while the object it claims to have closed is still fully
 alive underneath, silently able to mutate the file a caller now believes is safely closed.
 A background log line doesn't fix that either — a caller who wraps `close()` in
@@ -732,38 +741,6 @@ one case that genuinely needs to escape its own type, and let the type itself ca
 justification for why "destructors must not throw" doesn't apply to it — the exception's
 own javadoc becomes the place that argument lives, not a comment at each throw site.
 
-## Item 17: Use Zig to cross-compile C/C++
-
-FFM handles the calling side from Java. The other half of wrapping a C library is building that C library, and that is where cross-compilation usually turns into a matrix of OS-specific CI runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem mostly disappears.
-
-`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target Zig supports — inside the toolchain download itself. `zstd-ffm` skips zstd's build system entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
-
-```bash
-# scripts/build-zstd.sh
-export CC="zig cc -target $ZIG_TARGET"
-SRCS=$(find "$ZSTD_LIB/common" "$ZSTD_LIB/compress" "$ZSTD_LIB/decompress" \
-            "$ZSTD_LIB/dictBuilder" -name '*.c' | sort)
-...
-zig cc -target "$ZIG_TARGET" $CFLAGS -c "$src" -o "$out"
-```
-
-Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not a new CI runner. For example: `zstd-ffm` maps six classifiers to six Zig target triples:
-
-```bash
-osx-aarch64)     ZIG_TARGET="aarch64-macos"
-osx-x86_64)      ZIG_TARGET="x86_64-macos"
-linux-x86_64)    ZIG_TARGET="x86_64-linux-gnu"
-linux-aarch64)   ZIG_TARGET="aarch64-linux-gnu"
-windows-x86_64)  ZIG_TARGET="x86_64-windows-gnu"
-windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
-```
-
-That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced from a Linux or macOS runner — no MinGW install, no Wine, no Windows box anywhere in the pipeline. Neither this project nor its C++ sibling [rocksdbffm](https://github.com/dfa1/rocksdbffm) runs one job per OS to get there[^ci]; one host builds every target, because nothing about the build depends on which OS it runs on.
-
-One note: the Linux targets are `-gnu`, not `-musl`. The resulting `.so` still dynamically links glibc and expects a compatible one on the runtime host — Zig can target `-musl` for a fully static binary.
-
-Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64, since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same essay gets written again[^justwork].
-
 [^ci]: Both projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
 
 [^uber]: Uber Engineering, [*Bootstrapping Uber's Infrastructure on arm64 with Zig*](https://www.uber.com/us/en/blog/bootstrapping-ubers-infrastructure-on-arm64-with-zig/) (2023).
@@ -781,9 +758,9 @@ back on a thread it did not create. That is a useful way to read the list — wh
 decided by the C library's ownership and threading model, not by taste.
 
 lmdb-ffm, FFM bindings for [LMDB](https://www.lmdb.tech/), is a third data point, and it confirms all
-eleven again, unchanged — plus three more (Items 14–16) that neither of the first two projects had
-reason to hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-ffm each wrap
-a single opaque handle with one lifetime to manage, which is what Items 1–13 are mostly about managing
+eleven again, unchanged — plus one more (Item 14) that neither of the first two projects had reason to
+hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-ffm each wrap a single
+opaque handle with one lifetime to manage, which is what Items 1–13 are mostly about managing
 correctly. LMDB is transactional — an environment owns transactions, a transaction owns cursors — so
 there are *relationships between* lifetimes as well, and a relationship has no natural place to live
 unless one of the two sides is made to track it explicitly.
