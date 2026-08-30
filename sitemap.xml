@@ -60,4 +60,8 @@
     <loc>https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html</loc>
     <lastmod>2026-08-08</lastmod>
   </url>
+  <url>
+    <loc>https://dfa1.github.io/articles/announcing-zstd-java.html</loc>
+    <lastmod>2026-07-26</lastmod>
+  </url>
 </urlset>
