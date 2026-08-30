@@ -39,8 +39,8 @@ are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the rig
 - [Item 2: Allocate out-params in the calling arena](#item-2)
 - [Item 3: Copy out and free before reaching for anything cleverer](#item-3)
 - [Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret`](#item-4)
-- [Item 5: Give every opaque handle its own arena](#item-5)
-- [Item 6: CAS the native pointer to NULL exactly once](#item-6)
+- [Item 5: Wrap native pointers to provide ownership](#item-5)
+- [Item 6: Give every opaque handle its own arena](#item-6)
 - [Item 7: Scope an upcall stub to the life of the object that uses it](#item-7)
 - [Item 8: Make adopted native threads die before the VM does](#item-8)
 - [Item 9: Keep the generated raw layer out of the public API](#item-9)
@@ -49,7 +49,6 @@ are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the rig
 - [Item 12: Derive struct accessors from the layout, never from offsets](#item-12)
 - [Item 13: Hold downcall handles in `static final` fields](#item-13)
 - [Item 14: Ship one Java artifact and cross-compile the native library with Zig](#item-14)
-- [Item 15: Track child handles so a parent's terminal method can neutralize them](#item-15)
 
 ### Item 1: Prefer a confined arena per operation {#item-1}
 
@@ -61,6 +60,9 @@ size_t ZSTD_compressBound(size_t srcSize);
 size_t ZSTD_compress(void* dst, size_t dstCapacity,
                      const void* src, size_t srcSize, int compressionLevel);
 ```
+
+**Ownership:** entirely caller-side. Java allocates both `src` and `dst`; `ZSTD_compress` only reads
+one and writes the other. Nothing here is allocated by C, so there's nothing to free.
 
 ```java
 public static byte[] compress(byte[] src, ZstdCompressionLevel level) {
@@ -95,6 +97,11 @@ in the same confined arena as everything else and never lets them escape it.
 char* rocksdb_get(rocksdb_t* db, const rocksdb_readoptions_t* options,
                   const char* key, size_t keylen, size_t* vallen, char** errptr);
 ```
+
+**Ownership:** `vallen` and `errptr` are caller-allocated scratch, freed with the arena. What RocksDB
+writes *through* them — the returned value pointer and any error message — is a different story: both
+are C-allocated and handed off to the caller on return. Freeing the first is Item 3's subject; the
+second, Item 10's.
 
 ```java
 try (Arena arena = Arena.ofConfined()) {
@@ -182,46 +189,17 @@ The failure modes, none of them obvious:
 Zstandard never needs any of this — you size the destination yourself with `ZSTD_compressBound`.
 Reaching for a deallocator in a caller-allocates API is a sign you've misread the ownership contract.
 
-### Item 5: Give every opaque handle its own arena {#item-5}
+### Item 5: Wrap native pointers to provide ownership {#item-5}
 
-Between "lives for one call" and "lives forever" sits the common case: a native object expensive to
-create, reused across many calls, freed explicitly. `ZSTD_CCtx` is the canonical example; `rocksdb_t`
-and `rocksdb_iterator_t` are the same shape.
+Wrapping a native pointer in a Java object raises three questions no C header answers: who frees it, and
+how many times; can ownership move to someone else without a free; and can this object's own resource be
+released while something downstream still depends on it. All three projects answer the first two with the
+same base class, `NativeObject`, holding the pointer in an `AtomicReference<MemorySegment>`; rocksdbffm
+generalizes the third.
 
-The rule is one arena per native object, owned by the Java wrapper, closed in the wrapper's
-`close()`:[^cctx-close]
-
-```c
-ZSTD_CCtx* ZSTD_createCCtx(void);
-size_t     ZSTD_freeCCtx(ZSTD_CCtx* cctx);   /* compatible with NULL pointer */
-```
-
-```java
-@Override
-protected void tryClose(MemorySegment ptr) throws Throwable {
-    try {
-        var _ = (long) Bindings.FREE_CCTX.invokeExact(ptr);
-    } finally {
-        arena.close();
-    }
-}
-```
-
-The ordering is easy to get backwards: **free the native object first, then close the arena.** The
-arena holds buffers and stubs the object may still touch during teardown; closing it first is a
-use-after-free that won't reproduce under light load. The `finally` isn't decoration — if the native
-free throws, the arena still has to go.
-
-This is also where you decide the object's thread policy rather than inherit it. `ZSTD_CCtx` isn't
-thread-safe; a confined arena turns misuse into a Java-level exception instead of silent corruption —
-the safety property and the C contract lining up for free.
-
-### Item 6: CAS the native pointer to NULL exactly once {#item-6}
-
-Item 5's `tryClose` override, and Item 15's child-tracking, both sit on top of a `close()` that has to
-run its cleanup exactly once no matter how many times, or from how many threads, it's called. All three
-projects independently arrived at the same twelve lines for `close()` before any of them named it as a
-pattern — zstd-ffm's version:
+**Free exactly once, from any thread.** `close()` has to run its cleanup exactly once no matter how many
+times, or from how many threads, it's called. All three projects independently arrived at the same twelve
+lines before any of them named it as a pattern — zstd-ffm's version:
 
 ```java
 public abstract class NativeObject implements AutoCloseable {
@@ -265,22 +243,232 @@ Three things this buys that a hand-written `close()` per wrapper doesn't:
   null check duplicated in every subclass, no double-free even if a caller closes the same object
   concurrently from two threads.
 - **The swallow-or-not decision is made once, not re-litigated per subclass.** rocksdbffm's version logs
-  before swallowing; zstd-ffm's swallows silently. Item 15's `LmdbContractException` carve-out is a
-  narrow, deliberate exception to that default, not a rebuild of it.
+  before swallowing; zstd-ffm's swallows silently — the LMDB carve-out later in this item is a narrow,
+  deliberate exception to that default, not a rebuild of it.
 
-`close()` is `final`; only `tryClose(MemorySegment)` is abstract. That split is what lets Item 5's
-`ZstdCompressStream.tryClose` and Item 15's `LmdbEnv.tryClose` be different one-off bodies plugged into
-identical, already-correct plumbing — the concurrency argument gets made once, here, instead of
-re-audited in every subclass that touches a native pointer.
+`close()` is `final`; only `tryClose(MemorySegment)` is abstract, so a `ZstdCompressStream.tryClose` and
+an `LmdbEnv.tryClose` (below) can be entirely different one-off bodies plugged into identical,
+already-correct plumbing — the concurrency argument gets made once, here, instead of re-audited in every
+subclass that touches a native pointer.
 
-rocksdbffm carries the idea one step further with `NativeObjectWithChildren`: a `final tryClose` that
-walks a `ConcurrentHashMap`-backed set of registered children, closes each one, then delegates to the
-subclass's own `tryCloseResource` — the generic version of exactly the problem Item 15 solves by hand for
-LMDB's transactions. The two solutions differ because the failure mode differs: a RocksDB `Snapshot` is
-safe to release from whatever thread happens to be closing its `DB`, so cascading the close is the right
-move; an LMDB transaction is confined to the thread that began it, so forcing it closed from the wrong
-thread trades a predictable crash for silent corruption — which is why Item 15 refuses instead of
-cascading.
+**Give ownership away without freeing it.** Not every pointer a wrapper holds dies in that wrapper's
+`close()` — sometimes a later native call takes ownership instead:
+
+```c
+void rocksdb_block_based_options_set_filter_policy(
+    rocksdb_block_based_table_options_t* options,
+    rocksdb_filterpolicy_t* filter_policy);
+void rocksdb_filterpolicy_destroy(rocksdb_filterpolicy_t*);
+```
+
+**Ownership:** `set_filter_policy` transfers ownership of `filter_policy` into `options` — RocksDB's
+`c.cc` implements it as `options->rep.filter_policy.reset(filter_policy)`, so `options`'s own destructor
+frees it from here on. Calling `rocksdb_filterpolicy_destroy` on it afterward is a double-free of memory
+the caller no longer owns. rocksdbffm's `NativeObject` — same shape, field named `owningPointer` there —
+has a second, package-private way to reach `MemorySegment.NULL` that skips `tryClose` entirely:
+
+```java
+void transferOwnership() {
+    owningPointer.set(MemorySegment.NULL);
+}
+```
+
+The hard part isn't the method, it's knowing when to call it — nothing in a C signature says "takes
+ownership." The class's own javadoc admits as much and lists where to actually find out: read the C
+source and check whether the destructor calls `delete` on what you handed it, check the API docs on the
+rare occasion they say so explicitly, or fall back to whatever the official JNI binding already worked
+out. `close()` called after `transferOwnership()` is a no-op — the pointer is already NULL — which is the
+point: the object still gets closed, it just no longer owns anything by then.
+
+**Refuse to free while a child depends on you.** `mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close`
+all return nothing:
+
+```c
+void mdb_env_close(MDB_env *env);
+void mdb_txn_abort(MDB_txn *txn);
+void mdb_cursor_close(MDB_cursor *cursor);
+```
+
+**Ownership:** none of these take or return a pointer, so nothing here looks like a transfer — the
+hazard is *hierarchy*, not a handoff. An `MDB_env*` owns every `MDB_txn*` opened against it, and each of
+those owns any `MDB_cursor*` opened against it; calling the first while a transaction from that
+environment is still open is undefined behavior, and a transaction must itself have no open cursors
+before *it* ends — but that rule lives entirely in LMDB's prose documentation, nowhere in these
+signatures. Left unenforced, the failure is a two-step one, which is what makes it easy to miss in
+review: the mistake (closing the parent early) and the crash (the next, unrelated call on the child) are
+two different call sites, often two different stack traces, sometimes two different threads.
+
+```java
+LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY));
+LmdbDbi dbi = txn.openDatabase(Set.of());
+txn.get(dbi, "key000042".getBytes(UTF_8));   // fine
+
+env.close();
+
+txn.get(dbi, "key000043".getBytes(UTF_8));   // SIGSEGV — mdb_page_search_root+0x2c
+```
+
+rocksdbffm already has a generic answer to "a parent must outlive its children": `NativeObjectWithChildren`
+overrides `tryClose` as `final`, walks a `ConcurrentHashMap`-backed set of registered children, closes
+each one, then delegates to the subclass's own `tryCloseResource`. A `Snapshot` registers with its `DB`
+this way, and cascading is safe there because releasing a RocksDB snapshot is safe to do from whatever
+thread happens to be closing the `DB`.
+
+LMDB can't reuse that shape, because the constraint is different: a transaction is confined to the thread
+that began it, so forcing one closed from whatever thread is calling `env.close()` trades a predictable
+crash for an unpredictable one — corrupting LMDB's reader-table bookkeeping, or racing a call the owning
+thread has in flight right now. Cascading is unsafe here, so lmdb-ffm's `LmdbEnv` tracks a count instead
+of a set, and refuses to close rather than closing on the child's behalf:
+
+```java
+// LmdbEnv
+private final AtomicInteger openTransactions = new AtomicInteger();
+
+void registerTransaction() {
+    openTransactions.incrementAndGet();
+}
+
+void unregisterTransaction() {
+    openTransactions.decrementAndGet();
+}
+
+@Override
+protected void tryClose(MemorySegment ptr) throws Throwable {
+    int open = openTransactions.get();
+    if (open != 0) {
+        // Do not call mdb_env_close — a still-open transaction may hold a
+        // zero-copy view into the mapping it would free. Leak the native
+        // handle instead of freeing memory a live transaction still depends
+        // on; see below for why this throws rather than logs.
+        throw new LmdbContractException(/* … */);
+    }
+    try {
+        Bindings.ENV_CLOSE.invokeExact(ptr);
+    } finally {
+        arena.close();
+    }
+}
+```
+
+`LmdbTxn`'s constructor calls `registerTransaction()`; `commit()`, `abort()`, and the transaction's own
+`tryClose()` each call `unregisterTransaction()` — exactly one of the three runs per transaction, so the
+count never drifts. **The safe recovery here is refuse, not repair.** An earlier version of this fix
+force-aborted every still-open transaction before actually closing the environment, on the theory that a
+clean abort beats a leak — and that version was wrong, for the thread-confinement reason above. Once a
+resource can't be reached by a thread that's allowed to touch it, *leaving it alone* is the only safe
+move — but the parent still needs a way to tell the caller it happened.[^lmdb-env-close]
+
+The same shape exists one ownership level down — a transaction whose cursor is still open when it commits
+or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue] The fix there is the
+version of this pattern with no leak trade-off at all: neutralizing a `LmdbCursor` needs no native call
+whatsoever (LMDB already frees the C-level cursor struct as a side effect of ending the transaction), so
+it's safe to do from any thread — the transaction just swaps the cursor's pointer to `NULL` directly, the
+same swap `NativeObject#close()` already does to itself.
+
+"Destructors must not throw" is otherwise the right default for the shared `close()` above — a caller
+unwinding through a `try`-with-resources block should never have a cleanup failure mask the real
+exception, or blow up a path that was already failing. The refuse-not-repair fix breaks that default, on
+purpose, for exactly one case: if the caller never finds out that `mdb_env_close` was refused, the swallow
+has traded a crash for something arguably worse — a `close()` that returns normally while the object it
+claims to have closed is still fully alive underneath, silently able to mutate a file the caller now
+believes is safely closed. A background log line doesn't fix that either — a caller relying on
+try-with-resources, the idiom this whole API is built around, will never see it. The difference that
+matters is *why* `tryClose` is throwing: an ordinary native-call failure is routine and should stay
+swallowed, but a detected violation of the library's own resource-lifetime contract is a bug in the
+*caller's* code that would otherwise vanish without a trace. So `close()` gets one narrow, named
+carve-out — not a general "rethrow on failure" flag, and not a checked exception threading a `throws`
+clause through every `AutoCloseable#close()` in the codebase:
+
+```java
+public final void close() {
+    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
+    if (!MemorySegment.NULL.equals(p)) {
+        try {
+            tryClose(p);
+        } catch (LmdbContractException e) {
+            // The one Throwable this deliberately does not swallow.
+            throw e;
+        } catch (Throwable _) {
+            // destructors must not throw
+        }
+    }
+}
+```
+
+Every existing `tryClose` failure mode — an ordinary native-call error, a double-free attempt, anything
+that isn't a detected contract violation — is swallowed exactly as before; there's a regression test
+locking that in (`closeSwallowsTryCloseFailures`). Only `LmdbContractException` escapes, and only after
+whatever recovery was possible already ran, so the caller's own state is always left consistent by the
+time they catch it — never mid-repair.[^lmdb-contract-exception]
+
+The general shape: when a `close()`-style method's contract is "never throws," don't relax that contract
+wholesale the first time you need to report something loud. Give the one case that genuinely needs to
+escape its own type, and let the type itself carry the justification for why "destructors must not throw"
+doesn't apply to it — the exception's own javadoc becomes the place that argument lives, not a comment at
+each throw site.
+
+### Item 6: Give every opaque handle its own arena {#item-6}
+
+Between "lives for one call" and "lives forever" sits the common case: a native object expensive to
+create, reused across many calls, freed explicitly. `ZSTD_CCtx` is the canonical example; `rocksdb_t`
+and `rocksdb_iterator_t` are the same shape. Item 5's `NativeObject` already owns the pointer; what's
+new here is a second resource the wrapper owns alongside it — an arena for its own buffers and
+stubs — with its own lifetime to manage:[^cctx-close]
+
+```c
+ZSTD_CCtx* ZSTD_createCCtx(void);
+size_t     ZSTD_freeCCtx(ZSTD_CCtx* cctx);   /* compatible with NULL pointer */
+```
+
+**Ownership:** `ZSTD_createCCtx` allocates and returns a pointer C no longer tracks — ownership passes
+to the caller immediately. `ZSTD_freeCCtx` is the other half of that contract: call it exactly once,
+which is exactly what `NativeObject` (Item 5) guarantees.
+
+```java
+public final class ZstdCompressStream extends NativeObject {
+
+    private final Arena arena;
+    private final ZstdStreamBuffer in;    // backed by `arena`, holds the source segment + position
+    private final ZstdStreamBuffer out;   // backed by `arena`, holds the destination segment + position
+
+    public ZstdCompressStream(ZstdCompressionLevel level) {
+        super(createCctx());              // NativeObject now owns the CCtx pointer, freed by tryClose below
+        this.arena = Arena.ofConfined();  // this wrapper's own resource, independent of the pointer above
+        this.in = new ZstdStreamBuffer(arena);
+        this.out = new ZstdStreamBuffer(arena);
+    }
+
+    private static MemorySegment createCctx() {
+        return NativeCall.createOrThrow("ZSTD_createCCtx", () -> (MemorySegment) Bindings.CREATE_CCTX.invokeExact());
+    }
+
+    @Override
+    protected void tryClose(MemorySegment ptr) throws Throwable {
+        try {
+            var _ = (long) Bindings.FREE_CCTX.invokeExact(ptr);
+        } finally {
+            arena.close();
+        }
+    }
+}
+```
+
+`super(createCctx())` hands the pointer to `NativeObject`; `arena` is a second, independent resource
+this same wrapper owns, backing the `in`/`out` buffers Item 12 covers. `tryClose(MemorySegment)` is the
+one hook `NativeObject` calls, per Item 5 — everything inside it, including what order to free things
+in, is this class's own business.
+
+That ordering is still worth getting right: **free the native object first, then close the arena.** For
+a plain `ZSTD_CCtx` neither resource touches the other, so reversing the two lines above wouldn't
+actually crash — but the moment a wrapper's arena backs an upcall stub instead of a plain buffer (Item
+7's comparator, next), that stops being true: the native side can still call back into the stub while
+its own teardown runs, and closing the arena first pulls the stub out from under it mid-call. Freeing in
+this order everywhere costs nothing when the hazard isn't present, and means never having to re-derive
+the answer, case by case, for the wrappers where it is.
+
+This is also where you decide the object's thread policy rather than inherit it. `ZSTD_CCtx` isn't
+thread-safe; a confined arena turns misuse into a Java-level exception instead of silent corruption —
+the safety property and the C contract lining up for free.
 
 ### Item 7: Scope an upcall stub to the life of the object that uses it {#item-7}
 
@@ -297,6 +485,11 @@ rocksdb_comparator_t* rocksdb_comparator_create(
     const char* (*name)(void*));
 ```
 
+**Ownership:** RocksDB takes ownership of *calling* `compare`/`name` for the comparator's lifetime, and
+calls `destructor(state)` exactly once when it's done. `state` itself is opaque to RocksDB — whatever it
+points to is the caller's own memory, so releasing it is the caller's job, done inside that
+`destructor` callback.
+
 Each of those function pointers is an upcall stub on the Java side:
 
 ```java
@@ -306,7 +499,7 @@ MemorySegment stub = linker.upcallStub(target, COMPARE_DESC, arena);
 ```
 
 The `arena` argument is the whole story — the stub is valid exactly as long as it's open. So the arena
-has to be scoped to the *native object's* life, per Item 5, and closed only after RocksDB is done with
+has to be scoped to the *native object's* life, per Item 6, and closed only after RocksDB is done with
 the comparator.
 
 Three rules worth bolding in any binding's contributing guide:
@@ -458,6 +651,67 @@ A small example of the boundary doing real work: rocksdbffm takes `java.nio.file
 C API takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file`
 and makes "absolute or relative?" someone else's already-solved problem.
 
+A second example, for the common case where the C API takes a plain integer where the natural Java type
+is an enum: lmdb-ffm's environment flags are OR-able bits from `lmdb.h`:
+
+```java
+public enum LmdbEnvFlag implements LmdbFlag {
+    FIXEDMAP(0x01),
+    NOSUBDIR(0x4000),
+    NOSYNC(0x10000),
+    RDONLY(0x20000),
+    // ...
+    NOMEMINIT(0x1000000);
+
+    private final int bits;
+
+    LmdbEnvFlag(int bits) {
+        this.bits = bits;
+    }
+
+    @Override
+    public int bits() {
+        return bits;
+    }
+}
+```
+
+The idiomatic layer takes a `Set<LmdbEnvFlag>` — `EnumSet.of(LmdbEnvFlag.RDONLY, LmdbEnvFlag.NOSUBDIR)`
+reads at the call site the way the LMDB manual itself describes the flags, not as a `NOSUBDIR | RDONLY`
+expression the caller has to get the precedence of `|` right on. One shared interface folds the set back
+into the single native `unsigned int` the raw layer needs, and splits it back apart for calls that report
+flags back:
+
+```java
+interface LmdbFlag {
+    int bits();
+
+    static int toBits(Set<? extends LmdbFlag> flags) {
+        int bits = 0;
+        for (LmdbFlag flag : flags) {
+            bits |= flag.bits();
+        }
+        return bits;
+    }
+
+    static <E extends Enum<E> & LmdbFlag> Set<E> fromBits(int bits, Class<E> type) {
+        Set<E> flags = EnumSet.noneOf(type);
+        for (E flag : type.getEnumConstants()) {
+            if ((bits & flag.bits()) == flag.bits()) {
+                flags.add(flag);
+            }
+        }
+        return flags;
+    }
+}
+```
+
+`toBits` and `fromBits` are the only two places in the codebase that know these values are `int`s at all
+— `LmdbDbiFlag` and `LmdbWriteFlag` implement the same interface and get both directions for free.
+rocksdbffm has the simpler version of the same idea: `CompressionType` maps one-to-one onto
+`rocksdb_*_compression`, so there's no bitmask to fold, just `getValue()` going out and `fromValue(int)`
+coming back — the same principle, without the OR because the C side never combines these values.
+
 ### Item 10: Translate every C error idiom at a single boundary {#item-10}
 
 The pattern the two libraries make legible: the C idioms could hardly be more different, and the Java
@@ -482,6 +736,10 @@ range, tested with `ZSTD_isError` and named with `ZSTD_getErrorName`.
 unsigned    ZSTD_isError(size_t result);
 const char* ZSTD_getErrorName(size_t result);
 ```
+
+**Ownership:** no pointers change hands at all. `ZSTD_isError`/`ZSTD_getErrorName` classify and name a
+plain `size_t` return code; the string `ZSTD_getErrorName` returns is a static literal owned by the
+library forever, never freed by either side.
 
 ```java
 static boolean isError(long code) {
@@ -556,6 +814,11 @@ typedef struct ZSTD_outBuffer_s {
 } ZSTD_outBuffer;
 ```
 
+**Ownership:** C never allocates either struct — the caller creates both (here, once per stream, in the
+wrapper's own arena per Item 6) and passes a pointer in. `ZSTD_compressStream2` only reads `src`/`dst`/
+`size` and writes `pos` back in place; there's nothing here for either side to free beyond the arena
+itself.
+
 The protocol is call, read `pos`, call again. The two structs differ only in the name and constness of
 the first field, so one Java layout serves both — named `ptr` because it's `src` in one and `dst` in
 the other:[^stream-buffer]
@@ -571,7 +834,7 @@ private static final VarHandle POS_HANDLE = LAYOUT.varHandle(PathElement.groupEl
 
 Two things to take from this: the accessors come out of the layout, so padding and ABI differences
 stay the library's problem, not yours; and the buffers live for the whole stream, not one call, which
-puts them squarely in Item 5 — allocated in the wrapper's arena, closed with it.
+puts them squarely in Item 6 — allocated in the wrapper's arena, closed with it.
 
 lmdb-ffm pushes the same reuse further, and shows where it stops paying off. A pair of `MDB_val`
 out-parameter structs, allocated once per transaction and per cursor instead of once per call, is a
@@ -662,151 +925,6 @@ and expects a compatible one on the runtime host — Zig can target `-musl` for 
 Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64,
 since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same
 essay gets written again[^justwork].
-
-### Item 15: Track child handles so a parent's terminal method can neutralize them {#item-15}
-
-`mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close` all return nothing:
-
-```c
-void mdb_env_close(MDB_env *env);
-void mdb_txn_abort(MDB_txn *txn);
-void mdb_cursor_close(MDB_cursor *cursor);
-```
-
-There is nothing in any of those signatures to tell you that calling the first while a
-transaction from that environment is still open is undefined behavior, or that the
-transaction must itself have no open cursors before *it* ends. That rule lives entirely in
-LMDB's prose documentation. Nothing enforced it on the Java side either — every
-`NativeObject` subclass managed its own pointer and nothing else, so a parent's terminal
-method had no way to know a child was still alive. The failure is a two-step one, which
-is what makes it easy to miss in review: the mistake (closing the parent early) and the
-crash (the next, unrelated call on the child) are two different call sites, often two
-different stack traces, sometimes two different threads.
-
-```java
-LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY));
-LmdbDbi dbi = txn.openDatabase(Set.of());
-txn.get(dbi, "key000042".getBytes(UTF_8));   // fine
-
-env.close();
-
-txn.get(dbi, "key000043".getBytes(UTF_8));   // SIGSEGV — mdb_page_search_root+0x2c
-```
-
-The fix is to make the parent actually track what it opened, and give its terminal method
-something to check:
-
-```java
-// LmdbEnv
-private final AtomicInteger openTransactions = new AtomicInteger();
-
-void registerTransaction() {
-    openTransactions.incrementAndGet();
-}
-
-void unregisterTransaction() {
-    openTransactions.decrementAndGet();
-}
-
-@Override
-protected void tryClose(MemorySegment ptr) throws Throwable {
-    int open = openTransactions.get();
-    if (open != 0) {
-        // Do not call mdb_env_close — a still-open transaction may hold a
-        // zero-copy view into the mapping it would free. Leak the native
-        // handle instead of freeing memory a live transaction still depends
-        // on; see below for why this throws rather than logs.
-        throw new LmdbContractException(/* … */);
-    }
-    try {
-        Bindings.ENV_CLOSE.invokeExact(ptr);
-    } finally {
-        arena.close();
-    }
-}
-```
-
-`LmdbTxn`'s constructor calls `registerTransaction()`; `commit()`, `abort()`, and the
-transaction's own `tryClose()` each call `unregisterTransaction()` — exactly one of the
-three runs per transaction, so the count never drifts. **The safe recovery here is refuse,
-not repair.** An earlier version of this fix force-aborted every still-open transaction
-before actually closing the environment, on the theory that a clean abort beats a leak.
-That version was wrong: LMDB confines a transaction to the thread that began it, so
-force-aborting one from whatever thread happens to be calling `close()` trades a
-predictable crash for an unpredictable one — corrupting LMDB's reader-table bookkeeping,
-or racing a call the owning thread has in flight right now, is strictly worse than the bug
-being fixed. Once a resource can't be reached by a thread that's allowed to touch it,
-*leaving it alone* is the only safe move — but the parent still needs a way to tell the
-caller it happened, which is the rest of this item.[^lmdb-env-close]
-
-The same shape exists one ownership level down — a transaction whose cursor is still open
-when it commits or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue]
-The fix there is the version of this pattern with no leak trade-off at all: neutralizing a
-`LmdbCursor` needs no native call whatsoever (LMDB already frees the C-level cursor struct
-as a side effect of ending the transaction), so it's safe to do from any thread — the
-transaction just swaps the cursor's pointer to `NULL` directly, the same swap
-`NativeObject#close()` already does to itself.
-
-"Destructors must not throw" is otherwise the right default for a `close()` shared across
-every `NativeObject` subclass — a caller unwinding through a `try`-with-resources block
-should never have a cleanup failure mask the real exception, or blow up a path that was
-already failing. lmdb-ffm's `NativeObject#close()` enforces exactly that:
-
-```java
-public final void close() {
-    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
-    if (!MemorySegment.NULL.equals(p)) {
-        try {
-            tryClose(p);
-        } catch (Throwable _) {
-            // destructors must not throw
-        }
-    }
-}
-```
-
-The refuse-not-repair fix above breaks that default, on purpose, for exactly one case. If
-the caller never finds out that `mdb_env_close` was refused, the swallow has traded a
-crash for something arguably worse: a
-`close()` that returns normally while the object it claims to have closed is still fully
-alive underneath, silently able to mutate the file a caller now believes is safely closed.
-A background log line doesn't fix that either — a caller who wraps `close()` in
-try-with-resources, the idiom this whole API is built around, will never see it. The
-difference that matters is *why* `tryClose` is throwing: an ordinary native-call failure is
-routine and should stay swallowed, but a detected violation of the library's own
-resource-lifetime contract is a bug in the *caller's* code that would otherwise vanish
-without a trace. So `close()` gets one narrow, named carve-out — not a general "rethrow
-on failure" flag, and not a checked exception threading a `throws` clause through every
-`AutoCloseable#close()` in the codebase:
-
-```java
-public final void close() {
-    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
-    if (!MemorySegment.NULL.equals(p)) {
-        try {
-            tryClose(p);
-        } catch (LmdbContractException e) {
-            // The one Throwable this deliberately does not swallow.
-            throw e;
-        } catch (Throwable _) {
-            // destructors must not throw
-        }
-    }
-}
-```
-
-Every existing `tryClose` failure mode — an ordinary native-call error, a double-free
-attempt, anything that isn't a detected contract violation — is swallowed exactly as
-before; there's a regression test locking that in (`closeSwallowsTryCloseFailures`). Only
-`LmdbContractException` escapes, and only after whatever recovery was possible already
-ran, so the caller's own state is always left consistent by the time they catch it —
-never mid-repair.[^lmdb-contract-exception]
-
-The general shape: when a `close()`-style method's contract is "never throws," don't
-relax that contract wholesale the first time you need to report something loud. Give the
-one case that genuinely needs to escape its own type, and let the type itself carry the
-justification for why "destructors must not throw" doesn't apply to it — the exception's
-own javadoc becomes the place that argument lives, not a comment at each throw site.
 
 [^ci]: Both projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
 
