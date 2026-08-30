@@ -116,13 +116,9 @@ zstd-ffm's v0.12 changelog frames the domain-primitive sweep — `ZstdByteSize`,
 
 These are ordinary `record`s today — identity classes, one heap allocation apiece. Cheap at an API boundary, not free in a per-chunk hot loop. That's the trade-off [Rethink Domain Primitives with Valhalla](https://dfa1.github.io/articles/rethink-domain-primitives-with-valhalla.html) measured directly: a wrapper `record` costs roughly 4× the bare primitive it replaces. Project Valhalla's `value class`[^valhalla-jep] removes that cost, flattening the same fields into the array slot or register instead of the heap — still a JDK 27 preview, not something Maven Central can depend on yet. The migration from here is mechanical: the types are already `final`, immutable, and validate once at construction. Nothing about their design has to change to stop paying for identity once the JVM stops charging for it.
 
-## Dogfooding: vortex-java
-
-The three points above aren't just abstract design goals — they're why my own vortex-java migrated its `vortex.zstd` column encoding to zstd-ffm. This is dogfooding, not outside validation: same author, a second project. Both are `MemorySegment`-native: vortex-java is 100% Java, built on `MemorySegment`/`Arena`, no JNI and no `sun.misc.Unsafe`[^vortex-memorysegment]. zstd-ffm's `byte[]` methods are thin wrappers over the same `MemorySegment`-based native calls — `MemorySegment` is the primary API, not an alternate path[^zstd-primary]. The integration boundary is a segment handoff, not a copy. Vortex's columnar encodings include dictionary, delta, FastLanes, and a Zstd fallback. Until v0.10.0, that fallback went through `io.airlift:aircompressor-v3`, a pure-Java Zstd decoder. Migrating to `io.github.dfa1.zstd:zstd` picked up framed, sliceable payloads, nullable-column support, and shared-dictionary decode in one change[^vortex-changelog]. Consumers pull in exactly one dependency, `zstd-platform`, and get the binding plus native `libzstd` for every supported platform — no per-platform artifact juggling.
-
 ## What's next
 
-zstd-ffm is at v0.12, pre-1.0. The introduction of domain primitives in this release was itself preparation for 1.0: replacing naked `int`/`long` at the API boundary means breaking changes, cheaper to make now than after a 1.0 tag asks for stability. vortex-java is the first real consumer, not the intended only one. The project is looking for more early adopters on JDK 25+ willing to try an FFM-based alternative to zstd-jni, and report back before the API locks down.
+zstd-ffm is at v0.12, pre-1.0. The introduction of domain primitives in this release was itself preparation for 1.0: replacing naked `int`/`long` at the API boundary means breaking changes, cheaper to make now than after a 1.0 tag asks for stability. vortex-java [^vortex-changelog] is the first real consumer.
 
 zstd-ffm is on Maven Central, BSD 3-Clause licensed, JDK 25+ only. It's for early adopters, not a drop-in swap for a zstd-jni integration that needs to keep running on older JVMs. If that's you, the [repository](https://github.com/dfa1/zstd-ffm) has a quickstart, dictionary compression, and a zero-copy `MemorySegment` API to start from. Issues and pull requests are welcome.
 
@@ -143,7 +139,3 @@ zstd-ffm is on Maven Central, BSD 3-Clause licensed, JDK 25+ only. It's for earl
 [^valhalla-jep]: [JEP 401: Value Classes and Objects](https://openjdk.org/jeps/401) — preview, current EA builds target JDK 27.
 
 [^vortex-changelog]: [CHANGELOG.md](https://github.com/dfa1/vortex-java/blob/master/CHANGELOG.md), vortex-java v0.10.0, 2026-06-26: "The `vortex.zstd` encoding now compresses and decompresses through `io.github.dfa1.zstd:zstd` ... instead of `io.airlift:aircompressor-v3`."
-
-[^vortex-memorysegment]: [vortex-java README](https://github.com/dfa1/vortex-java#readme): "100% Java, no JNI, no `sun.misc.Unsafe`. Uses the FFM API (`MemorySegment`/`Arena`, Java 25+)."
-
-[^zstd-primary]: [`Zstd.java`](https://github.com/dfa1/zstd-ffm/blob/master/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java): every `byte[]` overload opens an `Arena` and allocates `MemorySegment`s internally to make the same native call the `MemorySegment` API exposes directly — the `byte[]` path is a convenience wrapper, not a separate implementation.
