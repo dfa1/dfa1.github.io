@@ -732,6 +732,46 @@ one case that genuinely needs to escape its own type, and let the type itself ca
 justification for why "destructors must not throw" doesn't apply to it — the exception's
 own javadoc becomes the place that argument lives, not a comment at each throw site.
 
+## Item 17: Use Zig to cross-compile C/C++
+
+FFM handles the calling side from Java. The other half of wrapping a C library is building that C library, and that is where cross-compilation usually turns into a matrix of OS-specific CI runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem mostly disappears.
+
+`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target Zig supports — inside the toolchain download itself. `zstd-java` skips zstd's build system entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
+
+```bash
+# scripts/build-zstd.sh
+export CC="zig cc -target $ZIG_TARGET"
+SRCS=$(find "$ZSTD_LIB/common" "$ZSTD_LIB/compress" "$ZSTD_LIB/decompress" \
+            "$ZSTD_LIB/dictBuilder" -name '*.c' | sort)
+...
+zig cc -target "$ZIG_TARGET" $CFLAGS -c "$src" -o "$out"
+```
+
+Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not a new CI runner. For example: `zstd-java` maps six classifiers to six Zig target triples:
+
+```bash
+osx-aarch64)     ZIG_TARGET="aarch64-macos"
+osx-x86_64)      ZIG_TARGET="x86_64-macos"
+linux-x86_64)    ZIG_TARGET="x86_64-linux-gnu"
+linux-aarch64)   ZIG_TARGET="aarch64-linux-gnu"
+windows-x86_64)  ZIG_TARGET="x86_64-windows-gnu"
+windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
+```
+
+That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced from a Linux or macOS runner — no MinGW install, no Wine, no Windows box anywhere in the pipeline. Neither this project nor its C++ sibling [rocksdbffm](https://github.com/dfa1/rocksdbffm) runs one job per OS to get there[^ci]; one host builds every target, because nothing about the build depends on which OS it runs on.
+
+One note: the Linux targets are `-gnu`, not `-musl`. The resulting `.so` still dynamically links glibc and expects a compatible one on the runtime host — Zig can target `-musl` for a fully static binary.
+
+Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64, since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same essay gets written again[^justwork].
+
+[^ci]: Both projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
+
+[^uber]: Uber Engineering, [*Bootstrapping Uber's Infrastructure on arm64 with Zig*](https://www.uber.com/us/en/blog/bootstrapping-ubers-infrastructure-on-arm64-with-zig/) (2023).
+
+[^justwork]: Loris Cro, [*Zig Makes Go Cross Compilation Just Work*](https://dev.to/kristoff/zig-makes-go-cross-compilation-just-work-29ho) — the same claim, and title, shows up for Rust and other languages once people reach for `zig cc` as their C toolchain.
+
+
+
 ## What carried across
 
 Two libraries that agree on nothing at the C level converged on eleven of these items. The two they
