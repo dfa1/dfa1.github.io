@@ -40,15 +40,16 @@ are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the rig
 - [Item 3: Copy out and free before reaching for anything cleverer](#item-3)
 - [Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret`](#item-4)
 - [Item 5: Give every opaque handle its own arena](#item-5)
-- [Item 6: Scope an upcall stub to the life of the object that uses it](#item-6)
-- [Item 7: Make adopted native threads die before the VM does](#item-7)
-- [Item 8: Keep the generated raw layer out of the public API](#item-8)
-- [Item 9: Translate every C error idiom at a single boundary](#item-9)
-- [Item 10: Expose zero-copy as a declared tier, never as a leak](#item-10)
-- [Item 11: Derive struct accessors from the layout, never from offsets](#item-11)
-- [Item 12: Hold downcall handles in `static final` fields](#item-12)
-- [Item 13: Ship one Java artifact and cross-compile the native library with Zig](#item-13)
-- [Item 14: Track child handles so a parent's terminal method can neutralize them](#item-14)
+- [Item 6: CAS the native pointer to NULL exactly once](#item-6)
+- [Item 7: Scope an upcall stub to the life of the object that uses it](#item-7)
+- [Item 8: Make adopted native threads die before the VM does](#item-8)
+- [Item 9: Keep the generated raw layer out of the public API](#item-9)
+- [Item 10: Translate every C error idiom at a single boundary](#item-10)
+- [Item 11: Expose zero-copy as a declared tier, never as a leak](#item-11)
+- [Item 12: Derive struct accessors from the layout, never from offsets](#item-12)
+- [Item 13: Hold downcall handles in `static final` fields](#item-13)
+- [Item 14: Ship one Java artifact and cross-compile the native library with Zig](#item-14)
+- [Item 15: Track child handles so a parent's terminal method can neutralize them](#item-15)
 
 ### Item 1: Prefer a confined arena per operation {#item-1}
 
@@ -215,7 +216,73 @@ This is also where you decide the object's thread policy rather than inherit it.
 thread-safe; a confined arena turns misuse into a Java-level exception instead of silent corruption —
 the safety property and the C contract lining up for free.
 
-### Item 6: Scope an upcall stub to the life of the object that uses it {#item-6}
+### Item 6: CAS the native pointer to NULL exactly once {#item-6}
+
+Item 5's `tryClose` override, and Item 15's child-tracking, both sit on top of a `close()` that has to
+run its cleanup exactly once no matter how many times, or from how many threads, it's called. All three
+projects independently arrived at the same twelve lines for `close()` before any of them named it as a
+pattern — zstd-ffm's version:
+
+```java
+public abstract class NativeObject implements AutoCloseable {
+
+    private final AtomicReference<MemorySegment> ptr;
+
+    protected NativeObject(MemorySegment owningPointer) {
+        this.ptr = new AtomicReference<>(owningPointer);
+    }
+
+    protected final MemorySegment ptr() {
+        MemorySegment p = ptr.get();
+        if (MemorySegment.NULL.equals(p)) {
+            throw new IllegalStateException("native object is closed");
+        }
+        return p;
+    }
+
+    @Override
+    public final void close() {
+        MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
+        if (!MemorySegment.NULL.equals(p)) {
+            try {
+                tryClose(p);
+            } catch (Throwable _) {
+                // destructors must not throw
+            }
+        }
+    }
+
+    protected abstract void tryClose(MemorySegment ptr) throws Throwable;
+}
+```
+
+Three things this buys that a hand-written `close()` per wrapper doesn't:
+
+- **`getAndSet` makes "called twice" and "called from two threads at once" the same problem, solved by
+  one atomic swap.** A `boolean closed` flag checked then set is a race; here the pointer *is* the flag,
+  so there's no second field to fall out of sync with it.
+- **`tryClose` runs exactly once, with a pointer the type already knows is non-NULL** — no defensive
+  null check duplicated in every subclass, no double-free even if a caller closes the same object
+  concurrently from two threads.
+- **The swallow-or-not decision is made once, not re-litigated per subclass.** rocksdbffm's version logs
+  before swallowing; zstd-ffm's swallows silently. Item 15's `LmdbContractException` carve-out is a
+  narrow, deliberate exception to that default, not a rebuild of it.
+
+`close()` is `final`; only `tryClose(MemorySegment)` is abstract. That split is what lets Item 5's
+`ZstdCompressStream.tryClose` and Item 15's `LmdbEnv.tryClose` be different one-off bodies plugged into
+identical, already-correct plumbing — the concurrency argument gets made once, here, instead of
+re-audited in every subclass that touches a native pointer.
+
+rocksdbffm carries the idea one step further with `NativeObjectWithChildren`: a `final tryClose` that
+walks a `ConcurrentHashMap`-backed set of registered children, closes each one, then delegates to the
+subclass's own `tryCloseResource` — the generic version of exactly the problem Item 15 solves by hand for
+LMDB's transactions. The two solutions differ because the failure mode differs: a RocksDB `Snapshot` is
+safe to release from whatever thread happens to be closing its `DB`, so cascading the close is the right
+move; an LMDB transaction is confined to the thread that began it, so forcing it closed from the wrong
+thread trades a predictable crash for silent corruption — which is why Item 15 refuses instead of
+cascading.
+
+### Item 7: Scope an upcall stub to the life of the object that uses it {#item-7}
 
 Upcalls are where lifetime stops being about buffers.[^upcall-tutorial] A RocksDB custom comparator is
 registered once and invoked later, during compaction, on a thread you didn't create — the stub must
@@ -267,9 +334,9 @@ Three rules worth bolding in any binding's contributing guide:
   The fix links the symbol twice — once critical, once plain — and switches to the plain handle for the
   rest of that environment's life the moment a comparator is installed.[^lmdb-critical-upcall]
 
-### Item 7: Make adopted native threads die before the VM does {#item-7}
+### Item 8: Make adopted native threads die before the VM does {#item-8}
 
-Item 6 keeps the stub alive; this one is about the *thread* that runs it — a lifetime you didn't
+Item 7 keeps the stub alive; this one is about the *thread* that runs it — a lifetime you didn't
 create, can't enumerate, and are responsible for anyway.
 
 When native code invokes an upcall from a thread the JVM has never seen — a RocksDB background
@@ -370,7 +437,7 @@ zstd-ffm never hits this, for the same reason it never needs a deallocator: no c
 library-owned threads, so no zstd thread ever becomes a JVM thread. The hazard is specific to bindings
 whose upcalls run on threads the native library created and owns.
 
-### Item 8: Keep the generated raw layer out of the public API {#item-8}
+### Item 9: Keep the generated raw layer out of the public API {#item-9}
 
 jextract generates a faithful mirror of the header. That mirror isn't an API — it's an intermediate
 representation, and shipping it is how `MemorySegment` ends up in application code.
@@ -381,7 +448,7 @@ Every binding worth using has two layers:
   interpretation, no cleverness. Generated, ideally mechanically.
 - **Idiomatic layer**, public. `byte[]`, `Optional`, records, exceptions, `Path`. No `MethodHandle`,
   no restricted methods, no arenas the caller has to know about, and no `MemorySegment` outside the
-  tiers that declare one (Item 10).
+  tiers that declare one (Item 11).
 
 The generated raw layer is a precondition, not a convenience. Hand-write it and people put "just a
 little" interpretation in — a null check here, a length fixup there — and within a year nobody can
@@ -391,7 +458,7 @@ A small example of the boundary doing real work: rocksdbffm takes `java.nio.file
 C API takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file`
 and makes "absolute or relative?" someone else's already-solved problem.
 
-### Item 9: Translate every C error idiom at a single boundary {#item-9}
+### Item 10: Translate every C error idiom at a single boundary {#item-10}
 
 The pattern the two libraries make legible: the C idioms could hardly be more different, and the Java
 answer is identical.
@@ -440,7 +507,7 @@ Related translations belong in the same place:
   the idiomatic side. Reading it any other way after the downcall is a race — the JVM may have made
   syscalls of its own in between.
 
-### Item 10: Expose zero-copy as a declared tier, never as a leak {#item-10}
+### Item 11: Expose zero-copy as a declared tier, never as a leak {#item-11}
 
 "No `MemorySegment` in public signatures" is the right default and the wrong absolute rule. Some
 callers *want* the segment — streaming to a socket, feeding another native library — and a `byte[]`
@@ -470,7 +537,7 @@ The rule that survives is narrower and more useful than the one I started with:
 Same reasoning applies to zstd-ffm's zero-copy path and zstd's streaming API, where the natural unit
 is a segment pair rather than an array.
 
-### Item 11: Derive struct accessors from the layout, never from offsets {#item-11}
+### Item 12: Derive struct accessors from the layout, never from offsets {#item-12}
 
 Zstd's streaming API is a good counterexample to "always copy out" — driven by two structs whose `pos`
 field the native side advances in place:
@@ -519,7 +586,7 @@ scratch arena per call and sails straight through to memory corruption instead.[
 A reused struct's safety only holds for as long as every caller treats it the way the optimization
 assumed; check that assumption again each time a new operation is added on top.
 
-### Item 12: Hold downcall handles in `static final` fields {#item-12}
+### Item 13: Hold downcall handles in `static final` fields {#item-13}
 
 ```c
 size_t ZSTD_compress(void* dst, size_t dstCapacity,
@@ -546,7 +613,7 @@ not rare that performance ends being spent more into the interface, rather than 
 and recommends buffers "as large as practical" to cut round trips.[^zstd-header] FFM makes each
 crossing cheaper, not free — batching at the API level is still the lever with the most travel.
 
-### Item 13: Ship one Java artifact and cross-compile the native library with Zig {#item-13}
+### Item 14: Ship one Java artifact and cross-compile the native library with Zig {#item-14}
 
 Half of what makes JNI bindings miserable to maintain isn't the C glue — it's shipping a compiled
 shim per platform, built against whatever Java version users still run. Every target you didn't build
@@ -596,7 +663,7 @@ Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both
 since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same
 essay gets written again[^justwork].
 
-### Item 14: Track child handles so a parent's terminal method can neutralize them {#item-14}
+### Item 15: Track child handles so a parent's terminal method can neutralize them {#item-15}
 
 `mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close` all return nothing:
 
@@ -747,33 +814,6 @@ own javadoc becomes the place that argument lives, not a comment at each throw s
 
 [^justwork]: Loris Cro, [*Zig Makes Go Cross Compilation Just Work*](https://dev.to/kristoff/zig-makes-go-cross-compilation-just-work-29ho) — the same claim, and title, shows up for Rust and other languages once people reach for `zig cc` as their C toolchain.
 
-
-
-## What carried across
-
-Two libraries that agree on nothing at the C level converged on eleven of these items. The two they
-did not share, 4 and 7, are the ones that cost me the most to learn, and zstd-ffm skips both for the
-same structural reason: it never takes ownership of memory it did not size, and it is never called
-back on a thread it did not create. That is a useful way to read the list — which items apply is
-decided by the C library's ownership and threading model, not by taste.
-
-lmdb-ffm, FFM bindings for [LMDB](https://www.lmdb.tech/), is a third data point, and it confirms all
-eleven again, unchanged — plus one more (Item 14) that neither of the first two projects had reason to
-hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-ffm each wrap a single
-opaque handle with one lifetime to manage, which is what Items 1–13 are mostly about managing
-correctly. LMDB is transactional — an environment owns transactions, a transaction owns cursors — so
-there are *relationships between* lifetimes as well, and a relationship has no natural place to live
-unless one of the two sides is made to track it explicitly.
-
-One idea runs under the rest. Make the obligation visible where it is incurred: an arena in a
-try-with-resources, a deallocator passed to `reinterpret`, a `Mapper` parameter, a `static final`
-field, a registration counter checked in a terminal method, an exception type carved through an
-otherwise-total swallow. Each puts a lifetime, a cost, or a contract somewhere the compiler or the
-next reader cannot miss it.
-
-All three libraries are experimental and all three are open to contributions, particularly around
-benchmarking the Java-to-native boundary — which is, in the end, the only part of this that is hard
-to argue about.
 
 ---
 
