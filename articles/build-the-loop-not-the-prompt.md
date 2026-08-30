@@ -6,7 +6,7 @@
 [Foreign Function & Memory API (FFM)](https://openjdk.org/jeps/454):
 [rocksdbffm](https://github.com/dfa1/rocksdbffm),
 [vortex-java](https://github.com/dfa1/vortex-java), and
-[zstd-java](https://github.com/dfa1/zstd-java).
+[zstd-ffm](https://github.com/dfa1/zstd-ffm).
 Most of the code was written by an AI agent. The lesson that stuck wasn't about the model:
 an agent is only as good as the harness[^harness] around it — a safe language to write in, and
 a tight loop of tools to catch it when it's wrong.*
@@ -177,9 +177,9 @@ This is what actually caught several bugs, the dictionary bug included: files ro
 fine *within Java*; only the Rust cross-check surfaced them. JUnit `@ParameterizedTest` is a cheap way to scale these checks:
 one body, every data type, column size, and encoding as parameters, run both directions: a
 combinatorial space no hand-written cases would cover (property-based testing pushes the same
-idea further). zstd-java uses the same idea with a
+idea further). zstd-ffm uses the same idea with a
 different oracle — the upstream
-[**zstd golden corpus**](https://github.com/dfa1/zstd-java/blob/main/integration-tests/src/test/java/io/github/dfa1/zstd/it/GoldenCorpusTest.java),
+[**zstd golden corpus**](https://github.com/dfa1/zstd-ffm/blob/main/integration-tests/src/test/java/io/github/dfa1/zstd/it/GoldenCorpusTest.java),
 the same known-good compressed files the C project uses in its own regression suite:
 decompress one and you must get the documented bytes back.
 

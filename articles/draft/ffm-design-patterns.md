@@ -11,7 +11,7 @@ library that mallocs on your behalf. This post is about that part.*
 ---
 
 The material comes from three small projects: [rocksdbffm](https://github.com/dfa1/rocksdbffm), FFM
-bindings for [RocksDB](https://rocksdb.org/), [zstd-java](https://github.com/dfa1/zstd-java), FFM
+bindings for [RocksDB](https://rocksdb.org/), [zstd-ffm](https://github.com/dfa1/zstd-ffm), FFM
 bindings for [Zstandard](https://facebook.github.io/zstd/), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm),
 FFM bindings for [LMDB](https://www.lmdb.tech/). They are useful together because their C APIs disagree
 about almost everything — error reporting, buffer ownership, statefulness, transactional structure —
@@ -31,7 +31,7 @@ are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the rig
 ### Item 1: Prefer a confined arena per operation
 
 The default, and usually the right answer: one arena, one thread, try-with-resources, deterministic
-free at the closing brace. zstd-java's one-shot compression path is exactly this:[^zstd-compress]
+free at the closing brace. zstd-ffm's one-shot compression path is exactly this:[^zstd-compress]
 
 ```c
 size_t ZSTD_compressBound(size_t srcSize);
@@ -331,7 +331,7 @@ Details that are easy to get wrong:
   destructor — and many thread-pool-owning C libraries do — produces the same deadlock once one of
   those threads has run an upcall.
 
-zstd-java never hits this, for the same reason it never needs a deallocator: no callbacks from
+zstd-ffm never hits this, for the same reason it never needs a deallocator: no callbacks from
 library-owned threads, so no zstd thread ever becomes a JVM thread. The hazard is specific to bindings
 whose upcalls run on threads the native library created and owns.
 
@@ -432,7 +432,7 @@ The rule that survives is narrower and more useful than the one I started with:
 > lifetime: a buffer the caller already owns, or an argument to a callback that ends when the call
 > does.
 
-Same reasoning applies to zstd-java's zero-copy path and zstd's streaming API, where the natural unit
+Same reasoning applies to zstd-ffm's zero-copy path and zstd's streaming API, where the natural unit
 is a segment pair rather than an array.
 
 ### Item 11: Derive struct accessors from the layout, never from offsets
@@ -736,7 +736,7 @@ own javadoc becomes the place that argument lives, not a comment at each throw s
 
 FFM handles the calling side from Java. The other half of wrapping a C library is building that C library, and that is where cross-compilation usually turns into a matrix of OS-specific CI runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem mostly disappears.
 
-`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target Zig supports — inside the toolchain download itself. `zstd-java` skips zstd's build system entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
+`zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target Zig supports — inside the toolchain download itself. `zstd-ffm` skips zstd's build system entirely: the sources are vendored as plain `.c`, and the script globs and compiles them directly.
 
 ```bash
 # scripts/build-zstd.sh
@@ -747,7 +747,7 @@ SRCS=$(find "$ZSTD_LIB/common" "$ZSTD_LIB/compress" "$ZSTD_LIB/decompress" \
 zig cc -target "$ZIG_TARGET" $CFLAGS -c "$src" -o "$out"
 ```
 
-Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not a new CI runner. For example: `zstd-java` maps six classifiers to six Zig target triples:
+Once cross-compiling is just a `-target` string, adding a platform is a line in a `case` statement, not a new CI runner. For example: `zstd-ffm` maps six classifiers to six Zig target triples:
 
 ```bash
 osx-aarch64)     ZIG_TARGET="aarch64-macos"
@@ -775,14 +775,14 @@ Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both
 ## What carried across
 
 Two libraries that agree on nothing at the C level converged on eleven of these items. The two they
-did not share, 4 and 7, are the ones that cost me the most to learn, and zstd-java skips both for the
+did not share, 4 and 7, are the ones that cost me the most to learn, and zstd-ffm skips both for the
 same structural reason: it never takes ownership of memory it did not size, and it is never called
 back on a thread it did not create. That is a useful way to read the list — which items apply is
 decided by the C library's ownership and threading model, not by taste.
 
 lmdb-ffm, FFM bindings for [LMDB](https://www.lmdb.tech/), is a third data point, and it confirms all
 eleven again, unchanged — plus three more (Items 14–16) that neither of the first two projects had
-reason to hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-java each wrap
+reason to hit. The difference isn't complexity so much as *shape*: rocksdbffm and zstd-ffm each wrap
 a single opaque handle with one lifetime to manage, which is what Items 1–13 are mostly about managing
 correctly. LMDB is transactional — an environment owns transactions, a transaction owns cursors — so
 there are *relationships between* lifetimes as well, and a relationship has no natural place to live
@@ -800,11 +800,11 @@ to argue about.
 
 ---
 
-[^zstd-compress]: [`Zstd.compress`](https://github.com/dfa1/zstd-java/blob/main/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java), zstd-java.
+[^zstd-compress]: [`Zstd.compress`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java), zstd-ffm.
 
 [^pinnable-slice]: [`PinnableSlice.map`](https://github.com/dfa1/rocksdbffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/PinnableSlice.java), rocksdbffm.
 
-[^cctx-close]: [`ZstdCompressStream.tryClose`](https://github.com/dfa1/zstd-java/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressStream.java), zstd-java.
+[^cctx-close]: [`ZstdCompressStream.tryClose`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressStream.java), zstd-ffm.
 
 [^upcall-tutorial]: dev.java has a short, precise walkthrough of the mechanics: [Calling Java from native code](https://dev.java/learn/ffm/upcall/).
 
@@ -812,7 +812,7 @@ to argue about.
 
 [^mapper]: [`Mapper`](https://github.com/dfa1/rocksdbffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/Mapper.java), rocksdbffm.
 
-[^stream-buffer]: [`ZstdStreamBuffer`](https://github.com/dfa1/zstd-java/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdStreamBuffer.java), zstd-java.
+[^stream-buffer]: [`ZstdStreamBuffer`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdStreamBuffer.java), zstd-ffm.
 
 [^scale-bench]: JMH `ScaleBenchmarkRunner`, `iterator.next()` + `value()`, two databases and two value sizes on an Apple M5 MacBook; numbers and caveats in [RocksDB Performance and Zero-Copy](https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html).
 

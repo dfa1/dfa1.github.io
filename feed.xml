@@ -10,15 +10,15 @@
   <id>https://dfa1.github.io/feed.xml</id>
 
   <entry>
-    <title>Announcing zstd-java</title>
-    <link href="https://dfa1.github.io/articles/announcing-zstd-java.html"/>
-    <id>https://dfa1.github.io/articles/announcing-zstd-java.html</id>
+    <title>Announcing zstd-ffm</title>
+    <link href="https://dfa1.github.io/articles/announcing-zstd-ffm.html"/>
+    <id>https://dfa1.github.io/articles/announcing-zstd-ffm.html</id>
     <updated>2026-07-26T00:00:00Z</updated>
     <published>2026-07-26T00:00:00Z</published>
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>I needed Zstandard compression for vortex-java, a pure-Java implementation of the Vortex columnar format I've been building. The obvious choice was zstd-jni — mature, tracks upstream zstd closely, ships to Maven Central and Android, and runs in production everywhere. But it's a JNI binding: a compiled shim per platform, built against whatever Java version its users still run. I wanted to know what a Zstd binding looks like starting from JDK 25 instead of JDK 8. The result is zstd-java — not a replacement for zstd-jni, but a bet on three things modern Java gives you for free.</summary>
+    <summary>I needed Zstandard compression for vortex-java, a pure-Java implementation of the Vortex columnar format I've been building. The obvious choice was zstd-jni — mature, tracks upstream zstd closely, ships to Maven Central and Android, and runs in production everywhere. But it's a JNI binding: a compiled shim per platform, built against whatever Java version its users still run. I wanted to know what a Zstd binding looks like starting from JDK 25 instead of JDK 8. The result is zstd-ffm — not a replacement for zstd-jni, but a bet on three things modern Java gives you for free.</summary>
   </entry>
   <entry>
     <title>RocksDB Performance and Zero-Copy</title>
@@ -40,7 +40,7 @@
     <author>
       <name>Davide Angelocola</name>
     </author>
-    <summary>Recently I built three small Java libraries using JDK 25 and the Foreign Function &amp; Memory API: rocksdbffm, vortex-java, and zstd-java. Most of the code was written by an AI agent. The lesson that stuck wasn't about the model: an agent is only as good as the harness around it — a safe language to write in, and a tight loop of tools to catch it when it's wrong.</summary>
+    <summary>Recently I built three small Java libraries using JDK 25 and the Foreign Function &amp; Memory API: rocksdbffm, vortex-java, and zstd-ffm. Most of the code was written by an AI agent. The lesson that stuck wasn't about the model: an agent is only as good as the harness around it — a safe language to write in, and a tight loop of tools to catch it when it's wrong.</summary>
   </entry>
   <entry>
     <title>Earn Your Rules</title>

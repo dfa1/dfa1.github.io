@@ -23,7 +23,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 ## Writings
 
 - [RocksDB Performance and Zero-Copy](articles/rocksdb-performance-and-zero-copy.html) (2026)
-- [Announcing zstd-java](articles/announcing-zstd-java.html) (2026)
+- [Announcing zstd-ffm](articles/announcing-zstd-ffm.html) (2026)
 - [Build the Loop, Not the Prompt](articles/build-the-loop-not-the-prompt.html) (2026)
 - [Earn Your Rules](articles/earn-your-rules.html) (2026)
 - [Rethink Domain Primitives with Valhalla](articles/rethink-domain-primitives-with-valhalla.html) (2026)
@@ -51,7 +51,7 @@ All my public presentations made with [reveal.js](https://revealjs.com)
 ## Projects
 
 - [eBPF-sensor](https://github.com/dfa1/ebpf-sensor), eBPF sensor in Python (2026)
-- [zstd-java](https://github.com/dfa1/zstd-java), Zstandard bindings in pure Java via FFM (2026)
+- [zstd-ffm](https://github.com/dfa1/zstd-ffm), Zstandard bindings in pure Java via FFM (2026)
 - [vortex-java](https://github.com/dfa1/vortex-java), columnar format in pure Java, zero-copy via FFM (2026)
 - [refined-type](https://github.com/dfa1/refined-type), domain primitives + Valhalla in Java (2026)
 - [rocksdbffm](https://github.com/dfa1/rocksdbffm), RocksDB FFM bindings in Java (2026)
