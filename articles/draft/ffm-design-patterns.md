@@ -30,8 +30,10 @@ the C prototype it binds, copied from `zstd.h` or RocksDB's `c.h` — half of FF
 correctly, and a Java snippet without its prototype hides exactly the half that goes wrong.
 
 I'll assume you know what `Arena`, `MemorySegment`, `Linker`, `FunctionDescriptor` and `MethodHandle`
-are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the right starting point, and
-[JEP 454](https://openjdk.org/jeps/454) is unusually readable on the design rationale.
+are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the right starting point,
+[JEP 454](https://openjdk.org/jeps/454) is unusually readable on the design rationale, and Maurizio
+Cimadamore's [Project Panama design notes](https://cr.openjdk.org/~mcimadamore/panama/) are where the
+API's harder tradeoffs — confinement, arenas, memory-segment addressing — were actually argued out.
 
 ## Contents
 
@@ -40,20 +42,21 @@ are. If not, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the rig
 - [Item 3: Copy out and free before reaching for anything cleverer](#item-3)
 - [Item 4: Give a borrowed native buffer a Java lifetime with `reinterpret`](#item-4)
 - [Item 5: Wrap native pointers to provide ownership](#item-5)
-- [Item 6: Give every opaque handle its own arena](#item-6)
-- [Item 7: Scope an upcall stub to the life of the object that uses it](#item-7)
-- [Item 8: Make adopted native threads die before the VM does](#item-8)
-- [Item 9: Keep the generated raw layer out of the public API](#item-9)
-- [Item 10: Give a bitmask its own enum, and fold it back at one boundary](#item-10)
-- [Item 11: Translate every C error idiom at a single boundary](#item-11)
-- [Item 12: Bind NUL-terminated strings by who allocated them, not by their shape](#item-12)
-- [Item 13: Expose zero-copy as a declared tier, never as a leak](#item-13)
-- [Item 14: Derive struct accessors from the layout, never from offsets](#item-14)
-- [Item 15: Hold downcall handles in `static final` fields](#item-15)
-- [Item 16: Ship one Java artifact and cross-compile the native library with Zig](#item-16)
-- [Item 17: Native access is a permission your caller grants, not one you can grant yourself](#item-17)
-- [Item 18: Load the library once, and know exactly where each symbol comes from](#item-18)
-- [Item 19: Test what the type system can't check — ownership, concurrency, and the C library's real failure modes](#item-19)
+- [Item 6: Name the ownership shape — unique, parent, or shared](#item-6)
+- [Item 7: Give every opaque handle its own arena](#item-7)
+- [Item 8: Scope an upcall stub to the life of the object that uses it](#item-8)
+- [Item 9: Make adopted native threads die before the VM does](#item-9)
+- [Item 10: Keep the generated raw layer out of the public API](#item-10)
+- [Item 11: Give a bitmask its own enum, and fold it back at one boundary](#item-11)
+- [Item 12: Translate every C error idiom at a single boundary](#item-12)
+- [Item 13: Bind NUL-terminated strings by who allocated them, not by their shape](#item-13)
+- [Item 14: Expose zero-copy as a declared tier, never as a leak](#item-14)
+- [Item 15: Derive struct accessors from the layout, never from offsets](#item-15)
+- [Item 16: Hold downcall handles in `static final` fields](#item-16)
+- [Item 17: Ship one Java artifact and cross-compile the native library with Zig](#item-17)
+- [Item 18: Native access is a permission your caller grants, not one you can grant yourself](#item-18)
+- [Item 19: Load the library once, and know exactly where each symbol comes from](#item-19)
+- [Item 20: Test what the type system can't check — ownership, concurrency, and the C library's real failure modes](#item-20)
 
 ### Item 1: Prefer a confined arena per operation {#item-1}
 
@@ -106,7 +109,7 @@ char* rocksdb_get(rocksdb_t* db, const rocksdb_readoptions_t* options,
 **Ownership:** `vallen` and `errptr` are caller-allocated scratch, freed with the arena. What RocksDB
 writes *through* them — the returned value pointer and any error message — is a different story: both
 are C-allocated and handed off to the caller on return. Freeing the first is Item 3's subject; the
-second, Item 11's.
+second, Item 12's.
 
 The obvious way to size that scratch is also the wrong one:
 
@@ -134,7 +137,7 @@ MemorySegment vallen = arena.allocate(SIZE_T);
 `canonicalLayouts()` returns the target platform's own C dialect — `"size_t"`, `"long"`, `"wchar_t"`,
 and the rest — resolved by the same `Linker` that will make the call, not asserted by whoever wrote the
 binding. Do this once per C type in the raw layer, and every out-param sized from it inherits the
-correct answer instead of every call site repeating the same guess — Item 14's struct layout is the same
+correct answer instead of every call site repeating the same guess — Item 15's struct layout is the same
 lesson applied to a whole field instead of one out-param.
 
 ### Item 3: Copy out and free before reaching for anything cleverer {#item-3}
@@ -147,9 +150,9 @@ void rocksdb_free(void* ptr);
 ```
 
 ```java
-checkError(errptr);                     // throws RocksDBException on failure — Item 11
+checkError(errptr);                     // throws RocksDBException on failure — Item 12
 if (MemorySegment.NULL.equals(value)) {
-    return null;                        // missing key, not an error — Item 11 again
+    return null;                        // missing key, not an error — Item 12 again
 }
 long len = vallen.get(JAVA_LONG, 0);
 byte[] result = value.reinterpret(len).toArray(JAVA_BYTE);
@@ -476,7 +479,119 @@ escape its own type, and let the type itself carry the justification for why "de
 doesn't apply to it — the exception's own javadoc becomes the place that argument lives, not a comment at
 each throw site.
 
-### Item 6: Give every opaque handle its own arena {#item-6}
+### Item 6: Name the ownership shape — unique, parent, or shared {#item-6}
+
+Item 5's `NativeObject` answers "how does one wrapper free its own pointer exactly once." It doesn't
+answer what happens when a *second* wrapper depends on that pointer without owning it — and the two
+shapes that dependency can take call for opposite fixes.
+
+zstd-ffm's `ZstdCompressContext#refDictionary` attaches a pre-digested dictionary by reference, and its
+javadoc already says so:
+
+```java
+/// The reference is borrowed: `dict` must stay open for as long as this
+/// context uses it. The reference is dropped by a parameter
+/// [#reset(ZstdResetDirective)] or by passing `null`.
+public ZstdCompressContext refDictionary(ZstdCompressDictionary dict) { /* ... */ }
+```
+
+Nothing enforces that sentence. Closing the dictionary out from under a live context is a two-line
+reproduction, surfaced while closing pitest-reported mutation gaps in the dictionary tests[^refdictionary-javadoc] —
+the round-trip suite passes even with `refDictionary` mutated to a no-op, which is exactly what mutation
+testing exists to catch:
+
+```java
+ZstdCompressDictionary cdict = new ZstdCompressDictionary(dict);
+ZstdCompressContext cctx = new ZstdCompressContext();
+cctx.refDictionary(cdict);
+
+cdict.close();          // frees the native cdict — cctx now holds a dangling pointer
+cctx.compress(payload); // SIGSEGV, ZSTD_buildSeqStore+0x280
+```
+
+**Why FFM's own safety net doesn't catch this:** `Arena`/`MemorySegment` liveness checks protect the
+segment passed directly as an argument to *this* downcall. `refDictionary` hands zstd a raw pointer that
+gets stashed inside zstd's own `ZSTD_CCtx` struct for later use — once the call returns, Java has no
+further say. The next `compress()` just dereferences whatever zstd remembers, freed or not.
+Indistinguishable from any other native library's use-after-free, because that's exactly what it is.
+
+**The decision criterion.** Two shapes of "A depends on B's native pointer" show up across these
+bindings, and they want opposite remedies:
+
+- **Composition** — the dependent cannot exist without the parent (rocksdbffm's `Snapshot` needs its
+  owning `DB`'s pointer just to release itself via `rocksdb_release_snapshot`, Item 5). Correct remedy:
+  cascade-close, covered there.
+- **Aggregation** — the dependent *borrows* a resource it doesn't own and stays valid for everything else
+  even if that one reference breaks (`ZstdCompressContext` borrowing a `ZstdCompressDictionary`).
+  Cascading here would be wrong — it kills a context that's still perfectly usable for every purpose
+  except that one dictionary. Correct remedy: poison just the reference, not the object.
+
+Same underlying hazard — a native pointer outliving the Java object that owns it — opposite correct fix,
+decided entirely by whether it's the dependent's *existence* or one *reference* that's actually invalid.
+
+**Three shapes, one minimal base.** Naming borrowed from C++ smart pointers as a mental-model hook; the
+actual class names stay Java-idiomatic.
+
+1. `unique_ptr` — plain `NativeObject` (Item 5). Single exclusive owner, deterministic `close()`, no
+   dependents. The default; most wrappers are this and nothing more.
+2. `parent_ptr` — `NativeObjectWithChildren` (Item 5). Composition: closing the parent cascades to every
+   still-open child first. No canonical name to collide with — Qt's `QObject` parent/child ownership is
+   the closest real-world prior art, and neither the C++ STL nor Rust's stdlib has a smart pointer for
+   cascading composition; it's not unique ownership and it's not shared ownership either.
+3. `shared_ptr` — refcounted. Aggregation, where more than one borrower can outlive any single one of
+   them. This is the shape `refDictionary` actually needs and doesn't have yet.
+
+A liveness flag — check "is my dependency still open" right before use, throw if not — sounds like the
+obvious fix and isn't one: it only works when the borrower's own thread is the only thing that can
+invalidate the reference. `ZstdCompressDictionary` is documented immutable once built and safe to share
+across threads, so a *different* thread can call `close()` between the check and the call. That's a
+TOCTOU gap, not a fix — it turns a crash into a slightly more readable race, not into no race.
+
+Refcounting removes the window instead of narrowing it: as long as a borrower holds its reference for the
+duration of use, the native memory cannot be freed out from under it.
+
+```java
+private final AtomicInteger refCount = new AtomicInteger(1);   // the constructor's own reference
+
+void retain() {
+    if (refCount.getAndUpdate(c -> c == 0 ? 0 : c + 1) == 0) {
+        throw new IllegalStateException("dictionary is closed");
+    }
+}
+
+void release() {
+    if (refCount.decrementAndGet() == 0) {
+        freeNative();
+    }
+}
+```
+
+Compare-and-increment, not a blind `incrementAndGet()` — resurrecting a released count back from zero is
+the classic refcounting bug. Public `close()` becomes "release the constructor's own reference," not an
+unconditional free; `refDictionary` calls `retain()` when it attaches and must reliably `release()` on
+replacement, on an explicit clear, on a parameter `reset()` that drops the dictionary, and on the
+context's own close.
+
+**Cost worth being honest about:** `close()` stops being deterministic from the caller's point of view —
+calling it while a context still holds a reference no longer frees anything, just lowers a count, a real
+behavior change from "`close()` frees now," which is otherwise this codebase's convention. And the
+bookkeeping doesn't disappear, it moves: every acquisition path has to reliably release or a crash turns
+into a leak instead. Strictly safer, but still a discipline-dependent bug class — the same shape as the
+child-registration discipline `NativeObjectWithChildren` already leans on in Item 5.
+
+**One base, three opt-in shapes, not one base accreting fields.** The refcount belongs on the class that
+needs `shared_ptr` semantics, the children `Set` on the one that needs `parent_ptr` — neither folded into
+`NativeObject` itself, which every plain wrapper still extends and shouldn't have to carry weight it
+never uses.
+
+This item is a proposal, not yet a merged fix: the reproduction above is what surfaced the gap, the
+refcounting sketch is the direction, not landed code. Two documents worth reading alongside it: Maurizio
+Cimadamore's own design note on why FFM is lifetime-centric rather than pointer-centric,[^why-lifetimes]
+and `Arena`'s javadoc guarantee that access-after-close is always a clean `IllegalStateException`[^arena-javadoc]
+— a guarantee that holds only for what the arena itself tracks, and a pointer copied into a C struct by
+`refDictionary`, by construction, is not that.
+
+### Item 7: Give every opaque handle its own arena {#item-7}
 
 Between "lives for one call" and "lives forever" sits the common case: a native object expensive to
 create, reused across many calls, freed explicitly. `ZSTD_CCtx` is the canonical example; `rocksdb_t`
@@ -523,7 +638,7 @@ public final class ZstdCompressStream extends NativeObject {
 ```
 
 `super(createCctx())` hands the pointer to `NativeObject`; `arena` is a second, independent resource
-this same wrapper owns, backing the `in`/`out` buffers Item 14 covers. `tryClose(MemorySegment)` is the
+this same wrapper owns, backing the `in`/`out` buffers Item 15 covers. `tryClose(MemorySegment)` is the
 one hook `NativeObject` calls, per Item 5 — everything inside it, including what order to free things
 in, is this class's own business.
 
@@ -554,7 +669,7 @@ so much as what to watch for:
   the rest of the API, not because failure is possible. `var _ =` says "read, and intentionally ignored,"
   which is a different claim than never having read it at all.
 
-### Item 7: Scope an upcall stub to the life of the object that uses it {#item-7}
+### Item 8: Scope an upcall stub to the life of the object that uses it {#item-8}
 
 Upcalls are where lifetime stops being about buffers.[^upcall-tutorial] A RocksDB custom comparator is
 registered once and invoked later, during compaction, on a thread you didn't create — the stub must
@@ -583,7 +698,7 @@ MemorySegment stub = linker.upcallStub(target, COMPARE_DESC, arena);
 ```
 
 The `arena` argument is the whole story — the stub is valid exactly as long as it's open. So the arena
-has to be scoped to the *native object's* life, per Item 6, and closed only after RocksDB is done with
+has to be scoped to the *native object's* life, per Item 7, and closed only after RocksDB is done with
 the comparator.
 
 Five rules worth bolding in any binding's contributing guide:
@@ -620,9 +735,9 @@ Five rules worth bolding in any binding's contributing guide:
   read path into a large mmap'd file is both the biggest performance win and the biggest blocking-I/O
   risk in the same call.
 
-### Item 8: Make adopted native threads die before the VM does {#item-8}
+### Item 9: Make adopted native threads die before the VM does {#item-9}
 
-Item 7 keeps the stub alive; this one is about the *thread* that runs it — a lifetime you didn't
+Item 8 keeps the stub alive; this one is about the *thread* that runs it — a lifetime you didn't
 create, can't enumerate, and are responsible for anyway.
 
 When native code invokes an upcall from a thread the JVM has never seen — a RocksDB background
@@ -702,7 +817,7 @@ zstd-ffm never hits this, for the same reason it never needs a deallocator: no c
 library-owned threads, so no zstd thread ever becomes a JVM thread. The hazard is specific to bindings
 whose upcalls run on threads the native library created and owns.
 
-### Item 9: Keep the generated raw layer out of the public API {#item-9}
+### Item 10: Keep the generated raw layer out of the public API {#item-10}
 
 jextract generates a faithful mirror of the header. That mirror isn't an API — it's an intermediate
 representation, and shipping it is how `MemorySegment` ends up in application code.
@@ -713,7 +828,7 @@ Every binding worth using has two layers:
   interpretation, no cleverness. Generated, ideally mechanically.
 - **Idiomatic layer**, public. `byte[]`, `Optional`, records, exceptions, `Path`. No `MethodHandle`,
   no restricted methods, no arenas the caller has to know about, and no `MemorySegment` outside the
-  tiers that declare one (Item 13).
+  tiers that declare one (Item 14).
 
 The generated raw layer is a precondition, not a convenience. Hand-write it and people put "just a
 little" interpretation in — a null check here, a length fixup there — and within a year nobody can
@@ -723,9 +838,9 @@ A small example of the boundary doing real work: rocksdbffm takes `java.nio.file
 C API takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file`
 and makes "absolute or relative?" someone else's already-solved problem.
 
-### Item 10: Give a bitmask its own enum, and fold it back at one boundary {#item-10}
+### Item 11: Give a bitmask its own enum, and fold it back at one boundary {#item-11}
 
-The layering argument in Item 9 is about *where* interpretation lives; this one is about a specific,
+The layering argument in Item 10 is about *where* interpretation lives; this one is about a specific,
 recurring translation worth its own treatment — the common case where the C API takes a plain integer
 where the natural Java type is a set of named constants. lmdb-ffm's environment flags are OR-able bits
 from `lmdb.h`:
@@ -788,7 +903,7 @@ rocksdbffm has the simpler version of the same idea: `CompressionType` maps one-
 `rocksdb_*_compression`, so there's no bitmask to fold, just `getValue()` going out and `fromValue(int)`
 coming back — the same principle, without the OR because the C side never combines these values.
 
-### Item 11: Translate every C error idiom at a single boundary {#item-11}
+### Item 12: Translate every C error idiom at a single boundary {#item-12}
 
 The pattern the two libraries make legible: the C idioms could hardly be more different, and the Java
 answer is identical.
@@ -841,7 +956,7 @@ Related translations belong in the same place:
   the idiomatic side. Reading it any other way after the downcall is a race — the JVM may have made
   syscalls of its own in between.
 
-### Item 12: Bind NUL-terminated strings by who allocated them, not by their shape {#item-12}
+### Item 13: Bind NUL-terminated strings by who allocated them, not by their shape {#item-13}
 
 `mdb_strerror` and RocksDB's error message both arrive as a `char*` to a NUL-terminated C string with no
 out-param telling Java how long it is — unlike Item 2's `vallen`, there's nothing to `reinterpret`
@@ -897,7 +1012,7 @@ rocksdbffm even keeps a second version, `toBorrowedJavaString`, identical except
 line of difference apiece, because "does this string get freed" is a fact about the specific C call that
 produced the pointer, not about `char*` as a type.
 
-### Item 13: Expose zero-copy as a declared tier, never as a leak {#item-13}
+### Item 14: Expose zero-copy as a declared tier, never as a leak {#item-14}
 
 "No `MemorySegment` in public signatures" is the right default and the wrong absolute rule. Some
 callers *want* the segment — streaming to a socket, feeding another native library — and a `byte[]`
@@ -927,7 +1042,7 @@ The rule that survives is narrower and more useful than the one I started with:
 Same reasoning applies to zstd-ffm's zero-copy path and zstd's streaming API, where the natural unit
 is a segment pair rather than an array.
 
-### Item 14: Derive struct accessors from the layout, never from offsets {#item-14}
+### Item 15: Derive struct accessors from the layout, never from offsets {#item-15}
 
 Zstd's streaming API is a good counterexample to "always copy out" — driven by two structs whose `pos`
 field the native side advances in place:
@@ -947,7 +1062,7 @@ typedef struct ZSTD_outBuffer_s {
 ```
 
 **Ownership:** C never allocates either struct — the caller creates both (here, once per stream, in the
-wrapper's own arena per Item 6) and passes a pointer in. `ZSTD_compressStream2` only reads `src`/`dst`/
+wrapper's own arena per Item 7) and passes a pointer in. `ZSTD_compressStream2` only reads `src`/`dst`/
 `size` and writes `pos` back in place; there's nothing here for either side to free beyond the arena
 itself.
 
@@ -974,7 +1089,7 @@ Two things to take from this: the accessors come out of the layout, so *padding*
 problem, not yours — but that claim stops at the struct's internal shape. `JAVA_LONG` for `size_t` here
 is the same guessed width Item 2 flags for `size_t*`; it holds on every FFM target today, but the layout
 itself, not just the offsets it produces, is where a real ABI difference would actually live. And the
-buffers live for the whole stream, not one call, which puts them squarely in Item 6 — allocated in the
+buffers live for the whole stream, not one call, which puts them squarely in Item 7 — allocated in the
 wrapper's arena, closed with it.
 
 lmdb-ffm pushes the same reuse further, and shows where it stops paying off. A pair of `MDB_val`
@@ -990,7 +1105,7 @@ scratch arena per call and sails straight through to memory corruption instead.[
 A reused struct's safety only holds for as long as every caller treats it the way the optimization
 assumed; check that assumption again each time a new operation is added on top.
 
-### Item 15: Hold downcall handles in `static final` fields {#item-15}
+### Item 16: Hold downcall handles in `static final` fields {#item-16}
 
 ```c
 size_t ZSTD_compress(void* dst, size_t dstCapacity,
@@ -1028,7 +1143,7 @@ not rare that performance ends being spent more into the interface, rather than 
 and recommends buffers "as large as practical" to cut round trips.[^zstd-header] FFM makes each
 crossing cheaper, not free — batching at the API level is still the lever with the most travel.
 
-### Item 16: Ship one Java artifact and cross-compile the native library with Zig {#item-16}
+### Item 17: Ship one Java artifact and cross-compile the native library with Zig {#item-17}
 
 Half of what makes JNI bindings miserable to maintain isn't the C glue — it's shipping a compiled
 shim per platform, built against whatever Java version users still run. Every target you didn't build
@@ -1093,7 +1208,7 @@ Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both
 since January 2023[^uber]. The experience generalizes past C, too — swap the language and the same
 essay gets written again[^justwork].
 
-### Item 17: Native access is a permission your caller grants, not one you can grant yourself {#item-17}
+### Item 18: Native access is a permission your caller grants, not one you can grant yourself {#item-18}
 
 Every restricted call this piece has shown — `SymbolLookup.libraryLookup`, `reinterpret`,
 `Linker.upcallStub`, the downcall handle lookup itself — fails at the call site on a current JDK unless
@@ -1126,9 +1241,9 @@ manifest. A library's own two levers are documenting the flag for whoever runs t
 lmdb-ffm — shipping real modules so whoever eventually grants access can grant it narrowly instead of
 everywhere.
 
-### Item 18: Load the library once, and know exactly where each symbol comes from {#item-18}
+### Item 19: Load the library once, and know exactly where each symbol comes from {#item-19}
 
-Item 16 gets the shared library built for every target; getting it into the JVM process, and resolving
+Item 17 gets the shared library built for every target; getting it into the JVM process, and resolving
 each symbol from the right place once it's there, are separate, also-unglamorous problems of their own.
 
 **Extraction.** None of these three projects lets a caller point at an arbitrary path — a configurable
@@ -1190,7 +1305,7 @@ live in the library this binding just loaded, somewhere already resident in the 
 someone else is responsible for loading? Get that answer right for each symbol, and the rest is
 mechanical.
 
-### Item 19: Test what the type system can't check — ownership, concurrency, and the C library's real failure modes {#item-19}
+### Item 20: Test what the type system can't check — ownership, concurrency, and the C library's real failure modes {#item-20}
 
 Three hundred native functions and a handful of ownership rules is also three hundred places a test suite
 has to prove the rules actually hold, not just that the happy path returns the right bytes. The tests
@@ -1263,6 +1378,12 @@ instead of as a JVM crash three call sites later with no memory tool attached to
 [^pinnable-slice]: [`PinnableSlice.map`](https://github.com/dfa1/rocksdbffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/PinnableSlice.java), rocksdbffm.
 
 [^cctx-close]: [`ZstdCompressStream.tryClose`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressStream.java), zstd-ffm.
+
+[^refdictionary-javadoc]: [`ZstdCompressContext#refDictionary`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressContext.java), zstd-ffm — the borrowed-reference contract, found unenforced while closing pitest-reported mutation gaps in the dictionary tests.
+
+[^why-lifetimes]: Maurizio Cimadamore, [*Lifetimes in the Foreign Function & Memory API*](https://cr.openjdk.org/~mcimadamore/panama/why_lifetimes.html) — a pre-`Arena` design note, written against the API's earlier `SegmentScope` name, arguing FFM should be lifetime-centric rather than pointer-centric: allocate related resources from one shared scope so they're deallocated atomically together. Worked examples: an array of native C strings sharing its elements' scope; `dlopen`/`dlsym` symbols sharing their library handle's scope — the JDK's own answer to the sibling/parent-owns-children shape (`parent_ptr` above). The many-independent-borrowers shape (`shared_ptr`) isn't part of its argument.
+
+[^arena-javadoc]: [`Arena` javadoc, JDK 25](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html) — access after close is always a clean `IllegalStateException`, for a segment the arena itself tracks. A pointer copied into a C struct by `refDictionary` isn't one of those; the arena's own guarantee never reaches it.
 
 [^upcall-tutorial]: dev.java has a short, precise walkthrough of the mechanics: [Calling Java from native code](https://dev.java/learn/ffm/upcall/).
 
