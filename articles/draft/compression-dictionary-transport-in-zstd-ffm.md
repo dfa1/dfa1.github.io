@@ -23,10 +23,12 @@ at deploy time which dictionary applies to which endpoint. There's nothing to di
 `Available-Dictionary`/`Dictionary-ID` on the request and skip parsing `Use-As-Dictionary` on responses entirely. That's
 the RFC's "Common Content" use case, applied to a B2B API instead of a website.*
 
-*The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" I'd also like to support
-this as a first-class citizen in zstd-ffm (TODO: link here), following the ideas of
-[sans-io](https://sans-io.readthedocs.io): the library provides only the protocol, and the I/O is supplied by the
-user's framework of choice.*
+*The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" zstd-ffm already treats
+this as a first-class citizen rather than a demo-only sketch — a framework-agnostic model layer
+([#91](https://github.com/dfa1/zstd-ffm/issues/91) for the `dcz` codec,
+[#92](https://github.com/dfa1/zstd-ffm/issues/92) for the header parsing/building) that follows
+[sans-io](https://sans-io.readthedocs.io)'s split: the library provides only the protocol, and the I/O is supplied by
+whatever framework the caller is already using.*
 
 
 ## The setup
