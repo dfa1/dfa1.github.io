@@ -7,7 +7,10 @@ defines a way for HTTP clients and servers to negotiate a shared compression dic
 it (`dcb` for Brotli, `dcz` for Zstandard). It was written with browsers in mind: the two motivating use cases in the
 spec are shipping a delta-compressed JS bundle against the previous version, and sharing a dictionary of common
 HTML/template boilerplate across pages on a site. `Sec-Fetch-Site` checks, CORS-aware mitigations, cookie-like tracking
-protections — the security section reads like it was written for a browser vendor, because it was.*
+protections — the security section reads like it was written for a browser vendor, because it was. That side is
+already well covered elsewhere —
+[MDN](https://developer.mozilla.org/en-US/docs/Glossary/Compression_dictionary_transport),
+[caniuse](https://caniuse.com/wf-compression-dictionary-transport) — so the rest of this piece skips it.*
 
 *None of that is browser-specific in the way it first looks, though. The negotiation headers themselves —
 `Use-As-Dictionary`, `Available-Dictionary`, `Dictionary-ID` — are plain HTTP, usable by any client that speaks
@@ -18,10 +21,33 @@ dictionary, here's its ID, it applies to `/orders/*`" without an out-of-band con
 later requests for smaller responses. It also buys dictionary rotation for free: bump the dictionary server-side, and
 clients pick up the new ID and freshness off `Cache-Control` on their own, no coordinated redeploy.*
 
+```
+  DECOUPLED — B2B API, third-party integrators, or cross-team services
+
+  ┌────────────────┐                                            ┌────────────────────────┐
+  │    your API    │──────────── Use-As-Dictionary ────────────>│      their client      │
+  │  owns dict v3  │<─────────── Available-Dictionary ──────────│ SDK / curl / whatever  │
+  └────────────────┘                                            └────────────────────────┘
+
+  you control this — they don't. no out-of-band contract, no coordinated deploy.
+```
+
 *If it's two services you control end-to-end — an internal service mesh, a client SDK you also ship — you already know
 at deploy time which dictionary applies to which endpoint. There's nothing to discover, so hardcode
 `Available-Dictionary`/`Dictionary-ID` on the request and skip parsing `Use-As-Dictionary` on responses entirely. That's
 the RFC's "Common Content" use case, applied to a B2B API instead of a website.*
+
+```
+  COUPLED — same team owns both ends
+
+  ┌────────────────┐                                            ┌────────────────────────┐
+  │   service A    │────────── ships dict v3 in build ─────────>│       service B        │
+  │  (your team)   │                                            │    (your team, too)    │
+  └────────────────┘                                            └────────────────────────┘
+
+  no negotiation — B hardcodes Available-Dictionary/Dictionary-ID, skips parsing
+  Use-As-Dictionary entirely. deploy-time knowledge covers it.
+```
 
 *The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" zstd-ffm already treats
 this as a first-class citizen rather than a demo-only sketch — a framework-agnostic model layer
