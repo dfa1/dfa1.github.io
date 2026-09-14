@@ -90,6 +90,11 @@ confirm the client has the exact dictionary it's about to compress against, not 
 Get a hash mismatch and the server falls back to a lower rung of the ladder rather than send something the client can't
 decode.
 
+`Dictionary-ID` is the optional half of that pair. The server set `id="orders-v3"` in `Use-As-Dictionary` above, so
+per §2.3 the client MUST echo it back — it's a cheap lookup key for the server, not part of decoding. Leave `id` off
+the `Use-As-Dictionary` response and there's nothing to echo: the client sends `Available-Dictionary` alone, and the
+server resolves the dictionary from the hash by itself.
+
 With a match, the server switches encodings and compresses against the shared dictionary instead of from scratch:
 
 ```
@@ -98,9 +103,10 @@ Content-Encoding: dcz
 Vary: accept-encoding, available-dictionary
 ```
 
-That's the whole negotiation — one extra GET to fetch the dictionary, then two headers on every request after that.
-`NaiveClientDemo` never sends `Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs;
-`Rfc9842ClientDemo` is what runs the exchange above.
+That's the whole negotiation — one extra GET to fetch the dictionary, then `Available-Dictionary` (plus
+`Dictionary-ID`, if the server bothered to set one) on every request after that. `NaiveClientDemo` never sends
+`Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs; `Rfc9842ClientDemo` is what runs the
+exchange above.
 
 ## Finding 1: the dictionary has to be sized to the payload, not "small"
 
