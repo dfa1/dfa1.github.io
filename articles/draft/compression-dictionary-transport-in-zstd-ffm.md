@@ -33,14 +33,17 @@ whatever framework the caller is already using.*
 
 ## The setup
 
-The [demo](https://github.com/dfa1/zstd-ffm/blob/main/docs/examples/rfc9842/README.md) runs on embedded Jetty
-(`jetty-server` + `jetty-http2-server`, test-scoped) rather than the JDK's own `com.sun.net.httpserver`, which only
-speaks HTTP/1.1 — one server exposing real HTTP/1.1 *and* real HTTP/2 (h2c, no TLS needed: `java.net.http.HttpClient`
-does the RFC 7540 §3.2 cleartext upgrade) on the same port. That's what turns the HTTP/2 numbers below into
-measurements instead of HPACK arithmetic.
+The [demo](https://github.com/dfa1/zstd-ffm/tree/main/rfc9842/src/test/java/io/github/dfa1/zstd/rfc9842) runs on
+embedded Jetty (`jetty-server` + `jetty-http2-server`, test-scoped) rather than the JDK's own `com.sun.net.httpserver`,
+which only speaks HTTP/1.1 — one server exposing real HTTP/1.1 *and* real HTTP/2 (h2c, no TLS needed:
+`java.net.http.HttpClient` does the RFC 7540 §3.2 cleartext upgrade) on the same port. That's what turns the HTTP/2
+numbers below into measurements instead of HPACK arithmetic.
 
 - **`ServerDemo`** negotiates the same four-rung ladder as before, best first: `dcz` if the client offers a matching
-  dictionary, plain `zstd` if accepted, `gzip` if accepted, otherwise an uncompressed body — over either protocol.
+  dictionary, plain `zstd` if accepted, `gzip` if accepted, otherwise an uncompressed body — over either protocol. Its
+  dictionary is trained (`ZstdDictionary.train`) on 300 synthetic NDJSON analytics events built from a seeded `Random`
+  for reproducibility — the same shape of data it actually serves, since training on the wrong shape is its own way
+  back to Finding 1.
 - **`NaiveClientDemo`** is what nearly every HTTP client does today — sends `Accept-Encoding: gzip` and nothing else,
   landing on the `gzip` tier.
 - **`Rfc9842ClientDemo`** fetches the dictionary once, offers it via `Available-Dictionary`/`Dictionary-ID` on matching
@@ -48,8 +51,10 @@ measurements instead of HPACK arithmetic.
 - **`PerfTestDemo`** exercises all four tiers and reports throughput, latency percentiles, and bytes transferred;
   `--http2` re-runs the same sweep over h2c.
 
-Everything below is measured on one laptop: 2,000 warmup requests discarded, then 10,000 measured per cell — not a
-rigorous benchmark, but real numbers instead of intuition.
+Everything below is measured on one laptop (Apple M5, 10 cores, JDK 25), server and client as separate `exec:java`
+processes talking over loopback TCP — not in-process — with no JVM tuning beyond the `--enable-native-access` flag FFM
+requires: 2,000 warmup requests discarded, then 10,000 measured per cell. Not a rigorous benchmark, but real numbers
+instead of intuition.
 
 ## What the negotiation looks like on the wire
 
@@ -94,8 +99,8 @@ Vary: accept-encoding, available-dictionary
 ```
 
 That's the whole negotiation — one extra GET to fetch the dictionary, then two headers on every request after that.
-`NaiveClient` never sends `Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs; `Rfc9842Client`
-is what runs the exchange above.
+`NaiveClientDemo` never sends `Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs;
+`Rfc9842ClientDemo` is what runs the exchange above.
 
 ## Finding 1: the dictionary has to be sized to the payload, not "small"
 
@@ -178,6 +183,12 @@ CPU cost is even more visible here than at smaller sizes, falling to *half* iden
 req/s) — but neither protocol nor throughput fixes a sizing mistake. Protocol and dictionary size are separate knobs;
 getting one right doesn't cover for the other.
 
+HTTP/3 isn't measured here — the demo has no QUIC transport — but there's no structural reason to expect it to land
+worse than HTTP/2 above. QPACK (RFC 9204) indexes repeated header values the same way HPACK does, over a transport
+that also removes HTTP/2's TCP-level head-of-line blocking; if anything that argues for HTTP/3 matching or beating the
+HTTP/2 numbers here, not falling behind them. Whether QUIC's own handshake and congestion-control overhead change the
+latency picture at these payload sizes is a separate, unmeasured question.
+
 ## Finding 3: pick a compression level before reaching for a dictionary
 
 Zstd's default level 3 is tuned for speed, and at larger payloads it can ship *more* bytes than the gzip it's meant to
@@ -204,7 +215,7 @@ zstd at level 3, but −25% at level 6 — so tune them together.
 - **A `Cache-Control` header on the dictionary itself** (§2.2.1). A stored dictionary only counts as a match while
   fresh; an uncacheable dictionary costs more to keep refetching than it ever saves.
 - **Never advertise `dcz` without a matching dictionary in hand** (§6.1). A client with no dictionary can't decode a
-  `dcz` response, so it must not offer the encoding. `Rfc9842Client` gates `dcz` on the `Use-As-Dictionary` `match`
+  `dcz` response, so it must not offer the encoding. `Rfc9842ClientDemo` gates `dcz` on the `Use-As-Dictionary` `match`
   pattern for exactly this reason.
 
 ## Verdict
