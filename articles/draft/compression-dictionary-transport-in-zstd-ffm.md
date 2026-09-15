@@ -1,6 +1,13 @@
-# Compression Dictionary Transport (RFC 9842): does it earn its keep off the browser?
+# Compression Dictionary Transport (RFC 9842): it is good for microservices?
 
 *14 September 2026*
+
+*Microservices exchange a lot of JSON, and every byte of it has a price tag: cloud providers meter cross-AZ and
+egress traffic per GB, so a chattier API is a bigger line item before it's anything else. Latency is the second cost —
+a slow link turns a big payload into a delay problem on top of a billing one. Compression is the standard lever for
+both — gzip or zstd, cold, on every response. A shared dictionary is the same lever with more leverage: the parts of
+the payload that repeat across responses — schema, boilerplate, whatever doesn't change request to request — get
+factored out once instead of re-compressed from scratch every time.*
 
 *[RFC 9842](https://www.rfc-editor.org/rfc/rfc9842.html) — Compression Dictionary Transport, published September 2025 —
 defines a way for HTTP clients and servers to negotiate a shared compression dictionary, then compress responses against
@@ -61,15 +68,15 @@ whatever framework the caller is already using.*
 
 The [demo](https://github.com/dfa1/zstd-ffm/tree/main/rfc9842/src/test/java/io/github/dfa1/zstd/rfc9842) runs on
 embedded Jetty (`jetty-server` + `jetty-http2-server`, test-scoped) rather than the JDK's own `com.sun.net.httpserver`,
-which only speaks HTTP/1.1 — one server exposing real HTTP/1.1 *and* real HTTP/2 (h2c, no TLS needed:
+which only speaks HTTP/1.1 — one server exposing HTTP/1.1 *and* HTTP/2[^http3] (h2c, no TLS needed:
 `java.net.http.HttpClient` does the RFC 7540 §3.2 cleartext upgrade) on the same port. That's what turns the HTTP/2
 numbers below into measurements instead of HPACK arithmetic.
 
 - **`ServerDemo`** negotiates the same four-rung ladder as before, best first: `dcz` if the client offers a matching
   dictionary, plain `zstd` if accepted, `gzip` if accepted, otherwise an uncompressed body — over either protocol. Its
   dictionary is trained (`ZstdDictionary.train`) on 300 synthetic NDJSON analytics events built from a seeded `Random`
-  for reproducibility — the same shape of data it actually serves, since training on the wrong shape is its own way
-  back to Finding 1.
+  for reproducibility — the same shape of data it actually serves, since training on the wrong shape has the same
+  effect as an [undersized dictionary](#dictionary-size-versus-payload-size).
 - **`NaiveClientDemo`** is what nearly every HTTP client does today — sends `Accept-Encoding: gzip` and nothing else,
   landing on the `gzip` tier.
 - **`Rfc9842ClientDemo`** fetches the dictionary once, offers it via `Available-Dictionary`/`Dictionary-ID` on matching
@@ -134,9 +141,11 @@ That's the whole negotiation — one extra GET to fetch the dictionary, then `Av
 `Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs; `Rfc9842ClientDemo` is what runs the
 exchange above.
 
-## Finding 1: the dictionary has to be sized to the payload, not "small"
+## Dictionary size versus payload size
 
-The instinct is to keep dictionaries small. That's wrong. Against the same payload at zstd's default level 3:
+The instinct is to keep dictionaries small. The numbers below don't obviously agree — size looks like it matters more
+than smallness does — though this is one corpus, one training method, and I'm not confident enough to call it a
+settled rule rather than a pattern in this dataset. Against the same payload at zstd's default level 3:
 
 | payload | plain zstd | `--dict 1`        | `--dict 4`       | `--dict 16`  |
 |---------|------------|-------------------|------------------|--------------|
@@ -145,11 +154,11 @@ The instinct is to keep dictionaries small. That's wrong. Against the same paylo
 | 8 KB    | 691 B      | 811 B (**+17%**)  | 621 B (−10%)     | 634 B (−8%)  |
 | 32 KB   | 2061 B     | 2936 B (**+42%**) | 2997 B (+45%)    | 1982 B (−4%) |
 
-An undersized dictionary doesn't just fail to help — it makes the response *bigger than no dictionary at all*, by up to
-45% here. A dictionary is a sized, trained, versioned artifact, not a switch you flip. Oversizing is cheap (16 KiB costs
-the same latency as 1 KiB), so the safe default is to err upward and retrain as the payload shape drifts.
+An undersized dictionary can end up *bigger than no dictionary at all* — up to 45% here — while oversizing looks cheap
+in this data (16 KiB costs the same latency as 1 KiB). At minimum: don't assume a smaller dictionary is automatically
+the safer default, and retrain if the payload shape drifts.
 
-## Finding 2: the negotiation headers have a real, version-dependent cost
+## The negotiation headers have a real, version-dependent cost
 
 `Available-Dictionary` + `Dictionary-ID` + the `dcz` token in `Accept-Encoding` add up to 101 bytes on every request. On
 HTTP/1.1 that's paid in full each time; HTTP/2 and HTTP/3 index repeated header values via HPACK/QPACK, so the same
@@ -208,20 +217,16 @@ plus `dcz` re-run over real HTTP/2 (`--http2`), at three payload sizes and fresh
 Three sizes, three different stories. At 512 B the dictionary is generously sized: `dcz` roughly halves the body
 against plain `zstd` (107.8 B vs 207.9 B) and is the fastest tier on both protocols. At the 2,800 B default,
 `dcz`/HTTP/2 is 22% faster in throughput and 16% lower at p50 than `dcz`/HTTP/1.1, and 27% faster than `zstd`/HTTP/1.1
-— the best HTTP/1.1 has to offer. At 32 KB the same 4 KiB dictionary is now too small, exactly as Finding 1 warns, and
-`dcz` ships *more* bytes than plain `zstd` (2997 B vs 2061 B, +45%, matching Finding 1's own `--dict 4` row at this
-size). HTTP/2 still buys `dcz` a real edge over its own HTTP/1.1 run at that size (+12% req/s, −10% p50) — and `gzip`'s
+— the best HTTP/1.1 has to offer. At 32 KB the same 4 KiB dictionary is now too small — the same
+[sizing sensitivity](#dictionary-size-versus-payload-size) — and `dcz` ships *more* bytes than plain `zstd` (2997 B vs
+2061 B, +45%, matching the `--dict 4` row at this size there). HTTP/2 still buys `dcz` a real edge over its own
+HTTP/1.1 run at that size (+12%
+req/s, −10% p50) — and `gzip`'s
 CPU cost is even more visible here than at smaller sizes, falling to *half* identity's throughput (5195 vs 10684
 req/s) — but neither protocol nor throughput fixes a sizing mistake. Protocol and dictionary size are separate knobs;
 getting one right doesn't cover for the other.
 
-HTTP/3 isn't measured here — the demo has no QUIC transport — but there's no structural reason to expect it to land
-worse than HTTP/2 above. QPACK (RFC 9204) indexes repeated header values the same way HPACK does, over a transport
-that also removes HTTP/2's TCP-level head-of-line blocking; if anything that argues for HTTP/3 matching or beating the
-HTTP/2 numbers here, not falling behind them. Whether QUIC's own handshake and congestion-control overhead change the
-latency picture at these payload sizes is a separate, unmeasured question.
-
-## Finding 3: pick a compression level before reaching for a dictionary
+## Pick a compression level before reaching for a dictionary
 
 Zstd's default level 3 is tuned for speed, and at larger payloads it can ship *more* bytes than the gzip it's meant to
 replace — no dictionary fixes that. At 64 KB responses with `--dict 16`, against `gzip -6` at 2753 B / 2480 req/s:
@@ -253,8 +258,10 @@ zstd at level 3, but −25% at level 6 — so tune them together.
 ## Verdict
 
 Use `dcz` when responses run roughly 0.5–16 KB, the connection is HTTP/2 or HTTP/3, and you're willing to size and
-retrain the dictionary as the data drifts. Finding 2's numbers hold up end-to-end at that range: `dcz` is the fastest
-tier at every size where the dictionary is sized right, and HTTP/2 adds another 12–27% in throughput on top of what
+retrain the dictionary as the data drifts. The
+[negotiation-cost numbers](#the-negotiation-headers-have-a-real-version-dependent-cost) hold up end-to-end at that
+range: `dcz` is the fastest tier at every size where the dictionary is sized right, and HTTP/2 adds another 12–27% in
+throughput on top of what
 `dcz` already wins over plain `zstd` on HTTP/1.1.
 
 Skip it if you're stuck on HTTP/1.1, the dictionary can't keep up with the payload — a 4 KiB dictionary against a
@@ -269,3 +276,12 @@ dictionary freshness, and what's underneath the connection.
 
 The full demo, including a JMH microbenchmark that isolates codec cost from the HTTP round trip, is
 in [zstd-ffm](https://github.com/dfa1/zstd-ffm).
+
+---
+
+[^http3]: HTTP/3 isn't measured here — the demo has no QUIC transport — but there's no structural reason to expect it
+    to land worse than HTTP/2. QPACK (RFC 9204) indexes repeated header values the same way HPACK does, over a
+    transport that also removes HTTP/2's TCP-level head-of-line blocking; if anything that argues for HTTP/3 matching
+    or beating the [HTTP/2 numbers](#the-negotiation-headers-have-a-real-version-dependent-cost), not falling behind
+    them. Whether QUIC's own handshake and
+    congestion-control overhead change the latency picture at these payload sizes is a separate, unmeasured question.
