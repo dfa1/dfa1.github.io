@@ -271,8 +271,8 @@ lifecycle. A stale or mis-sized dictionary is worse than none.
 For a B2B integration specifically, that maps onto: negotiate and cache a shared dictionary once per partner API, keep
 it on HTTP/2, and treat the dictionary as a versioned artifact with the same seriousness as the API contract itself.
 
-If there's a one-line verdict, it's the least satisfying kind an engineer can give: it depends — on payload size,
-dictionary freshness, and what's underneath the connection.
+> **It depends.** The least satisfying answer an engineer can give — on payload size, dictionary freshness, and what's
+> underneath the connection.
 
 The full demo, including a JMH microbenchmark that isolates codec cost from the HTTP round trip, is
 in [zstd-ffm](https://github.com/dfa1/zstd-ffm).
