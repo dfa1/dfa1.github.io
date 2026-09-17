@@ -182,67 +182,60 @@ This is the number that decides whether `dcz` is worth adopting at all: on HTTP/
 band around 2 KB; on HTTP/2+ it wins at every size tested.
 
 The same story shows up end-to-end, not just in header bytes. `PerfTestDemo`'s four-tier sweep, HTTP/1.1 throughout,
-plus `dcz` re-run over real HTTP/2 (`--http2`), at three payload sizes and fresh servers per run:
+plus `dcz` re-run over real HTTP/2 (`--http2`), at three payload sizes (same 4 KiB dictionary throughout, fresh
+servers per run):
 
-**512 B — the 4 KiB dictionary is eight times the payload**
+| payload  | encoding | protocol | req/s | p50      | p99      | avg bytes/req |
+|----------|----------|----------|-------|----------|----------|----------------|
+| 512 B    | identity | HTTP/1.1 | 13196 | 69.8 µs  | 134.3 µs | 565.6 B        |
+| 512 B    | gzip     | HTTP/1.1 | 15216 | 63.8 µs  | 99.7 µs  | 217.9 B        |
+| 512 B    | zstd     | HTTP/1.1 | 18587 | 52.3 µs  | 78.1 µs  | 207.9 B        |
+| 512 B    | dcz      | HTTP/1.1 | 19682 | 49.5 µs  | 78.3 µs  | 107.8 B        |
+| 512 B    | dcz      | HTTP/2   | 23399 | 42.2 µs  | 63.0 µs  | 107.8 B        |
+| 2,800 B  | identity | HTTP/1.1 | 13243 | 69.0 µs  | 133.3 µs | 2828.0 B       |
+| 2,800 B  | gzip     | HTTP/1.1 | 13113 | 73.6 µs  | 118.6 µs | 361.5 B        |
+| 2,800 B  | zstd     | HTTP/1.1 | 17805 | 54.9 µs  | 78.9 µs  | 377.0 B        |
+| 2,800 B  | dcz      | HTTP/1.1 | 18470 | 52.2 µs  | 82.1 µs  | 263.3 B        |
+| 2,800 B  | dcz      | HTTP/2   | 22529 | 43.7 µs  | 62.0 µs  | 263.3 B        |
+| 32,768 B | identity | HTTP/1.1 | 10684 | 89.9 µs  | 170.0 µs | 32804.8 B      |
+| 32,768 B | gzip     | HTTP/1.1 | 5195  | 189.5 µs | 227.4 µs | 1530.3 B       |
+| 32,768 B | zstd     | HTTP/1.1 | 11653 | 83.8 µs  | 111.4 µs | 2060.8 B       |
+| 32,768 B | dcz      | HTTP/1.1 | 11449 | 85.4 µs  | 119.2 µs | 2997.1 B       |
+| 32,768 B | dcz      | HTTP/2   | 12794 | 76.9 µs  | 98.3 µs  | 2997.1 B       |
 
-| encoding | protocol | req/s | p50     | p99     | avg bytes/req |
-|----------|----------|-------|---------|---------|----------------|
-| identity | HTTP/1.1 | 13196 | 69.8 µs | 134.3 µs | 565.6 B       |
-| gzip     | HTTP/1.1 | 15216 | 63.8 µs | 99.7 µs  | 217.9 B       |
-| zstd     | HTTP/1.1 | 18587 | 52.3 µs | 78.1 µs  | 207.9 B       |
-| dcz      | HTTP/1.1 | 19682 | 49.5 µs | 78.3 µs  | 107.8 B       |
-| dcz      | HTTP/2   | 23399 | 42.2 µs | 63.0 µs  | 107.8 B       |
-
-**2,800 B — the demo's default, same 4 KiB dictionary**
-
-| encoding | protocol | req/s | p50     | p99      | avg bytes/req |
-|----------|----------|-------|---------|----------|----------------|
-| identity | HTTP/1.1 | 13243 | 69.0 µs | 133.3 µs | 2828.0 B      |
-| gzip     | HTTP/1.1 | 13113 | 73.6 µs | 118.6 µs | 361.5 B       |
-| zstd     | HTTP/1.1 | 17805 | 54.9 µs | 78.9 µs  | 377.0 B       |
-| dcz      | HTTP/1.1 | 18470 | 52.2 µs | 82.1 µs  | 263.3 B       |
-| dcz      | HTTP/2   | 22529 | 43.7 µs | 62.0 µs  | 263.3 B       |
-
-**32,768 B — same 4 KiB dictionary, now an eighth of the payload**
-
-| encoding | protocol | req/s | p50      | p99      | avg bytes/req |
-|----------|----------|-------|----------|----------|----------------|
-| identity | HTTP/1.1 | 10684 | 89.9 µs  | 170.0 µs | 32804.8 B     |
-| gzip     | HTTP/1.1 | 5195  | 189.5 µs | 227.4 µs | 1530.3 B      |
-| zstd     | HTTP/1.1 | 11653 | 83.8 µs  | 111.4 µs | 2060.8 B      |
-| dcz      | HTTP/1.1 | 11449 | 85.4 µs  | 119.2 µs | 2997.1 B      |
-| dcz      | HTTP/2   | 12794 | 76.9 µs  | 98.3 µs  | 2997.1 B      |
-
-Three sizes, three different stories. At 512 B the dictionary is generously sized: `dcz` roughly halves the body
-against plain `zstd` (107.8 B vs 207.9 B) and is the fastest tier on both protocols. At the 2,800 B default,
-`dcz`/HTTP/2 is 22% faster in throughput and 16% lower at p50 than `dcz`/HTTP/1.1, and 27% faster than `zstd`/HTTP/1.1
-— the best HTTP/1.1 has to offer. At 32 KB the same 4 KiB dictionary is now too small — the same
-[sizing sensitivity](#dictionary-size-versus-payload-size) — and `dcz` ships *more* bytes than plain `zstd` (2997 B vs
-2061 B, +45%, matching the `--dict 4` row at this size there). HTTP/2 still buys `dcz` a real edge over its own
-HTTP/1.1 run at that size (+12%
-req/s, −10% p50) — and `gzip`'s
-CPU cost is even more visible here than at smaller sizes, falling to *half* identity's throughput (5195 vs 10684
-req/s) — but neither protocol nor throughput fixes a sizing mistake. Protocol and dictionary size are separate knobs;
-getting one right doesn't cover for the other.
+At 512 B the dictionary is generously sized (eight times the payload): `dcz` roughly halves the body against plain
+`zstd` and is the fastest tier on both protocols. At the 2,800 B default, `dcz`/HTTP/2 is 22% faster in throughput and
+16% lower at p50 than `dcz`/HTTP/1.1. At 32 KB the same dictionary is now an eighth of the payload — too small, the
+same [sizing sensitivity](#dictionary-size-versus-payload-size) — and `dcz` ships *more* bytes than plain `zstd`
+(2997 B vs 2061 B, +45%). HTTP/2 still buys `dcz` a throughput/latency edge at every size, including that one (+12%
+req/s, −10% p50) — but neither protocol nor throughput fixes a sizing mistake. Protocol and dictionary size are
+separate knobs; getting one right doesn't cover for the other.
 
 ## Pick a compression level before reaching for a dictionary
 
 Zstd's default level 3 is tuned for speed, and at larger payloads it can ship *more* bytes than the gzip it's meant to
-replace — no dictionary fixes that. At 64 KB responses with `--dict 16`, against `gzip -6` at 2753 B / 2480 req/s:
+replace — no dictionary fixes that. Every option's gain, relative to `gzip` at the same payload:
 
-| level       | zstd bytes | vs gzip -6 | req/s |
-|-------------|------------|------------|-------|
-| 1           | 3720 B     | +35%       | 7900  |
-| 3 (default) | 3545 B     | +29%       | 8280  |
-| 6           | 1506 B     | **−45%**   | 5250  |
-| 9           | 1483 B     | −46%       | 4300  |
-| 12          | 1483 B     | −46%       | 5090  |
+| payload | dictionary | level       | encoding | bytes   | vs `gzip` |
+|---------|------------|-------------|----------|---------|-----------|
+| 2,800 B | none       | 3           | identity | 2828 B  | +682%     |
+| 2,800 B | none       | 3           | gzip     | 361.5 B | baseline  |
+| 2,800 B | none       | 3           | zstd     | 377.0 B | +4%       |
+| 2,800 B | 4 KiB      | 3           | dcz      | 263.3 B | −27%      |
+| 64 KB   | 16 KiB     | 1           | dcz      | 3720 B  | +35%      |
+| 64 KB   | 16 KiB     | 3 (default) | dcz      | 3545 B  | +29%      |
+| 64 KB   | 16 KiB     | 6           | dcz      | 1506 B  | **−45%**  |
+| 64 KB   | 16 KiB     | 9           | dcz      | 1483 B  | −46%      |
+| 64 KB   | 16 KiB     | 12          | dcz      | 1483 B  | −46%      |
 
-Raising the level is a server-CPU-for-bytes trade with no cost to the client: zstd decompression speed is flat across
-levels (slightly faster at higher ones), so the server pays once per response and every client decodes at the same rate.
-Level and dictionary size interact rather than stack independently — the 8 KB / `--dict 4` cell is −10% against plain
-zstd at level 3, but −25% at level 6 — so tune them together.
+Two payload sizes and dictionaries, not one clean curve, but the pattern holds: `gzip` beats uncompressed by a wide
+margin regardless, `zstd`'s own default level doesn't reliably beat `gzip`, and `dcz` only pulls ahead once level and
+dictionary are both sized for the payload — level 3 with a 16 KiB dictionary still loses to `gzip` at 64 KB, level 6
+wins by almost half. Raising the level is a server-CPU-for-bytes trade with no cost to the client: zstd decompression
+speed is flat across levels, so the server pays once per response and every client decodes at the same rate. Level
+and dictionary size interact rather than stack independently — the 8 KB / `--dict 4` cell in the
+[sizing table](#dictionary-size-versus-payload-size) is −10% against plain zstd at level 3, but −25% at level 6 — so
+tune them together.
 
 ## Three requirements in the spec that are easy to skip
 
@@ -254,6 +247,24 @@ zstd at level 3, but −25% at level 6 — so tune them together.
 - **Never advertise `dcz` without a matching dictionary in hand** (§6.1). A client with no dictionary can't decode a
   `dcz` response, so it must not offer the encoding. `Rfc9842ClientDemo` gates `dcz` on the `Use-As-Dictionary` `match`
   pattern for exactly this reason.
+
+## Same cloud, same region — or not
+
+The decoupled-vs-coupled split from the intro is about who controls the dictionary. A second, orthogonal axis is
+where the two ends physically sit.
+
+Same AZ, or same region behind a private network: RTT is sub-millisecond to a few milliseconds, and on AWS
+[cross-AZ transfer runs about $0.01/GB each way](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) — an
+order of magnitude cheaper than the ~$0.09/GB internet-egress rate. At that RTT and price, CPU cost can matter more
+than bytes saved — [picking a compression level](#pick-a-compression-level-before-reaching-for-a-dictionary) before a
+dictionary is even in the picture.
+
+Cloud to on-premise, or across providers: RTT climbs to tens of milliseconds or worse, egress hits the expensive
+tier, and — the part that actually threatens the HTTP/2 upside in
+[the negotiation-cost numbers](#the-negotiation-headers-have-a-real-version-dependent-cost) — corporate proxies and
+on-premise load balancers are exactly the middleboxes that strip or never complete the h2c cleartext upgrade. Lose
+HTTP/2 there and the header-cost math falls back to the HTTP/1.1 column, a net loss outside a narrow band around
+2 KB.
 
 ## Verdict
 
