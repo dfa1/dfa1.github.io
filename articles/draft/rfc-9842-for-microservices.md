@@ -1,4 +1,4 @@
-# Compression Dictionary Transport (RFC 9842): it is good for microservices?
+# RFC 9842 for Microservices: It Depends
 
 *14 September 2026*
 
@@ -62,7 +62,6 @@ this as a first-class citizen rather than a demo-only sketch — a framework-agn
 [#92](https://github.com/dfa1/zstd-ffm/issues/92) for the header parsing/building) that follows
 [sans-io](https://sans-io.readthedocs.io)'s split: the library provides only the protocol, and the I/O is supplied by
 whatever framework the caller is already using.*
-
 
 ## The setup
 
