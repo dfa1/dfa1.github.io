@@ -1,4 +1,4 @@
-# RFC 9842 for Microservices: It Depends
+# RFC 9842 Dictionary Transport for APIs
 
 *14 September 2026*
 
@@ -296,8 +296,7 @@ in [zstd-ffm](https://github.com/dfa1/zstd-ffm).
 The two standalone classes behind the "Pick a compression level" numbers — not part of zstd-ffm, just built against
 its published `zstd` module plus [DataFaker](https://www.datafaker.net).
 
-[`SizeCompareFaker.java`](https://github.com/dfa1/dfa1.github.io/blob/master/articles/draft/rfc-9842-for-microservices/SizeCompareFaker.java)
-— the byte-size table:
+`SizeCompareFaker.java` — the byte-size table:
 
 ```java
 import io.github.dfa1.zstd.Zstd;
@@ -423,8 +422,7 @@ public final class SizeCompareFaker {
 }
 ```
 
-[`GzipLevelSpeedFaker.java`](https://github.com/dfa1/dfa1.github.io/blob/master/articles/draft/rfc-9842-for-microservices/GzipLevelSpeedFaker.java)
-— the timing figures:
+`GzipLevelSpeedFaker.java` — the timing figures:
 
 ```java
 import io.github.dfa1.zstd.Zstd;
