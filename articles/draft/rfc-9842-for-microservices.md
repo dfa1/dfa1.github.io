@@ -196,34 +196,24 @@ matched across algorithms instead of comparing each one's default[^repro]:
 | dcz       | 3       | 109,335 B | −79%         |
 | dcz       | 6       | 102,381 B | −80%         |
 
-Matching levels instead of comparing defaults surfaces two things. First, `gzip`'s Java default *is* level 6 — same
-bytes, same speed, confirmed by measuring both directly — so "gzip default" in the HTTP table further down is
-already the higher-effort setting, not gzip's cheapest option; level 3 is available and meaningfully faster, just
-worse-compressing (127,902 B vs 116,315 B at 512 KB). Second, at matched levels the `zstd`-vs-`gzip` speed gap is
-real but smaller than "default vs default" suggests: compressing and decompressing the 512 KB payload, `gzip` L3
-takes 3,189 µs and `zstd` L3 takes 710 µs — about 4.5× — not the ~8× gap between `gzip`'s default and `zstd`'s
-default round trip (5,716 µs vs 710 µs)[^gzip-speed]. The remaining 4.5× is architectural, not a tuning artifact:
-DEFLATE's format caps the sliding window at 32 KB (RFC 1951 — a 15-bit back-reference distance), so past that size
-`gzip` can never see a match further back than its last 32 KB, no matter how repetitive the payload is. `zstd`'s
-window is much larger, so at 512 KB it keeps exploiting repetition `gzip` has already scrolled past — part of why
-`gzip`'s *ratio* trails too (127,902 B vs `zstd`'s 109,398 B at level 3), not just its speed.
+`gzip`'s Java default *is* level 6 — same bytes, same speed, confirmed by measuring both directly — so "gzip
+default" further down is already its higher-effort setting, not its cheapest. Level-matched, the `zstd`-vs-`gzip`
+speed gap shrinks from ~8× (default vs default) to ~4.5× at 512 KB (L3 vs L3)[^gzip-speed]; the rest is
+architectural, not a tuning artifact — DEFLATE caps its window at 32 KB (RFC 1951), so past that size it can't see
+matches further back, while `zstd`'s larger window keeps exploiting them, which is also why `gzip`'s ratio trails at
+512 KB, not just its speed.
 
-The dictionary's own trade-off is visible at matched levels too, and fades faster than `gzip`'s gap does: at level 6,
-the same 2 KiB dictionary cuts 61% more than plain `zstd` on the small payload (168 B vs 433 B), 5% more at 32 KB
-(7,292 B vs 7,702 B), and under 1% more at 512 KB (102,381 B vs 102,902 B) — a real payload's own repetition
-dwarfing a small fixed dictionary far sooner than the CPU-cost gap between algorithms does. Turn any of these
-percentages into your own request volume and your own cloud's $/GB to see whether it's worth it for you; this is one
-payload family, one dictionary, one machine — benchmark your own workload before picking a level.
+The dictionary's edge fades even faster: at level 6, it cuts 61% more than plain `zstd` on the small payload, 5%
+more at 32 KB, under 1% more at 512 KB — a real payload's own repetition dwarfs a small fixed dictionary long before
+the `gzip`/`zstd` gap closes. Benchmark your own workload before picking a level; this is one payload family, one
+machine.
 
 ## The negotiation headers have a real cost in HTTP/1.1
 
-`Available-Dictionary` + `Dictionary-ID` + the `dcz` token in `Accept-Encoding` add up to 101 bytes on every request. On
-HTTP/1.1 that's paid in full each time; HTTP/2 and HTTP/3 index repeated header values via HPACK/QPACK, so the same
-negotiation should cost only a couple of bytes after the first request — in theory. Measured, not modeled: sending the
-same warmed-up dcz-negotiated request 20 times over an HTTP/1.1-only connector versus an h2c-only one (same server,
-same dictionary, live `Connection.getBytesIn`/`Out` deltas around the loop) comes out to 684 B/request on HTTP/1.1
-versus 442 B/request on HTTP/2 — a 35% cut in total wire bytes, both directions. Smaller than "nearly free," because
-framing overhead and the headers that aren't repeated don't vanish, but the direction holds.
+`Available-Dictionary` + `Dictionary-ID` + the `dcz` token in `Accept-Encoding` add up to 101 bytes on every request.
+HTTP/1.1 pays that in full each time; HPACK/QPACK should index it down to a couple of bytes after the first request
+— in theory. Measured, not modeled: the same warmed-up request over HTTP/1.1 vs h2c comes out to 684 B/request vs
+442 B/request — a real 35% cut, smaller than "nearly free" since framing overhead doesn't vanish.
 
 Net wire bytes per request versus plain zstd, best dictionary per size (modeled from HPACK-indexing arithmetic — the
 one size measured end-to-end above, the demo's 2,800 B default, confirms the direction):
@@ -261,17 +251,13 @@ same 2 KiB dictionary as [above](#pick-a-compression-level-before-reaching-for-a
 | 524,288 B | dcz      | HTTP/1.1 | 2268  | 438.9 µs | 489.5 µs | 9,041.4 B     |
 | 524,288 B | dcz      | HTTP/2   | 2334  | 428.0 µs | 484.8 µs | 9,041.2 B     |
 
-At 579 B the 2 KiB dictionary is generously sized (over 3× the payload): `dcz` nearly halves the body against plain
-`zstd` (123.5 B vs 223.8 B, −45%) and is the fastest tier on both protocols; HTTP/2 adds another 28% throughput and
-cuts p50 by 20% on top of that. At 32 KB the same dictionary is now an eighth of the payload — too small — and the
-[picking-a-level](#pick-a-compression-level-before-reaching-for-a-dictionary) pattern repeats end-to-end: `dcz` ships
-*more* bytes than plain `zstd` (2,859 B vs 2,061 B, +39%), even though HTTP/2 still buys it a real edge over its own
-HTTP/1.1 run (+14% req/s, −12% p50). At 512 KB the dictionary's contribution has nearly vanished — `dcz` and `zstd`
-land within 1% of each other in bytes (9,041 B vs 9,110 B), matching the ~1% gap measured directly against the
-same-shape JSON above — and HTTP/2's own edge shrinks too (+3% req/s over HTTP/1.1, down from +28% at 579 B), because
-compression CPU time now dominates the request instead of connection or header overhead. The one dramatic mover at
-this size is `gzip`, whose throughput collapses to roughly a sixth of every other tier's (396 req/s vs ~2,300–2,400)
-— the same CPU-for-bytes trade-off from picking a level, just far more extreme at 512 KB than at a few kilobytes.
+At 579 B `dcz` nearly halves the body against plain `zstd` and is the fastest tier on both protocols, HTTP/2 adding
+another 28% throughput. At 32 KB the same
+[undersized-dictionary](#pick-a-compression-level-before-reaching-for-a-dictionary) pattern repeats end-to-end —
+`dcz` ships more bytes than plain `zstd` (+39%) even though HTTP/2 still boosts its throughput (+14%). At 512 KB
+`dcz` and `zstd` land within 1% of each other, HTTP/2's own edge shrinks to +3% (down from +28%), and `gzip` is the
+outlier: throughput collapses to a sixth of every other tier's (396 req/s vs ~2,300–2,400) — compression CPU cost
+now dominates the request.
 
 ## Requirements in the spec that are easy to skip
 
