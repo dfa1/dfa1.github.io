@@ -1,4 +1,4 @@
-# RFC 9842 Dictionary Transport for APIs
+# RFC 9842 for Microservices: It Depends
 
 *14 September 2026*
 
