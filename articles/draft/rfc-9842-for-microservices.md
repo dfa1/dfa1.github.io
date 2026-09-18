@@ -153,69 +153,67 @@ instead of intuition.
 ## Pick a compression level before reaching for a dictionary
 
 Zstd's default level 3 is tuned for speed, not ratio — on a small payload it can lose to `gzip` outright, dictionary
-or not, and the dictionary's own edge shrinks as the payload grows past it. Three sizes of the same order-shaped
-JSON — one `/orders/{id}` response, then two `/orders?page=N` pages — compressed every way, the *same* 2 KiB
-dictionary reused at all three sizes, not retrained per size[^repro]:
+or not, and the dictionary's own edge shrinks as the payload grows past it. An order object with realistic varying
+fields — name, email, street address, tracking number — same 2 KiB dictionary reused at all three sizes, levels
+matched across algorithms instead of comparing each one's default[^repro]:
 
-**Small — one order, 579 B**
+**Small — 620 B**
 
-| algorithm | level       | bytes | vs identity |
-|-----------|-------------|-------|--------------|
-| identity  | —           | 579 B | baseline     |
-| gzip      | default     | 380 B | −34%         |
-| zstd      | 1           | 392 B | −32%         |
-| zstd      | 3 (default) | 393 B | −32%         |
-| zstd      | 6           | 389 B | −33%         |
-| zstd      | 9           | 389 B | −33%         |
-| zstd      | 12          | 388 B | −33%         |
-| dcz       | 1           | 99 B  | −83%         |
-| dcz       | 3 (default) | 104 B | −82%         |
-| dcz       | 6           | 94 B  | −84%         |
-| dcz       | 9           | 97 B  | −83%         |
-| dcz       | 12          | 94 B  | −84%         |
+| algorithm | level   | bytes | vs identity |
+|-----------|---------|-------|--------------|
+| identity  | —       | 620 B | baseline     |
+| gzip      | default | 426 B | −31%         |
+| gzip      | 3       | 428 B | −31%         |
+| gzip      | 6       | 426 B | −31%         |
+| zstd      | 3       | 436 B | −30%         |
+| zstd      | 6       | 433 B | −30%         |
+| dcz       | 3       | 166 B | −73%         |
+| dcz       | 6       | 168 B | −73%         |
 
-**32 KB — a page of ~40 orders, 33,161 B**
+**32 KB — 33,284 B**
 
-| algorithm | level       | bytes    | vs identity |
-|-----------|-------------|----------|--------------|
-| identity  | —           | 33,161 B | baseline     |
-| gzip      | default     | 4,906 B  | −85%         |
-| zstd      | 1           | 4,209 B  | −87%         |
-| zstd      | 3 (default) | 4,524 B  | −86%         |
-| zstd      | 6           | 4,340 B  | −87%         |
-| zstd      | 9           | 3,931 B  | −88%         |
-| zstd      | 12          | 3,933 B  | −88%         |
-| dcz       | 1           | 3,739 B  | −89%         |
-| dcz       | 3 (default) | 4,066 B  | −88%         |
-| dcz       | 6           | 3,897 B  | −88%         |
-| dcz       | 9           | 3,480 B  | −90%         |
-| dcz       | 12          | 3,473 B  | −90%         |
+| algorithm | level   | bytes    | vs identity |
+|-----------|---------|----------|--------------|
+| identity  | —       | 33,284 B | baseline     |
+| gzip      | default | 8,087 B  | −76%         |
+| gzip      | 3       | 8,788 B  | −74%         |
+| gzip      | 6       | 8,087 B  | −76%         |
+| zstd      | 3       | 7,907 B  | −76%         |
+| zstd      | 6       | 7,702 B  | −77%         |
+| dcz       | 3       | 7,500 B  | −77%         |
+| dcz       | 6       | 7,292 B  | −78%         |
 
-**512 KB — a page of ~640 orders, 524,787 B**
+**512 KB — 524,377 B**
 
-| algorithm | level       | bytes     | vs identity |
-|-----------|-------------|-----------|--------------|
-| identity  | —           | 524,787 B | baseline     |
-| gzip      | default     | 67,897 B  | −87%         |
-| zstd      | 1           | 60,175 B  | −89%         |
-| zstd      | 3 (default) | 67,668 B  | −87%         |
-| zstd      | 6           | 62,604 B  | −88%         |
-| zstd      | 9           | 54,401 B  | −90%         |
-| zstd      | 12          | 53,417 B  | −90%         |
-| dcz       | 1           | 59,637 B  | −89%         |
-| dcz       | 3 (default) | 67,409 B  | −87%         |
-| dcz       | 6           | 62,057 B  | −88%         |
-| dcz       | 9           | 53,860 B  | −90%         |
-| dcz       | 12          | 52,870 B  | −90%         |
+| algorithm | level   | bytes     | vs identity |
+|-----------|---------|-----------|--------------|
+| identity  | —       | 524,377 B | baseline     |
+| gzip      | default | 116,315 B | −78%         |
+| gzip      | 3       | 127,902 B | −76%         |
+| gzip      | 6       | 116,315 B | −78%         |
+| zstd      | 3       | 109,398 B | −79%         |
+| zstd      | 6       | 102,902 B | −80%         |
+| dcz       | 3       | 109,335 B | −79%         |
+| dcz       | 6       | 102,381 B | −80%         |
 
-The trade-off doesn't show up against identity — every row past 32 KB clusters in the same 85–90% band no matter the
-algorithm. It shows up comparing `dcz` to plain `zstd` at the *same* level: at level 12, the same 2 KiB dictionary
-cuts 76% more than plain zstd on the single order (94 B vs 388 B), 12% more on the 32 KB page (3,473 B vs 3,933 B),
-and about 1% more on the 512 KB page (52,870 B vs 53,417 B). A fixed-size dictionary's contribution doesn't scale
-with the payload — past some point the payload carries enough internal repetition of its own that zstd finds most of
-it unaided, and the dictionary lifecycle stops paying for itself. Turn any of these percentages into your own
-request volume and your own cloud's $/GB to see whether it's worth it for you; this is one payload family, one
-dictionary, one machine — benchmark your own workload before picking a level.
+Matching levels instead of comparing defaults surfaces two things. First, `gzip`'s Java default *is* level 6 — same
+bytes, same speed, confirmed by measuring both directly — so "gzip default" in the HTTP table further down is
+already the higher-effort setting, not gzip's cheapest option; level 3 is available and meaningfully faster, just
+worse-compressing (127,902 B vs 116,315 B at 512 KB). Second, at matched levels the `zstd`-vs-`gzip` speed gap is
+real but smaller than "default vs default" suggests: compressing and decompressing the 512 KB payload, `gzip` L3
+takes 3,189 µs and `zstd` L3 takes 710 µs — about 4.5× — not the ~8× gap between `gzip`'s default and `zstd`'s
+default round trip (5,716 µs vs 710 µs)[^gzip-speed]. The remaining 4.5× is architectural, not a tuning artifact:
+DEFLATE's format caps the sliding window at 32 KB (RFC 1951 — a 15-bit back-reference distance), so past that size
+`gzip` can never see a match further back than its last 32 KB, no matter how repetitive the payload is. `zstd`'s
+window is much larger, so at 512 KB it keeps exploiting repetition `gzip` has already scrolled past — part of why
+`gzip`'s *ratio* trails too (127,902 B vs `zstd`'s 109,398 B at level 3), not just its speed.
+
+The dictionary's own trade-off is visible at matched levels too, and fades faster than `gzip`'s gap does: at level 6,
+the same 2 KiB dictionary cuts 61% more than plain `zstd` on the small payload (168 B vs 433 B), 5% more at 32 KB
+(7,292 B vs 7,702 B), and under 1% more at 512 KB (102,381 B vs 102,902 B) — a real payload's own repetition
+dwarfing a small fixed dictionary far sooner than the CPU-cost gap between algorithms does. Turn any of these
+percentages into your own request volume and your own cloud's $/GB to see whether it's worth it for you; this is one
+payload family, one dictionary, one machine — benchmark your own workload before picking a level.
 
 ## The negotiation headers have a real cost in HTTP/1.1
 
@@ -316,11 +314,14 @@ in [zstd-ffm](https://github.com/dfa1/zstd-ffm).
     them. Whether QUIC's own handshake and congestion-control overhead change the latency picture at these payload
     sizes is a separate, unmeasured question.
 
-[^repro]: Reproducible: `ZstdDictionary.train` on 300 single-order JSON samples (`java.util.Random`, seed `0x5EED`)
-    into a 2 KiB dictionary, via [zstd-ffm](https://github.com/dfa1/zstd-ffm)'s `zstd` module —
-    `Zstd.compress`/`ZstdCompressContext.compress` at levels 1/3/6/9/12 for the plain-`zstd` and `dcz` rows,
-    `java.util.zip.GZIPOutputStream` at its default level for `gzip`. The 32 KB and 512 KB rows are
-    `[order, order, ...]` JSON arrays of the same randomly-varied order shape (seed `2`, disjoint from the training
-    seed) built up to each target byte count. Not checked into the repo — a small standalone class against the
-    published library, same training/payload-generation shape as
-    [`DczTestServer`](https://github.com/dfa1/zstd-ffm/blob/main/rfc9842/src/test/java/io/github/dfa1/zstd/rfc9842/demo/DczTestServer.java).
+[^repro]: This table's order objects use [DataFaker](https://www.datafaker.net) for the varying fields (name, email,
+    address, tracking number), seeded for reproducibility (`java.util.Random`, seed `2` for the measured payloads,
+    `0x5EED` for 300 training samples):
+    [`SizeCompareFaker.java`](https://github.com/dfa1/dfa1.github.io/blob/master/articles/draft/rfc-9842-for-microservices/SizeCompareFaker.java),
+    a small standalone class against zstd-ffm and DataFaker.
+
+[^gzip-speed]: Timed separately from the byte sizes above, same payload generator, same machine: 200 warmup
+    iterations discarded, then 1,500 measured iterations per algorithm/level, wall-clock around the compress call
+    and around a full compress-then-decompress round trip. Not part of the live HTTP measurements further down —
+    isolated in-process timing, no server, no network, no Jetty:
+    [`GzipLevelSpeedFaker.java`](https://github.com/dfa1/dfa1.github.io/blob/master/articles/draft/rfc-9842-for-microservices/GzipLevelSpeedFaker.java).
