@@ -22,9 +22,9 @@ Modern microservices exchange a lot of JSON, and every byte of it has a price ta
 egress traffic per GB, so a chattier API is a bigger line item before it's anything else. Latency is the second cost —
 a slow link turns a big payload into a delay problem on top of a billing one.
 
-Compression is the standard lever for both — gzip or zstd, cold, on every response. A shared dictionary is the same lever with more leverage: the parts of
-the payload that repeat across responses — schema, boilerplate, whatever doesn't change request to request — get
-factored out once instead of re-compressed from scratch every time.
+Compression is the standard lever for both — gzip or zstd, cold, on every response. A shared dictionary is the same
+lever with more leverage: the parts of the payload that repeat across responses — schema, boilerplate, whatever
+doesn't change request to request — get factored out once instead of re-compressed from scratch every time.
 
 The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" zstd-ffm already treats
 this as a first-class citizen — a framework-agnostic model
@@ -34,6 +34,7 @@ layer ([#91](https://github.com/dfa1/zstd-ffm/issues/91) for the `dcz` codec,
 whatever framework the caller is already using.
 
 ### Coupled scenario
+
 If it's two services you control end-to-end — an internal service mesh, a client SDK you also ship — you already know
 at deploy time which dictionary applies to which endpoint. There's nothing to discover, so hardcode
 `Available-Dictionary`/`Dictionary-ID` on the request and skip parsing `Use-As-Dictionary` on responses entirely. That's
@@ -146,9 +147,9 @@ numbers below into measurements instead of HPACK arithmetic.
   `--http2` re-runs the same sweep over h2c.
 
 Everything below is measured on one laptop (Apple M5, 10 cores, JDK 25), server and client as separate `exec:java`
-processes talking over loopback TCP — not in-process — with no JVM tuning beyond the `--enable-native-access` flag FFM
-requires: 2,000 warmup requests discarded, then 10,000 measured per cell. Not a rigorous benchmark, but real numbers
-instead of intuition.
+processes — not in-process — with no JVM tuning beyond the `--enable-native-access` flag FFM requires. Not a
+rigorous benchmark, but real numbers instead of intuition; iteration counts vary by section and are noted where
+they matter.
 
 ## Pick a compression level before reaching for a dictionary
 
@@ -228,36 +229,53 @@ one size measured end-to-end above, the demo's 2,800 B default, confirms the dir
 This is the number that decides whether `dcz` is worth adopting at all: on HTTP/1.1 it's a net loss outside a narrow
 band around 2 KB; on HTTP/2+ it wins at every size tested.
 
-The same story shows up end-to-end, not just in header bytes.
-[`PerfTestDemo`](https://github.com/dfa1/zstd-ffm/blob/main/rfc9842/src/test/java/io/github/dfa1/zstd/rfc9842/demo/PerfTestDemo.java)'s
-four-tier sweep, HTTP/1.1 throughout, plus `dcz` re-run over real HTTP/2 (`--http2`), at the same three sizes and the
-same 2 KiB dictionary as [above](#pick-a-compression-level-before-reaching-for-a-dictionary), fresh servers per run:
+## Loopback hides the case for compression
 
-| payload   | encoding | protocol | req/s | p50      | p99      | avg bytes/req |
-|-----------|----------|----------|-------|----------|----------|---------------|
-| 579 B     | identity | HTTP/1.1 | 12237 | 75.5 µs  | 159.7 µs | 707.0 B       |
-| 579 B     | gzip     | HTTP/1.1 | 15050 | 64.9 µs  | 96.3 µs  | 228.4 B       |
-| 579 B     | zstd     | HTTP/1.1 | 17953 | 53.2 µs  | 92.2 µs  | 223.8 B       |
-| 579 B     | dcz      | HTTP/1.1 | 18580 | 52.0 µs  | 96.5 µs  | 123.5 B       |
-| 579 B     | dcz      | HTTP/2   | 23745 | 41.8 µs  | 55.9 µs  | 123.0 B       |
-| 32,768 B  | identity | HTTP/1.1 | 10353 | 91.0 µs  | 183.9 µs | 32,804.8 B    |
-| 32,768 B  | gzip     | HTTP/1.1 | 5226  | 188.6 µs | 227.5 µs | 1,530.3 B     |
-| 32,768 B  | zstd     | HTTP/1.1 | 11447 | 84.3 µs  | 135.6 µs | 2,060.8 B     |
-| 32,768 B  | dcz      | HTTP/1.1 | 11619 | 84.1 µs  | 127.6 µs | 2,859.1 B     |
-| 32,768 B  | dcz      | HTTP/2   | 13300 | 74.3 µs  | 90.7 µs  | 2,859.9 B     |
-| 524,288 B | identity | HTTP/1.1 | 2417  | 371.0 µs | 701.7 µs | 524,311.2 B   |
-| 524,288 B | gzip     | HTTP/1.1 | 396   | 2516.5 µs| 2847.8 µs| 19,485.3 B    |
-| 524,288 B | zstd     | HTTP/1.1 | 2339  | 424.3 µs | 468.4 µs | 9,110.0 B     |
-| 524,288 B | dcz      | HTTP/1.1 | 2268  | 438.9 µs | 489.5 µs | 9,041.4 B     |
-| 524,288 B | dcz      | HTTP/2   | 2334  | 428.0 µs | 484.8 µs | 9,041.2 B     |
+The obvious next step is measuring throughput end-to-end, not just header bytes — but not over loopback.
+Loopback has (near) infinite bandwidth, so a client and server on the same machine tell you when compression pays
+off *in CPU terms alone*; they say nothing about when it pays off on a link where bytes also cost transfer time,
+which is the entire premise of this article. A bandwidth-capped proxy in front of the same server — no code
+changes, no second machine — fixes that[^network-sim]:
 
-At 579 B `dcz` nearly halves the body against plain `zstd` and is the fastest tier on both protocols, HTTP/2 adding
-another 28% throughput. At 32 KB the same
-[undersized-dictionary](#pick-a-compression-level-before-reaching-for-a-dictionary) pattern repeats end-to-end —
-`dcz` ships more bytes than plain `zstd` (+39%) even though HTTP/2 still boosts its throughput (+14%). At 512 KB
-`dcz` and `zstd` land within 1% of each other, HTTP/2's own edge shrinks to +3% (down from +28%), and `gzip` is the
-outlier: throughput collapses to a sixth of every other tier's (396 req/s vs ~2,300–2,400) — compression CPU cost
-now dominates the request.
+```
+  NETWORK SIMULATION — a real bandwidth ceiling instead of loopback's effectively infinite one
+
+  ┌─────────────────┐                        ┌─────────────────┐                        ┌─────────────────┐
+  │  ProxyPerfTest  │────── GET :19842 ─────>│    toxiproxy    │──────── :9842 ────────>│    ServerDemo   │
+  │   (the client)  │<────── bw-capped ──────│ bandwidth toxic │<────── real body ──────│   (the server)  │
+  └─────────────────┘                        └─────────────────┘                        └─────────────────┘
+```
+
+Same server, same client logic, same 2 KiB dictionary, two payload sizes, at a modest 20 Mbps and a generous 1 Gbps:
+
+| payload | encoding | bandwidth | req/s   | p50      | avg bytes/req |
+|---------|----------|-----------|---------|----------|----------------|
+| 579 B   | identity | 20 Mbps   | 1,248   | 0.79 ms  | 707.0 B        |
+| 579 B   | gzip     | 20 Mbps   | 1,777   | 0.57 ms  | 227.1 B        |
+| 579 B   | zstd     | 20 Mbps   | 1,885   | 0.52 ms  | 223.3 B        |
+| 579 B   | dcz      | 20 Mbps   | 1,969   | 0.46 ms  | 122.7 B        |
+| 579 B   | identity | 1 Gbps    | 2,411   | 0.38 ms  | 707.0 B        |
+| 579 B   | gzip     | 1 Gbps    | 3,003   | 0.31 ms  | 227.3 B        |
+| 579 B   | zstd     | 1 Gbps    | 3,539   | 0.27 ms  | 223.5 B        |
+| 579 B   | dcz      | 1 Gbps    | 3,587   | 0.26 ms  | 122.9 B        |
+| 512 KB  | identity | 20 Mbps   | 4.7     | 212.5 ms | 524,311.2 B    |
+| 512 KB  | gzip     | 20 Mbps   | 77.8    | 13.0 ms  | 19,487.4 B     |
+| 512 KB  | zstd     | 20 Mbps   | 190.3   | 5.24 ms  | 9,125.3 B      |
+| 512 KB  | dcz      | 20 Mbps   | 181.3   | 5.47 ms  | 9,187.3 B      |
+| 512 KB  | identity | 1 Gbps    | 208.5   | 4.78 ms  | 524,311.2 B    |
+| 512 KB  | gzip     | 1 Gbps    | 334.8   | 2.98 ms  | 19,486.1 B     |
+| 512 KB  | zstd     | 1 Gbps    | 1,347.4 | 0.73 ms  | 9,110.2 B      |
+| 512 KB  | dcz      | 1 Gbps    | 1,382.1 | 0.71 ms  | 9,065.1 B      |
+
+At 579 B every tier ranks the same way at both bandwidths (`dcz` > `zstd` > `gzip` > `identity`), just with wider
+margins as bandwidth shrinks. The real shift is at 512 KB: `identity` never wins here, at either bandwidth — but
+`gzip`'s margin over it collapses as bandwidth grows, from 16.6× at 20 Mbps down to 1.6× at 1 Gbps, because `gzip`
+only ever had the bytes-saved argument, and 1 Gbps is enough pipe to blunt it. `zstd`/`dcz` don't slide the same
+way — still ~6.5× faster than `identity` at 1 Gbps — because their CPU cost is so much lower than `gzip`'s that they
+win on cheap compute as well as on bytes. `dcz` and `zstd` stay statistically tied at 512 KB regardless of
+bandwidth (the same undersized-dictionary finding as
+[picking a level](#pick-a-compression-level-before-reaching-for-a-dictionary)) — bandwidth changes how much the
+network rewards a smaller response, not whether the dictionary is big enough to produce one.
 
 ## Requirements in the spec that are easy to skip
 
@@ -277,26 +295,27 @@ now dominates the request.
 
 My rule of thumb:
 
-Use `dcz` when responses run roughly 0.5–16 KB, the connection is HTTP/2 or HTTP/3, and you're willing to size and
-retrain the dictionary as the data drifts. The
-[negotiation-cost numbers](#the-negotiation-headers-have-a-real-cost-in-http11) hold up end-to-end at that
-range: `dcz` is the fastest tier at every size where the dictionary is sized right, and HTTP/2 adds another 12–27% in
-throughput on top of what
-`dcz` already wins over plain `zstd` on HTTP/1.1.
+Use `dcz` when responses run roughly 0.5–16 KB, the dictionary is sized to the payload, and you're willing to
+retrain it as the data drifts — the numbers hold whether the link is generous or constrained, and the smaller the
+pipe, the bigger the win: `dcz` beats plain `zstd` by up to 58% on a 20 Mbps link at small sizes, still ahead even
+at 1 Gbps. HTTP/2 helps independently of all that — a real 35% cut in negotiation-header bytes over HTTP/1.1, not
+just HPACK theory — but that's a header-bytes result specifically, not a blanket throughput guarantee.
 
-Skip `dcz` if you're stuck on HTTP/1.1, the dictionary can't keep up with the payload — a 4 KiB dictionary against a
-32 KB response ships *more* bytes than no dictionary at all, HTTP/2 or not — or nobody's going to own the dictionary
-lifecycle. A stale or mis-sized dictionary is worse than none.
+Skip `dcz` if you're stuck on HTTP/1.1 outside the narrow band where the header bytes pay for themselves, the
+dictionary can't keep up with the payload — a 4 KiB dictionary against a 32 KB response ships *more* bytes than no
+dictionary at all — or nobody's going to own the dictionary lifecycle. A stale or mis-sized dictionary is worse than
+none.
 
 The full demo, including a JMH microbenchmark that isolates codec cost from the HTTP round trip, is
 in [zstd-ffm](https://github.com/dfa1/zstd-ffm).
 
 ## Reproduction scripts
 
-The two standalone classes behind the "Pick a compression level" numbers are on
-[GitHub Gist](https://gist.github.com/dfa1/0c0eaef6384eaa59a0eae8721423acda) — not part of zstd-ffm, just built
-against its published `zstd` module plus [DataFaker](https://www.datafaker.net). `SizeCompareFaker.java` produces
-the byte-size table; `GzipLevelSpeedFaker.java` produces the timing figures.
+Four files on [GitHub Gist](https://gist.github.com/dfa1/0c0eaef6384eaa59a0eae8721423acda) — not part of zstd-ffm,
+just built against its published `zstd`/`rfc9842` modules plus [DataFaker](https://www.datafaker.net) and
+[toxiproxy](https://github.com/Shopify/toxiproxy). `SizeCompareFaker.java` produces the byte-size table;
+`GzipLevelSpeedFaker.java` produces the timing figures; `network-sim.sh` sets up the bandwidth-capped proxy and
+`ProxyPerfTest.java` is the client that drives it.
 
 ---
 
@@ -317,3 +336,17 @@ the byte-size table; `GzipLevelSpeedFaker.java` produces the timing figures.
     and around a full compress-then-decompress round trip. Not part of the live HTTP measurements further down —
     isolated in-process timing, no server, no network, no Jetty — linked in full under
     [Reproduction scripts](#reproduction-scripts).
+
+[^network-sim]: [toxiproxy](https://github.com/Shopify/toxiproxy) sits between the client and the real `ServerDemo`
+    (still on loopback physically) and throttles the downstream/response direction only with a `bandwidth` toxic —
+    the request side is headers-only and doesn't need throttling to see the effect. Same `ServerDemo`, same 2 KiB
+    dictionary, same decode-cost-included methodology as the byte-size table above, just over HTTP/1.1 only and far
+    fewer iterations per cell (20–200, scaled down from the byte-size table's hundreds — network conditions
+    dominate here, not JIT warmup noise, so fewer samples are already stable). Setup script and client
+    (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under [Reproduction scripts](#reproduction-scripts).
+
+### Update on 18 September 2026
+
+zstd-ffm [v0.14](https://github.com/dfa1/zstd-ffm/blob/main/CHANGELOG.md#014---2026-09-18) shipped this — `#91`/`#92`
+in the intro above are closed, not just open issues. The `io.github.dfa1.zstd:zstd-rfc9842` module (`dcz` codec,
+framework-agnostic header model) is on Maven Central.
