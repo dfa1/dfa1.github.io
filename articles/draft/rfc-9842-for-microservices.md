@@ -346,8 +346,5 @@ none.
     dominate here, not JIT warmup noise, so fewer samples are already stable). Setup script and client
     (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under [Reproduction scripts](#reproduction-scripts).
 
-[^bill]: If the cloud bill is the motivation, size it first: at 579 B, `dcz` saves ~100 B per response over plain
-    `zstd` (122.7 B vs 223.3 B [above](#loopback-hides-the-case-for-compression)) — about $50/month at 10,000 req/s
-    sustained on AWS's cross-AZ rate, real money at scale but easily eaten by an engineer-hour of retraining below
-    it. `identity` to `zstd` saves roughly five times as many bytes, for free. Adopt `dcz` for latency on a link you
-    don't own; the bill alone rarely justifies it.
+[^bill]: `dcz` reduces bandwidth costs and saves some latency, but rarely enough on its own to justify the
+    dictionary-retraining upkeep — adopt it for the latency, not the bill.
