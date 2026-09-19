@@ -6,11 +6,7 @@
 lets HTTP clients and servers negotiate a shared compression dictionary, then compress responses against it (`dcb` for
 Brotli, `dcz` for Zstandard). It was written with browsers in mind: the spec's two motivating use cases
 ([§1.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1)) are a delta-compressed JS bundle against the
-previous version, and a dictionary of common HTML/template boilerplate shared across pages. The security section
-([§9](https://www.rfc-editor.org/rfc/rfc9842.html#section-9)) reads like it was written for a browser vendor —
-`Sec-Fetch-Site` checks, CORS-aware mitigations, cookie-like tracking protections — because it was, and it is already
-well covered by [MDN](https://developer.mozilla.org/en-US/docs/Glossary/Compression_dictionary_transport) and
-[caniuse](https://caniuse.com/wf-compression-dictionary-transport), so the rest of this piece skips it.*
+previous version, and a dictionary of common HTML/template boilerplate shared across pages.*
 
 *The negotiation itself isn't browser-specific: `Use-As-Dictionary`, `Available-Dictionary` and `Dictionary-ID` are
 plain HTTP, usable by any client that speaks `Accept-Encoding`/`Content-Encoding`.*
@@ -31,14 +27,6 @@ on compression is a filter and a header.
 Compression is the cheap lever for both costs — gzip or zstd, cold, on every response. A shared dictionary is the
 same lever with more leverage: the parts of the payload that repeat across responses — schema, boilerplate, whatever
 doesn't change request to request — get factored out once instead of re-compressed from scratch every time.
-
-The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" zstd-ffm treats this as a
-first-class citizen as of [v0.14](https://github.com/dfa1/zstd-ffm/blob/main/CHANGELOG.md#014---2026-09-18): the
-`io.github.dfa1.zstd:zstd-rfc9842` module on Maven Central ships the `dcz` codec
-([#91](https://github.com/dfa1/zstd-ffm/issues/91)) and the header parsing/building
-([#92](https://github.com/dfa1/zstd-ffm/issues/92)) as a framework-agnostic model layer, following
-[sans-io](https://sans-io.readthedocs.io)'s split: the library provides only the protocol, the I/O comes from whatever
-framework the caller is already using.
 
 ### Coupled scenario
 
@@ -82,7 +70,7 @@ off `Cache-Control` on their own, no coordinated redeploy.
   you control this — they don't. no out-of-band contract, no coordinated deploy.
 ```
 
-## What the negotiation looks like on the wire
+## Negotiation
 
 A client with no dictionary yet just asks for what it always asks for:
 
@@ -135,7 +123,29 @@ That's the whole negotiation — one extra GET to fetch the dictionary, then `Av
 `Available-Dictionary`, so it never sees anything but the `zstd`/`gzip` rungs; `Rfc9842ClientDemo` is what runs the
 exchange above.
 
-## A small demo + benchmark
+### Requirements in the spec that are easy to skip
+
+- **`Vary: accept-encoding, available-dictionary`** on every negotiated response
+  ([§6.2](https://www.rfc-editor.org/rfc/rfc9842.html#section-6.2)). Without it, a shared cache can serve a
+  dictionary-compressed body to a client holding a different dictionary — or none — which is undecodable, not just
+  suboptimal.
+- **A `Cache-Control` header on the dictionary itself**
+  ([§2.2.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-2.2.1)). A stored dictionary only counts as a match
+  while fresh; an uncacheable dictionary costs more to keep refetching than it ever saves.
+- **Never advertise `dcz` without a matching dictionary in hand**
+  ([§6.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-6.1)). A client with no dictionary can't decode a `dcz`
+  response, so it must not offer the encoding. `Rfc9842ClientDemo` only offers `dcz` when the `Use-As-Dictionary`
+  `match` pattern applies, for exactly this reason.
+
+## Run the demo
+
+The question I actually wanted answered wasn't "is this applicable?" but "is it worth it?" zstd-ffm treats this as a
+first-class citizen as of [v0.14](https://github.com/dfa1/zstd-ffm/blob/main/CHANGELOG.md#014---2026-09-18): the
+`io.github.dfa1.zstd:zstd-rfc9842` module on Maven Central ships the `dcz` codec
+([#91](https://github.com/dfa1/zstd-ffm/issues/91)) and the header parsing/building
+([#92](https://github.com/dfa1/zstd-ffm/issues/92)) as a framework-agnostic model layer, following
+[sans-io](https://sans-io.readthedocs.io)'s split: the library provides only the protocol, the I/O comes from whatever
+framework the caller is already using.
 
 The [demo](https://github.com/dfa1/zstd-ffm/tree/main/rfc9842/src/test/java/io/github/dfa1/zstd/rfc9842/demo) runs on
 embedded Jetty (`jetty-server` + `jetty-http2-server`, test-scoped) rather than the JDK's own
@@ -212,8 +222,8 @@ already its higher-effort setting, not its cheapest. Level-matched, the `zstd`-v
 
 What's left is architectural, not a tuning artifact: DEFLATE caps its window at 32 KB
 ([RFC 1951 §2](https://www.rfc-editor.org/rfc/rfc1951.html#section-2)), so past that size it can't see matches further
-back while `zstd`'s larger window still can — which is why `gzip` trails on ratio at 512 KB, not just on speed. The dictionary's
-edge fades faster still: at level 6 it cuts 61% more than plain `zstd` on the small payload, 5% more at 32 KB, under
+back while `zstd`'s larger window still can — which is why `gzip` trails on ratio at 512 KB, not just on speed. The
+dictionary's edge fades faster still: at level 6 it cuts 61% more than plain `zstd` on the small payload, 5% more at 32 KB, under
 1% more at 512 KB. A real payload's own repetition dwarfs a small fixed dictionary long before the `gzip`/`zstd` gap
 closes.
 
@@ -279,18 +289,11 @@ dictionary, two payload sizes:
 | 512 KB  | dcz      | 1 Gbps    | 1,382.1 | 0.71 ms  | 9,065.1 B      |
 
 At 579 B the ranking holds at both bandwidths (`dcz` > `zstd` > `gzip` > `identity`), with wider margins as the pipe
-narrows. The shift is at 512 KB: `gzip`'s margin over `identity` collapses from 16.6× at 20 Mbps to 1.6× at 1 Gbps,
-because `gzip` only ever had the bytes-saved argument and 1 Gbps is enough pipe to blunt it. `zstd`/`dcz` stay ~6.5×
-ahead even at 1 Gbps, because at that bandwidth the link isn't the constraint any more and the gap is mostly codec
-cost: 1,347.4 vs 334.8 req/s is 4× `gzip`'s throughput on the same box. That's a compute line item, not just a
-transfer one.
-
-At 512 KB `dcz` stops paying: at 20 Mbps it comes out *behind* plain `zstd` (181.3 vs 190.3 req/s). At 20–200
-iterations per cell that gap is run-to-run variance rather than a real regression — but it is not a win either way,
-and the 1 Gbps row (1,382.1 vs 1,347.4) flips the sign without changing the conclusion. It's the same
-undersized-dictionary finding as [picking a level](#pick-a-compression-level-before-reaching-for-a-dictionary):
-bandwidth changes how much the network rewards a smaller response, not whether the dictionary is big enough to
-produce one.
+narrows. At 512 KB the picture flips: `gzip`'s margin over `identity` collapses from 16.6× at 20 Mbps to 1.6× at
+1 Gbps as bandwidth stops being the bottleneck, while `zstd`/`dcz` hold ~6.5× ahead on codec cost alone (4×
+`gzip`'s throughput at 1 Gbps). `dcz` itself adds nothing over plain `zstd` at 512 KB — 181.3 vs 190.3 req/s at
+20 Mbps, 1,382.1 vs 1,347.4 at 1 Gbps — the same undersized-dictionary story as
+[picking a level](#pick-a-compression-level-before-reaching-for-a-dictionary).
 
 ## Reproduction scripts
 
@@ -303,24 +306,7 @@ just built against its published `zstd`/`rfc9842` modules plus [DataFaker](https
 `GzipLevelSpeedFaker.java` produces the timing figures; `network-sim.sh` sets up the bandwidth-capped proxy and
 `ProxyPerfTest.java` is the client that drives it.
 
-## Requirements in the spec that are easy to skip
-
-- **`Vary: accept-encoding, available-dictionary`** on every negotiated response
-  ([§6.2](https://www.rfc-editor.org/rfc/rfc9842.html#section-6.2)). Without it, a shared cache can serve a
-  dictionary-compressed body to a client holding a different dictionary — or none — which is undecodable, not just
-  suboptimal.
-- **A `Cache-Control` header on the dictionary itself**
-  ([§2.2.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-2.2.1)). A stored dictionary only counts as a match
-  while fresh; an uncacheable dictionary costs more to keep refetching than it ever saves.
-- **Never advertise `dcz` without a matching dictionary in hand**
-  ([§6.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-6.1)). A client with no dictionary can't decode a `dcz`
-  response, so it must not offer the encoding. `Rfc9842ClientDemo` only offers `dcz` when the `Use-As-Dictionary`
-  `match` pattern applies, for exactly this reason.
-
 ## Conclusion
-
-> **It depends.** The least satisfying answer an engineer can give — on payload size, dictionary freshness, and what's
-> underneath the connection.
 
 Use `dcz` when responses run roughly 0.5–16 KB, the dictionary is sized to the payload, and you're willing to retrain
 it as the data drifts[^bill] — the numbers hold whether the link is generous or constrained, and the smaller the pipe, the
@@ -369,7 +355,7 @@ none.
     request rate is worth proportionally more there, but the shape of the argument doesn't change.
 
     The bigger, easier win is the compression you already ship: `identity` to `zstd` moves roughly five times the
-    bytes `dcz` adds on top (707 B → 223.3 B vs. 223.3 B → 122.7 B at 579 B), and `gzip` to `zstd` also cuts the compute
-    bill — 4× the throughput per core at 512 KB ([above](#loopback-hides-the-case-for-compression)), a saving `dcz`
+    bytes `dcz` adds on top (707 B → 223.3 B vs. 223.3 B → 122.7 B at 579 B), and `gzip` to `zstd` also cuts the
+    compute bill — 4× the throughput per core at 512 KB ([above](#loopback-hides-the-case-for-compression)), a saving `dcz`
     itself doesn't add (3,587 vs 3,539 req/s at 579 B is noise, not a CPU win). Adopt `dcz` for latency on a link you
     don't own; the bytes rarely justify it on the bill alone.
