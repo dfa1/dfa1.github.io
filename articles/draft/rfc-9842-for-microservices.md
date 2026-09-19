@@ -20,11 +20,12 @@ plain HTTP, usable by any client that speaks `Accept-Encoding`/`Content-Encoding
 Modern microservices exchange a lot of JSON, and on a constrained link every byte of it costs time. Bytes cost money
 too, though less than the horror stories suggest: AWS meters cross-AZ traffic at
 [$0.01/GB per direction](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer_within_the_same_AWS_Region) — out
-of the sending zone and into the receiving one, so $0.02/GB for bytes that actually cross — GCP
-charges similarly for [inter-zone traffic](https://cloud.google.com/vpc/network-pricing), while
-[Azure stopped charging for it in 2024](https://azure.microsoft.com/en-us/pricing/details/bandwidth/) and same-AZ
-traffic is free everywhere. Egress to the internet is where the per-GB rate actually bites. So latency is usually the
-reason to act, and the bill is the bonus.
+of the sending zone and into the receiving one, so $0.02/GB for bytes that actually cross — GCP bills
+[$0.01/GiB](https://cloud.google.com/vpc/network-pricing) for the same kind of hop, charged once on egress rather
+than doubled, while Azure
+[stopped charging for it in May 2024](https://azure.microsoft.com/en-us/updates/update-on-interavailability-zone-data-transfer-pricing/)
+and same-AZ traffic is free everywhere. Egress to the internet is where the per-GB rate actually bites. So latency is
+usually the reason to act, and the bill is the bonus.
 
 Switching encoding — protobuf or Avro over gRPC — is the other way to attack this, and a more fundamental one: it
 shrinks the payload at the source instead of compressing the waste afterwards. It's also a migration. New IDL, new
@@ -363,18 +364,18 @@ none.
     dominate here, not JIT warmup noise, so fewer samples are already stable). Setup script and client
     (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under [Reproduction scripts](#reproduction-scripts).
 
-[^bill]: If the cloud bill is the motivation, do the arithmetic first, and bill both directions: cross-AZ is $0.01/GB
-    out of the sending zone *and* $0.01/GB into the receiving one, so a saved byte is worth $0.02. On HTTP/2+ the net
-    saving over plain `zstd` runs 66–117 B/request across the whole 0.5–32 KB band
-    ([above](#the-negotiation-headers-have-a-real-cost-in-http11)) — call it 100 B. That range is the interesting part:
-    the dictionary factors out a roughly fixed amount of boilerplate, so the saving is flat in absolute bytes even as
-    the payload grows 64×, and past 32 KB it decays toward zero. A 100 KB response saves no more than a 1 KB one, and
-    eventually less. At $0.02/GB and 100 B/request, sustained: ~$5/month at 1,000 req/s, ~$50 at 10,000, ~$500 at
-    100,000. So at 1,000 req/s a single engineer-hour a month spent retraining the dictionary costs more than the
-    dictionary saves; at 100,000 it's real money. For comparison, the compression you already ship — `identity` to
-    anything, 707 B → 223 B at 579 B — is worth roughly $250/month at 10,000 req/s, five times what the dictionary adds.
-    `gzip` → `zstd` then cuts the compute bill as well, 4× the throughput per core at 512 KB
-    ([above](#loopback-hides-the-case-for-compression)), which on instance pricing outruns the byte line item entirely.
-    That saving belongs to `zstd`, though, not to the dictionary: `dcz` shows no CPU penalty against plain `zstd`
-    (3,587 vs 3,539 req/s at 579 B) and no saving either. Adopt `dcz` for latency on a link you don't own; the bytes
-    only fund their own upkeep at high sustained volume.
+[^bill]: If the cloud bill is the motivation, do the arithmetic first, and bill both directions on AWS: cross-AZ is
+    $0.01/GB out of the sending zone *and* $0.01/GB into the receiving one, so a saved byte is worth $0.02. At 579 B,
+    `dcz` saves about 100 B per response over plain `zstd` (122.7 B vs 223.3 B
+    [above](#loopback-hides-the-case-for-compression)); the header-cost table shows the same order of magnitude
+    holds with a correctly-sized dictionary across 0.5–32 KB (66–121 B/request on HTTP/2+
+    [above](#the-negotiation-headers-have-a-real-cost-in-http11)) rather than scaling up with the payload — an
+    undersized or oversized dictionary saves a roughly fixed slice of boilerplate either way, not a fraction of the
+    response. At $0.02/GB and 100 B/request, sustained: ~$5/month at 1,000 req/s, ~$50 at 10,000, ~$500 at 100,000.
+    So at 1,000 req/s a single engineer-hour a month spent retraining the dictionary costs more than the dictionary
+    saves; at 100,000 it's real money. For comparison, the compression you already ship — `identity` to `zstd`,
+    707 B → 223 B at 579 B — is worth roughly $250/month at 10,000 req/s, five times what the dictionary adds on top
+    of that. `gzip` → `zstd` also throws in a compute win the dictionary doesn't: 4× the throughput per core at
+    512 KB ([above](#loopback-hides-the-case-for-compression)) means roughly a quarter the cores for the same load.
+    `dcz` carries no such win over plain `zstd` — 3,587 vs 3,539 req/s at 579 B is noise, not a CPU saving. Adopt
+    `dcz` for latency on a link you don't own; the bytes only fund their own upkeep at high sustained volume.
