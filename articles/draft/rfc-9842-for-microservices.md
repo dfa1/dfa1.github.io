@@ -346,16 +346,8 @@ none.
     dominate here, not JIT warmup noise, so fewer samples are already stable). Setup script and client
     (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under [Reproduction scripts](#reproduction-scripts).
 
-[^bill]: If the cloud bill is the motivation, size it before betting on it. At 579 B, `dcz` saves about 100 B per
-    response over plain `zstd` (122.7 B vs 223.3 B [above](#loopback-hides-the-case-for-compression)); the header-cost
-    table shows the same order of magnitude holds across the tested 0.5–32 KB range, not scaling up with the payload.
-    At AWS's cross-AZ rate ($0.02/GB round trip) that's ~$50/month at 10,000 req/s sustained — real money past tens
-    of thousands of req/s, but below that a single engineer-hour a month spent retraining the dictionary costs more
-    than it saves. Egress to the internet or through a NAT gateway runs a few times higher per GB, so the same
-    request rate is worth proportionally more there, but the shape of the argument doesn't change.
-
-    The bigger, easier win is the compression you already ship: `identity` to `zstd` moves roughly five times the
-    bytes `dcz` adds on top (707 B → 223.3 B vs. 223.3 B → 122.7 B at 579 B), and `gzip` to `zstd` also cuts the
-    compute bill — 4× the throughput per core at 512 KB ([above](#loopback-hides-the-case-for-compression)), a saving `dcz`
-    itself doesn't add (3,587 vs 3,539 req/s at 579 B is noise, not a CPU win). Adopt `dcz` for latency on a link you
-    don't own; the bytes rarely justify it on the bill alone.
+[^bill]: If the cloud bill is the motivation, size it first: at 579 B, `dcz` saves ~100 B per response over plain
+    `zstd` (122.7 B vs 223.3 B [above](#loopback-hides-the-case-for-compression)) — about $50/month at 10,000 req/s
+    sustained on AWS's cross-AZ rate, real money at scale but easily eaten by an engineer-hour of retraining below
+    it. `identity` to `zstd` saves roughly five times as many bytes, for free. Adopt `dcz` for latency on a link you
+    don't own; the bill alone rarely justifies it.
