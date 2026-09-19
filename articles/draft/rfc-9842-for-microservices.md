@@ -13,11 +13,8 @@ plain HTTP, usable by any client that speaks `Accept-Encoding`/`Content-Encoding
 
 ## Problem
 
-Modern microservices exchange a lot of JSON, and on a constrained link every byte of it costs time. Bytes cost money
-too: moving data in the cloud is rarely free, whether that's cross-AZ traffic
-([$0.01/GB each direction on AWS](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer_within_the_same_AWS_Region)),
-egress to the internet, or a NAT gateway in the path — the exact rate depends on the provider and the topology, but
-there's always a rate. Latency is usually the bigger reason to act, though; the bill is the bonus.
+Modern microservices exchange a lot of JSON, and on a constrained link every byte of it costs time and money.
+Latency is usually the bigger reason to act, though; the bill is the bonus.
 
 Switching encoding — protobuf or Avro over gRPC — is the other way to attack this, and a more fundamental one: it
 shrinks the payload at the source instead of compressing the waste afterwards. It's also a migration. New IDL, new
@@ -308,10 +305,11 @@ just built against its published `zstd`/`rfc9842` modules plus [DataFaker](https
 
 ## Conclusion
 
-Use `dcz` when responses run roughly 0.5–16 KB, the dictionary is sized to the payload, and you're willing to retrain
-it as the data drifts[^bill] — the numbers hold whether the link is generous or constrained, and the smaller the pipe, the
-bigger the win. HTTP/2 helps independently of all that — a real 35% cut in negotiation-header bytes over HTTP/1.1,
-not just HPACK theory — but that's a header-bytes result specifically, not a blanket throughput guarantee.
+Use `dcz` — Zstandard compressed against a shared dictionary instead of from scratch — when responses run roughly
+0.5–16 KB, the dictionary is sized to the payload, and you're willing to retrain it as the data drifts[^bill] — the
+numbers hold whether the link is generous or constrained, and the smaller the pipe, the bigger the win. HTTP/2 helps
+independently of all that — a real 35% cut in negotiation-header bytes over HTTP/1.1, not just HPACK theory — but
+that's a header-bytes result specifically, not a blanket throughput guarantee.
 
 Skip `dcz` if you're stuck on HTTP/1.1 outside the narrow band where the header bytes pay for themselves, the
 dictionary can't keep up with the payload — a 4 KiB dictionary against a 32 KB response ships *more* bytes than no
@@ -339,12 +337,9 @@ none.
     [Reproduction scripts](#reproduction-scripts).
 
 [^network-sim]: [toxiproxy](https://github.com/Shopify/toxiproxy) sits between the client and the real `ServerDemo`
-    (still on loopback physically) and throttles the downstream/response direction only with a `bandwidth` toxic —
-    the request side is headers-only and doesn't need throttling to see the effect. Same `ServerDemo`, same 2 KiB
-    dictionary, same decode-cost-included methodology as the byte-size table above, just over HTTP/1.1 only and far
-    fewer iterations per cell (20–200, scaled down from the byte-size table's hundreds — network conditions
-    dominate here, not JIT warmup noise, so fewer samples are already stable). Setup script and client
-    (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under [Reproduction scripts](#reproduction-scripts).
+    (still on loopback physically) and throttles the downstream/response direction only with a `bandwidth` toxic.
+    Setup script and client (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under
+    [Reproduction scripts](#reproduction-scripts).
 
 [^bill]: `dcz` reduces bandwidth costs and saves some latency, but rarely enough on its own to justify the
     dictionary-retraining upkeep — adopt it for the latency, not the bill.
