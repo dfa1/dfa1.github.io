@@ -22,6 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [RFC 9842 for Microservices: It Depends](articles/rfc-9842-for-microservices.html) (2026)
 - [RocksDB Performance and Zero-Copy](articles/rocksdb-performance-and-zero-copy.html) (2026)
 - [Announcing zstd-ffm](articles/announcing-zstd-ffm.html) (2026)
 - [Build the Loop, Not the Prompt](articles/build-the-loop-not-the-prompt.html) (2026)
@@ -79,4 +80,4 @@ All my public presentations made with [reveal.js](https://revealjs.com)
 
 > *If you think good architecture is expensive, try bad architecture.* — [Brian Foote and Joseph Yoder, Big Ball of Mud](https://www.laputan.org/mud/)
 
-Updated: 26 July 2026
+Updated: 14 September 2026
