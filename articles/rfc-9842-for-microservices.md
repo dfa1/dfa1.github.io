@@ -29,7 +29,7 @@ doesn't change request to request — get factored out once instead of re-compre
 
 If it's two services you control end-to-end — an internal service mesh, a client SDK you also ship — you already know
 at deploy time which dictionary applies to which endpoint. There's nothing to discover, so hardcode
-`Available-Dictionary`/`Dictionary-ID` on the request and skip parsing `Use-As-Dictionary` on responses entirely.
+`Available-Dictionary`/`Dictionary-ID` on the request and skip the `Link`/`Use-As-Dictionary` discovery entirely.
 That's the RFC's ["Common Content"](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1.2) use case, applied to a
 B2B API instead of a website.
 
@@ -41,8 +41,8 @@ B2B API instead of a website.
   │  (your team)   │                                            │    (your team, too)    │
   └────────────────┘                                            └────────────────────────┘
 
-  no negotiation — B hardcodes Available-Dictionary/Dictionary-ID, skips parsing
-  Use-As-Dictionary entirely. deploy-time knowledge covers it.
+  no negotiation — B hardcodes Available-Dictionary/Dictionary-ID, skips the
+  Link/Use-As-Dictionary discovery. deploy-time knowledge covers it.
 ```
 
 This setup is simple, but it comes with a deployment cost: the two services must ship in lockstep.
@@ -51,16 +51,17 @@ This setup is simple, but it comes with a deployment cost: the two services must
 
 The negotiation is useful when two ends are decoupled: a public API with third-party integrators writing their own
 clients — SDKs, curl, whatever — that you can't push config to, or two microservices owned by different teams.
-`Use-As-Dictionary` on the response is how they discover "there's a dictionary, here's its ID, it applies to
-`/orders/*`" without an out-of-band contract, and start sending it back on later requests for smaller responses. It
-also buys dictionary rotation for free: bump the dictionary server-side, and clients pick up the new ID and freshness
+A `Link: rel="compression-dictionary"` header on an ordinary response is how they discover there's a dictionary at
+all; the dictionary's own `Use-As-Dictionary` then says which requests it applies to and under which ID. No
+out-of-band contract, and they start sending it back on later requests for smaller responses. It also buys dictionary
+rotation for free: bump the dictionary server-side, and clients pick up the new ID and freshness
 off `Cache-Control` on their own, no coordinated redeploy.
 
 ```
   DECOUPLED — B2B API, third-party integrators, or cross-team services
 
   ┌────────────────┐                                            ┌────────────────────────┐
-  │    your API    │──────────── Use-As-Dictionary ────────────>│      their client      │
+  │    your API    │──────── Link + Use-As-Dictionary ─────────>│      their client      │
   │  owns dict v3  │<─────────── Available-Dictionary ──────────│ SDK / curl / whatever  │
   └────────────────┘                                            └────────────────────────┘
 
@@ -76,17 +77,35 @@ GET /orders/12345 HTTP/1.1
 Accept-Encoding: gzip, zstd
 ```
 
-The server compresses normally and uses the response to point at a dictionary the client can pick up for next time:
+The server compresses normally and links to a dictionary the client can pick up for next time
+([§3](https://www.rfc-editor.org/rfc/rfc9842.html#section-3)):
 
 ```
 HTTP/1.1 200 OK
 Content-Encoding: zstd
-Use-As-Dictionary: match="/orders/*", id="orders-v3"
+Link: </dict/orders-v3>; rel="compression-dictionary"
 Vary: accept-encoding, available-dictionary
 ```
 
-The client fetches that dictionary once — a plain GET, cached like any other resource — and from then on offers it on
-every request matching the pattern:
+`Use-As-Dictionary` goes on the *dictionary's* own response, not on the data response. It declares which requests the
+dictionary applies to and what ID to echo back
+([§2.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-2.1)); fetching it is a plain GET, cached like any
+other resource:
+
+```
+GET /dict/orders-v3 HTTP/1.1
+
+HTTP/1.1 200 OK
+Cache-Control: max-age=2592000
+Use-As-Dictionary: match="/orders/*", id="orders-v3"
+```
+
+Putting `Use-As-Dictionary` on the data response instead means something else entirely: *this body* is the dictionary
+for later requests that match, which is the delta-compression use case
+([§1.1.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1.1)) — a new JS bundle compressed against the
+previous one, not a shared dictionary serving many responses.
+
+From then on the client offers the stored dictionary on every request matching the pattern:
 
 ```
 GET /orders/67890 HTTP/1.1
@@ -104,7 +123,7 @@ decode.
 
 `Dictionary-ID` is the optional half of that pair. The server set `id="orders-v3"` in `Use-As-Dictionary` above, so
 per [§2.3](https://www.rfc-editor.org/rfc/rfc9842.html#section-2.3) the client MUST echo it back — it's a cheap lookup
-key for the server, not part of decoding. Leave `id` off the `Use-As-Dictionary` response and there's nothing to echo:
+key for the server, not part of decoding. Leave `id` off `Use-As-Dictionary` and there's nothing to echo:
 the client sends `Available-Dictionary` alone, and the server resolves the dictionary from the hash by itself.
 
 With a match, the server switches encodings and compresses against the shared dictionary instead of from scratch:
@@ -158,7 +177,8 @@ arithmetic.
   effect as an undersized dictionary: it stops matching what's actually sent.
 - **`NaiveClientDemo`** is what nearly every HTTP client does today — sends `Accept-Encoding: gzip` and nothing else,
   landing on the `gzip` tier.
-- **`Rfc9842ClientDemo`** fetches the dictionary once, offers it via `Available-Dictionary`/`Dictionary-ID` on matching
+- **`Rfc9842ClientDemo`** fetches the dictionary once from a URL it knows up front — no `Link` discovery, since
+  there's one dictionary and one server here — then offers it via `Available-Dictionary`/`Dictionary-ID` on matching
   requests; `--http2` picks the connector.
 - **`PerfTestDemo`** exercises all four tiers and reports throughput, latency percentiles, and bytes transferred;
   `--http2` re-runs the same sweep over h2c.
