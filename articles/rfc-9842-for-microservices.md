@@ -322,23 +322,21 @@ just built against its published `zstd`/`rfc9842` modules plus [DataFaker](https
 `GzipLevelSpeedFaker.java` produces the timing figures; `network-sim.sh` sets up the bandwidth-capped proxy and
 `ProxyPerfTest.java` is the client that drives it.
 
-## When to reach for it
+## Conclusion
 
 `dcz` is Zstandard compressed against a shared dictionary instead of from scratch. Whether that's worth the
 dictionary lifecycle depends less on the encoding than on the situation:
 
 | situation | verdict |
 |-----------|---------|
-| browser, static assets | the spec's home turf — both [§1.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1) use cases, unmeasured here |
-| public JSON API, small repetitive responses | the case that pays: −73% at 620 B, and no integrator to redeploy |
-| two services, one team | skip it — hardcode the dictionary, or switch encoding outright |
-| large responses already on plain `zstd` | under 1% left to win at 512 KB |
-| highly variable JSON | benchmark first — a dictionary that stops matching costs 20% *more* |
-| latency-sensitive constrained link | measure: margins widen as the pipe narrows |
-| stuck on HTTP/1.1 | the narrow band around 2 KB only; 101 header bytes per request eat the rest |
-| gRPC or protobuf already in place | a different problem — measure against that stack, not against JSON |
-
-## Conclusion
+| browser, static assets | **OK** — [the spec's own two use cases](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1) |
+| public JSON API, small repetitive responses | **OK** — [the case that pays](#loopback-hides-the-case-for-compression) |
+| latency-sensitive constrained link | **OK** — [the narrower the pipe, the wider the margin](#loopback-hides-the-case-for-compression) |
+| stuck on HTTP/1.1 | **MEASURE** — [the narrow band around 2 KB only](#the-negotiation-headers-have-a-real-cost-in-http11) |
+| highly variable JSON | **MEASURE** — [benchmark before training](#pick-a-compression-level-before-reaching-for-a-dictionary) |
+| two services, one team | **SKIP** — [hardcode it instead](#coupled-scenario) |
+| large responses already on plain `zstd` | **SKIP** — [under 1% left to win](#pick-a-compression-level-before-reaching-for-a-dictionary) |
+| gRPC or protobuf already in place | **SKIP** — [a different problem](#problem) |
 
 Level before dictionary. Zstd's default level 3 is tuned for speed, and at that level a 4 KiB dictionary against a
 32 KB response ships 3,244 B where plain `zstd` ships 2,704 B — 20% *more* than no dictionary at all[^dict-hurts].
