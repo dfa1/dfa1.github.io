@@ -17,7 +17,7 @@ Modern microservices exchange a lot of JSON, and on a constrained link every byt
 Latency is usually the bigger reason to act, though; the bill is the bonus.
 
 Switching encoding — protobuf or Avro over gRPC — is the other way to attack this, and a more fundamental one: it
-shrinks the payload at the source instead of compressing the waste afterwards. It's also a migration. New IDL, new
+shrinks the payload at the source instead of compressing the waste afterward. It's also a migration. New IDL, new
 client contracts, every consumer updated, and for a public API that means every integrator you don't control. Turning
 on compression is a filter and a header.
 
@@ -53,9 +53,9 @@ The negotiation is useful when two ends are decoupled: a public API with third-p
 clients — SDKs, curl, whatever — that you can't push config to, or two microservices owned by different teams.
 A `Link: rel="compression-dictionary"` header on an ordinary response is how they discover there's a dictionary at
 all; the dictionary's own `Use-As-Dictionary` then says which requests it applies to and under which ID. No
-out-of-band contract, and they start sending it back on later requests for smaller responses. It also buys dictionary
-rotation for free: bump the dictionary server-side, and clients pick up the new ID and freshness
-off `Cache-Control` on their own, no coordinated redeploy.
+out-of-band contract: they fetch it once and offer it on later requests for smaller responses. It also buys
+dictionary rotation for free: bump the dictionary server-side, and clients pick up the new ID from
+`Use-As-Dictionary` and its freshness from `Cache-Control` on their own, no coordinated redeploy.
 
 ```
   DECOUPLED — B2B API, third-party integrators, or cross-team services
@@ -116,9 +116,9 @@ Dictionary-ID: "orders-v3"
 
 `Available-Dictionary`'s value isn't the ID — it's the base64-encoded SHA-256 hash of the dictionary bytes the
 client is holding, wrapped in colons because it's a structured-field byte sequence
-([RFC 8941 §3.3.5](https://www.rfc-editor.org/rfc/rfc8941.html#section-3.3.5)). That's what lets the server confirm
+([RFC 9651 §3.3.5](https://www.rfc-editor.org/rfc/rfc9651.html#section-3.3.5)). That's what lets the server confirm
 the client has the exact dictionary it's about to compress against, not just a dictionary with a matching name. Get a
-hash mismatch and the server falls back to a lower rung of the ladder rather than send something the client can't
+hash mismatch and the server falls back to a lower rung of the ladder rather than sending something the client can't
 decode.
 
 `Dictionary-ID` is the optional half of that pair. The server set `id="orders-v3"` in `Use-As-Dictionary` above, so
@@ -135,9 +135,7 @@ Vary: accept-encoding, available-dictionary
 ```
 
 That's the whole negotiation — one extra GET to fetch the dictionary, then `Available-Dictionary` (plus
-`Dictionary-ID`, if the server bothered to set one) on every request after that. `NaiveClientDemo` never sends
-`Available-Dictionary`, so it never sees anything but the `gzip` rung; `Rfc9842ClientDemo` is what runs the
-exchange above.
+`Dictionary-ID`, if the server bothered to set one) on every request after that.
 
 ### Requirements in the spec that are easy to skip
 
@@ -170,7 +168,7 @@ needed: `java.net.http.HttpClient` does the [RFC 7540 §3.2](https://www.rfc-edi
 cleartext upgrade) on the same port. That's what turns the HTTP/2 numbers below into measurements instead of HPACK
 arithmetic.
 
-- **`ServerDemo`** negotiates the same four-rung ladder as before, best first: `dcz` if the client offers a matching
+- **`ServerDemo`** negotiates a four-rung ladder, best first: `dcz` if the client offers a matching
   dictionary, plain `zstd` if accepted, `gzip` if accepted, otherwise an uncompressed body — over either protocol. Its
   dictionary is trained (`ZstdDictionary.train`) on 300 synthetic NDJSON analytics events built from a seeded `Random`
   for reproducibility — the same shape of data it actually serves, since training on the wrong shape has the same
@@ -189,8 +187,8 @@ benchmark, but real numbers instead of intuition; iteration counts vary by secti
 
 ## Pick a compression level before reaching for a dictionary
 
-Zstd's default level 3 is tuned for speed, not ratio — on a small payload it can lose to `gzip` outright, dictionary
-or not, and the dictionary's own edge shrinks as the payload grows past it. An order object with realistic varying
+Zstd's default level 3 is tuned for speed, not ratio — on a small payload plain `zstd` can lose to `gzip` outright,
+and the dictionary's own edge shrinks as the payload grows past it. An order object with realistic varying
 fields — name, email, street address, tracking number — same 2 KiB dictionary reused at all three sizes, levels
 matched across algorithms instead of comparing each one's default[^repro]:
 
@@ -233,16 +231,16 @@ matched across algorithms instead of comparing each one's default[^repro]:
 | dcz       | 3       | 109,335 B | −79%         |
 | dcz       | 6       | 102,381 B | −80%         |
 
-`gzip`'s Java default *is* level 6 — same bytes, same speed, measured both ways — so "gzip default" further down is
-already its higher-effort setting, not its cheapest. Level-matched, the `zstd`-vs-`gzip` speed gap shrinks from ~8×
+`gzip`'s Java default *is* level 6 — same bytes, same speed, measured both ways — so every `gzip` number here and
+below is already its higher-effort setting, not its cheapest. Level-matched, the `zstd`-vs-`gzip` speed gap shrinks from ~8×
 (default vs default) to ~4.5× at 512 KB (L3 vs L3)[^gzip-speed].
 
 What's left is architectural, not a tuning artifact: DEFLATE caps its window at 32 KB
 ([RFC 1951 §2](https://www.rfc-editor.org/rfc/rfc1951.html#section-2)), so past that size it can't see matches further
 back while `zstd`'s larger window still can — which is why `gzip` trails on ratio at 512 KB, not just on speed. The
-dictionary's edge fades faster still: at level 6 its body is 61% smaller than plain `zstd`'s on the small
-payload, 5% smaller at 32 KB, under 1% at 512 KB. A real payload's own repetition dwarfs a small fixed dictionary long before the `gzip`/`zstd` gap
-closes.
+dictionary's edge fades faster still: at level 6 its body is 61% smaller than plain `zstd`'s on the small payload,
+5% smaller at 32 KB, under 1% at 512 KB. A real payload's own repetition dwarfs a small fixed dictionary long
+before the `gzip`/`zstd` gap closes.
 
 ## The negotiation headers have a real cost in HTTP/1.1
 
@@ -284,7 +282,8 @@ fixes that[^network-sim]:
 Neither bandwidth is a datacenter fabric: 20 Mbps is a mobile client or a thin WAN hop, 1 Gbps is roughly the
 floor for anything inside one. A dictionary earns the most exactly where you don't own the pipe — the
 [decoupled scenario](#decoupled-scenario), not the coupled one. Same server, same client logic, same 2 KiB
-dictionary, two payload sizes:
+dictionary, two payload sizes — `ServerDemo`'s NDJSON analytics events, not the order objects from the level
+tables, so byte counts aren't comparable across sections:
 
 | payload | encoding | bandwidth | req/s   | p50      | avg bytes/req |
 |---------|----------|-----------|---------|----------|----------------|
@@ -307,9 +306,9 @@ dictionary, two payload sizes:
 
 At 579 B the ranking holds at both bandwidths (`dcz` > `zstd` > `gzip` > `identity`), with wider margins as the pipe
 narrows. At 512 KB the picture flips: `gzip`'s margin over `identity` collapses from 16.6× at 20 Mbps to 1.6× at
-1 Gbps as bandwidth stops being the bottleneck, while `zstd`/`dcz` hold ~6.5× ahead on codec cost alone (4×
-`gzip`'s throughput at 1 Gbps). `dcz` itself adds nothing over plain `zstd` at 512 KB — 181.3 vs 190.3 req/s at
-20 Mbps, 1,382.1 vs 1,347.4 at 1 Gbps — the same undersized-dictionary story as
+1 Gbps as bandwidth stops being the bottleneck, while `zstd`/`dcz` stay ~6.5× ahead of `identity` at 1 Gbps on
+codec cost alone — 4× `gzip`'s throughput. `dcz` itself adds nothing over plain `zstd` at 512 KB — 181.3 vs
+190.3 req/s at 20 Mbps, 1,382.1 vs 1,347.4 at 1 Gbps — the same undersized-dictionary story as
 [picking a level](#pick-a-compression-level-before-reaching-for-a-dictionary).
 
 ## Reproduction scripts
@@ -323,18 +322,34 @@ just built against its published `zstd`/`rfc9842` modules plus [DataFaker](https
 `GzipLevelSpeedFaker.java` produces the timing figures; `network-sim.sh` sets up the bandwidth-capped proxy and
 `ProxyPerfTest.java` is the client that drives it.
 
+## When to reach for it
+
+`dcz` is Zstandard compressed against a shared dictionary instead of from scratch. Whether that's worth the
+dictionary lifecycle depends less on the encoding than on the situation:
+
+| situation | verdict |
+|-----------|---------|
+| browser, static assets | the spec's home turf — both [§1.1](https://www.rfc-editor.org/rfc/rfc9842.html#section-1.1) use cases, unmeasured here |
+| public JSON API, small repetitive responses | the case that pays: −73% at 620 B, and no integrator to redeploy |
+| two services, one team | skip it — hardcode the dictionary, or switch encoding outright |
+| large responses already on plain `zstd` | under 1% left to win at 512 KB |
+| highly variable JSON | benchmark first — a dictionary that stops matching costs 20% *more* |
+| latency-sensitive constrained link | measure: margins widen as the pipe narrows |
+| stuck on HTTP/1.1 | the narrow band around 2 KB only; 101 header bytes per request eat the rest |
+| gRPC or protobuf already in place | a different problem — measure against that stack, not against JSON |
+
 ## Conclusion
 
-Use `dcz` — Zstandard compressed against a shared dictionary instead of from scratch — when responses run roughly
-0.5–16 KB, the dictionary is sized to the payload, and you're willing to retrain it as the data drifts[^bill] — the
-numbers hold whether the link is generous or constrained, and the smaller the pipe, the bigger the win. HTTP/2 helps
-independently of all that — a real 35% cut in negotiation-header bytes over HTTP/1.1, not just HPACK theory — but
-that's a header-bytes result specifically, not a blanket throughput guarantee.
+Level before dictionary. Zstd's default level 3 is tuned for speed, and at that level a 4 KiB dictionary against a
+32 KB response ships 3,244 B where plain `zstd` ships 2,704 B — 20% *more* than no dictionary at all[^dict-hurts].
+Pick the level first, then size and train the dictionary on the shape you actually serve.
 
-Skip `dcz` if you're stuck on HTTP/1.1 outside the narrow band where the header bytes pay for themselves, the
-dictionary can't keep up with the payload — at zstd's default level 3, a 4 KiB dictionary against a 32 KB response
-ships 3,244 B where plain `zstd` ships 2,704 B: 20% *more* than no dictionary at all[^dict-hurts] — or nobody's going
-to own the dictionary lifecycle. A stale or mis-sized dictionary is worse than none.
+Transport next. `Available-Dictionary` and `Dictionary-ID` cost 101 bytes on every request, and HTTP/2 indexes that
+down by a real 35% — which is what moves `dcz` from break-even on HTTP/1.1 to a win at every size tested. That's a
+header-bytes result, not a blanket throughput guarantee.
+
+Then someone has to own the dictionary as the data drifts[^bill]. A stale or mis-sized dictionary is worse than
+none.
 
 ---
 
@@ -361,8 +376,8 @@ to own the dictionary lifecycle. A stale or mis-sized dictionary is worse than n
     Setup script and client (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under
     [Reproduction scripts](#reproduction-scripts).
 
-[^bill]: `dcz` reduces bandwidth costs and saves some latency, but rarely enough on its own to justify the
-    dictionary-retraining upkeep — adopt it for the latency, not the bill.
+[^bill]: the bandwidth-cost saving alone is rarely enough to justify the dictionary-retraining upkeep — adopt
+    `dcz` for the latency, not the bill.
 
 [^dict-hurts]: Measured with `ServerDemo`'s own generator and training setup, no HTTP in the path: 300 seeded 32 KB
     NDJSON analytics batches (`java.util.Random`, seed `0x5EED`), `ZstdDictionary.train` capped at 4 KiB, one fresh
