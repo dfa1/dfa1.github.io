@@ -51,6 +51,7 @@ All my public presentations made with [reveal.js](https://revealjs.com)
 
 ## Projects
 
+- [typesafe-java](https://github.com/dfa1/typesafe-java), Java client and CLI for the TypeSafe AI API (2026)
 - [eBPF-sensor](https://github.com/dfa1/ebpf-sensor), eBPF sensor in Python (2026)
 - [zstd-ffm](https://github.com/dfa1/zstd-ffm), Zstandard bindings in pure Java via FFM (2026)
 - [vortex-java](https://github.com/dfa1/vortex-java), columnar format in pure Java, zero-copy via FFM (2026)
