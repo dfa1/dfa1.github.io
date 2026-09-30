@@ -192,7 +192,7 @@ bytes below a measurement.
 
 Everything below is measured on one laptop (Apple M5, 10 cores, JDK 25), server and client as separate `exec:java`
 processes — not in-process — with no JVM tuning beyond the `--enable-native-access` flag FFM requires. Not a rigorous
-benchmark, but real numbers instead of intuition; iteration counts vary by section and are noted where they matter.
+benchmark, but real numbers instead of intuition; iteration counts vary by section.
 
 ## Pick a compression level before reaching for a dictionary
 
@@ -218,12 +218,10 @@ What's left is architectural, not a tuning artifact: DEFLATE caps its window at 
 back while `zstd`'s larger window still can — which is why `gzip` trails on ratio at 512 KB, not just on speed. The
 dictionary's edge fades faster still: at level 6 its body is 61% smaller than plain `zstd`'s on the small payload,
 5% smaller at 32 KB, under 1% at 512 KB: past a few KB, the payload's own repetition does the dictionary's job.
-A mis-sized dictionary is worse than none: at level 3, a 4 KiB dictionary against a 32 KB NDJSON response ships
-3,244 B where plain `zstd` ships 2,704 B — 20% *more*[^dict-hurts].
 
 ## The negotiation headers have a real cost in HTTP/1.1
 
-`Available-Dictionary` + `Dictionary-ID` + the `dcz` token in `Accept-Encoding` add up to 101 bytes on every request.
+`Available-Dictionary` + `Dictionary-ID` + the `dcz` token in `Accept-Encoding` add up to about 100 bytes on every request.
 HTTP/1.1 pays that in full each time; HPACK/QPACK should index it down to a couple of bytes after the first request —
 in theory. Measured: the same warmed-up request for the demo's default 2,800 B payload is 684 B over HTTP/1.1 vs 442 B
 over h2c — a 35% cut of the whole request, since framing overhead doesn't vanish.
@@ -335,13 +333,3 @@ On an OK or MEASURE row, in this order:
     (still on loopback physically) and throttles the downstream/response direction only with a `bandwidth` toxic.
     Setup script and client (`network-sim.sh`, `ProxyPerfTest.java`) linked in full under
     [Reproduction scripts](#reproduction-scripts).
-
-[^dict-hurts]: Measured with `ServerDemo`'s own generator and training setup, no HTTP in the path: 300 seeded 32 KB
-    NDJSON analytics batches (`java.util.Random`, seed `0x5EED`), `ZstdDictionary.train` capped at 4 KiB, one fresh
-    batch of the same shape compressed with and without the dictionary, plus the 40-byte `dcz` frame header
-    (`Rfc9842Frame.HEADER_SIZE` — an 8-byte skippable-frame header and the 32-byte dictionary hash). A dictionary far
-    too small for the samples it was trained on drags zstd's entropy tables the wrong way, which costs more than the
-    matches it buys; at level 6 the same dictionary is back ahead by 9.7%, one more reason
-    [level comes first](#pick-a-compression-level-before-reaching-for-a-dictionary). A different corpus moves the
-    crossover: the order objects in the table above, with a 2 KiB dictionary, still came out slightly ahead at 32 KB
-    and level 3.
