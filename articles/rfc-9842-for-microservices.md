@@ -299,7 +299,7 @@ dictionary lifecycle depends less on the encoding than on the situation:
 | latency-sensitive constrained link | **OK** — [the narrower the pipe, the wider the margin](#loopback-hides-the-case-for-compression) |
 | stuck on HTTP/1.1 | **MEASURE** — [the narrow band around 2 KB only](#the-negotiation-headers-have-a-real-cost-in-http11) |
 | highly variable JSON | **MEASURE** — [benchmark before training](#pick-a-compression-level-before-reaching-for-a-dictionary) |
-| two services, one team | **SKIP** — [hardcode it instead](#who-owns-the-client) |
+| two services, one team | **MEASURE** — [skip the negotiation, hardcode the dictionary](#who-owns-the-client) |
 | large responses already on plain `zstd` | **SKIP** — [under 1% left to win](#pick-a-compression-level-before-reaching-for-a-dictionary) |
 | gRPC or protobuf already in place | **SKIP** — [a different problem](#problem) |
 
