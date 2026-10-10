@@ -230,11 +230,14 @@ it went in.
 
 ### Without DuckDB: the CLI
 
-The CLI that ships with vortex-java does the basics. How many rows, and what range does each column cover?
+The CLI that ships with vortex-java does the basics. Add `--timing` to any command to see how long the operation took
+(printed to stderr, so a pipeline still gets only data; the clock starts after the JVM is up, so start-up is not
+counted). How many rows, and what range does each column cover?
 
 ```
-$ java -jar vortex-cli-all.jar count eod.vortex          # 0.06 s
+$ java -jar vortex-cli-all.jar count eod.vortex --timing
 4216320
+elapsed: 33.4 ms
 $ java -jar vortex-cli-all.jar stats eod.vortex
 column                type                      min              max
 symbol                utf8                  ADAUSDT          XRPUSDT
@@ -243,8 +246,8 @@ open                  f64                   0.07434        108258.38
 ...
 ```
 
-The row count is stored in the file's layout metadata, so `count` takes 0.06 s, JVM start-up included, without reading
-the data. `wc -l` is the fair comparison for a CSV: it takes 0.44 s for these 633 MB when the file is already in the
+The row count is stored in the file's layout metadata, so `count` takes 33 ms (60 ms for the whole process) without
+reading the data. `wc -l` is the fair comparison for a CSV: it takes 0.44 s for these 633 MB when the file is already in the
 page cache, because it has to read every byte to find the newlines (and it says 4216321, since it counts the header).
 
 `select` prints chosen columns, and `--where` (repeatable, all conditions must hold) keeps only some rows. The same
@@ -259,7 +262,7 @@ open_time,close
 ...                                                          # 60 rows
 ```
 
-It takes 0.18 s with the JVM start-up included, and returns the same 60 rows. Two details: string values go unquoted in
+With `--timing` it reports about 160 ms (0.18 s for the whole process), and returns the same 60 rows. Two details: string values go unquoted in
 the expression, and the pair is the selective filter on this file, since it is sorted by pair and then time.
 
 ## Try it on your own data
