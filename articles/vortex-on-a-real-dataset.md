@@ -4,9 +4,9 @@
 
 *[Vortex](https://github.com/vortex-data/vortex) is a columnar file format whose compressor picks an encoding per column
 and per chunk. It follows the BtrBlocks paper[^btrblocks]: a handful of simple encodings, combined recursively, instead
-of one clever encoding. This is a tour of the format using the vortex-java library on a public CSV file. It is for
-someone new to Vortex: what went in, how it is laid out, and which encoding each column ended up with, and why. If you would rather start with pictures, SpiralDB's
-[Vortex: One Format for Any Shape](https://spiraldb.com/blog/vortex-one-format-for-any-shape) animates the dictionary,
+of one clever encoding. This is a tour for newcomers to Vortex, using the vortex-java library on a public CSV file: what
+went in, how it is laid out, and which encoding each column ended up with and why. If you would rather start with
+pictures, SpiralDB's [Vortex: One Format for Any Shape](https://spiraldb.com/blog/vortex-one-format-for-any-shape) animates the dictionary,
 run-end and bit-packing encodings used below, and how they cascade.*
 
 ## The input
