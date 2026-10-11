@@ -240,7 +240,7 @@ begins, falls to 2 MB.
 ## What can you do with the file?
 
 Smaller is nice, but the file is also queryable without being unpacked first. For the sake of demo, the most convenient way is
-[DuckDB](https://duckdb.org), which has a Vortex extension (and actually this is where I heard for the the first time about vortex):
+[DuckDB](https://duckdb.org), which has a Vortex extension (and actually this is where I heard about Vortex for the first time):
 
 ```sql
 INSTALL vortex;
@@ -312,6 +312,14 @@ unquoted in the expression, and the pair is the selective filter, since the file
 
 Pick a CSV you already know well, import it, run `inspect`, and read the per-column encodings. The column whose
 encoding surprises you is the one worth investigating.
+
+Everything above was produced by [vortex-java](https://github.com/dfa1/vortex-java), a pure-Java reader and writer for
+Vortex. It is checked against the Rust reference in both directions (Rust writes and Java reads, and the reverse), and
+against 172 real-world datasets from SpiralDB's [Raincloud](https://github.com/spiraldb/raincloud) corpus, each
+matching its Parquet copy value for value (see the
+[compatibility notes](https://github.com/dfa1/vortex-java/blob/master/docs/compatibility.md#real-world-conformance-the-raincloud-corpus)).
+Real data is where bugs hide, so if you try it on your own files and something decodes wrongly, compresses badly or
+just surprises you, please [open an issue](https://github.com/dfa1/vortex-java/issues) with the file's `inspect` output.
 
 ---
 
