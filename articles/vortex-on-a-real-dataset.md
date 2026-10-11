@@ -1,4 +1,4 @@
-# A Tour of the Vortex Columnar Format: using vortex-java
+# A Tour of the Vortex Columnar Format with vortex-java
 
 *11 October 2026*
 

@@ -10,7 +10,7 @@
   <id>https://dfa1.github.io/feed.xml</id>
 
   <entry>
-    <title>A Tour of the Vortex Columnar Format: using vortex-java</title>
+    <title>A Tour of the Vortex Columnar Format with vortex-java</title>
     <link href="https://dfa1.github.io/articles/vortex-on-a-real-dataset.html"/>
     <id>https://dfa1.github.io/articles/vortex-on-a-real-dataset.html</id>
     <updated>2026-10-11T00:00:00Z</updated>

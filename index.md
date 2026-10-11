@@ -22,7 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
-- [A Tour of the Vortex Columnar Format: using vortex-java](articles/vortex-on-a-real-dataset.html) (2026)
+- [A Tour of the Vortex Columnar Format with vortex-java](articles/vortex-on-a-real-dataset.html) (2026)
 - [RFC 9842 for Microservices: It Depends](articles/rfc-9842-for-microservices.html) (2026)
 - [RocksDB Performance and Zero-Copy](articles/rocksdb-performance-and-zero-copy.html) (2026)
 - [Announcing zstd-ffm](articles/announcing-zstd-ffm.html) (2026)
