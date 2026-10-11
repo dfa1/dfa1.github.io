@@ -1,18 +1,20 @@
-# Vortex on a Real Dataset: 633 MB of Crypto Candles in 127 MB
+# A Tour of the Vortex Columnar Format
 
 *10 October 2026*
 
-*[Vortex](https://github.com/vortex-data/vortex) is a columnar file format with a compressor that picks an encoding
-per column and per chunk. That compressor follows the BtrBlocks paper[^btrblocks]: keep a handful of simple encodings
-and *combine them recursively*, instead of looking for one clever encoding. I wanted to see it work on something real, not a benchmark generator, so I took a year of
-public exchange data and looked at what it did to each column. This is a tour of that file, written for someone who is
-new to Vortex: what went in, how it is laid out, and which encoding each column ended up with and why.*
+*[Vortex](https://github.com/vortex-data/vortex) is a columnar file format whose compressor picks an encoding per column
+and per chunk. It follows the BtrBlocks paper[^btrblocks]: a handful of simple encodings, combined recursively, instead
+of one clever encoding. To see it work on something other than a benchmark generator, I took a year of public exchange
+data. This is a tour of the resulting file for someone new to Vortex: what went in, how it is laid out, and which
+encoding each column ended up with, and why. If you would rather start with pictures, SpiralDB's
+[Vortex: One Format for Any Shape](https://spiraldb.com/blog/vortex-one-format-for-any-shape) animates the dictionary,
+run-end and bit-packing encodings used below, and how they cascade.*
 
 ## The input
 
 [Binance publishes its market data](https://data.binance.vision) as plain files. I took the 1-minute candlesticks
-("klines") for 8 pairs (BTC, ETH, BNB, SOL, XRP, ADA, DOGE, LTC against USDT) for all of 2024, and added the pair name
-as a first column. These are the first rows of the file:
+("klines") for 8 pairs (BTC, ETH, BNB, SOL, XRP, ADA, DOGE, LTC against USDT) for all of 2024 and added the pair name as
+a first column. The first rows:
 
 ```
 symbol,open_time,open,high,low,close,volume,close_time,quote_volume,trades,taker_base_volume,taker_quote_volume,ignore
@@ -21,13 +23,13 @@ ADAUSDT,1704067260000,0.59400000,0.59490000,0.59390000,0.59470000,38140.50000000
 ADAUSDT,1704067320000,0.59480000,0.59510000,0.59470000,0.59480000,69129.00000000,1704067379999,41121.03314000,121,47191.90000000,28073.20516000,0
 ```
 
-Each row is one minute of trading for one pair: the first and last time (`open_time` and `close_time`, in
-milliseconds since 1970), the open, high, low and close price, how much was traded, and a few counters. The numbers are
-written as fixed-width text (`0.59390000`), which is part of why a CSV is so wasteful.
+Each row is one minute of trading for one pair: the first and last time (`open_time` and `close_time`, in milliseconds
+since 1970), the open, high, low and close price, how much was traded, and a few counters. The numbers are written as
+fixed-width text (`0.59390000`), part of why a CSV is so wasteful.
 
-4,216,320 rows, 13 columns, 633 MB of CSV. It is a good test because it mixes everything a real table has: a
-low-cardinality string, timestamps in a fixed rhythm, prices with a few decimals, volumes that are mostly
-high-entropy, a counter, and a column that is always zero. Rows are ordered by pair, then time.
+4,216,320 rows, 13 columns, 633 MB of CSV. It mixes much of what a real table has: a low-cardinality string, timestamps
+in a fixed rhythm, prices with a few decimals, mostly high-entropy volumes, a counter, and a column that is always zero.
+Rows are ordered by pair, then time.
 
 To reproduce it:
 
@@ -43,20 +45,20 @@ java -jar vortex-cli-all.jar inspect eod.vortex
 
 ## The result
 
-| | Size | vs CSV | Compress time |
-|---|---|---|---|
-| CSV | 632.9 MB | 100% | – |
-| CSV + `gzip -6` | 175.6 MB | 28% | 13.4 s |
-| CSV + `zstd -3` | 187.0 MB | 30% | 1.5 s |
-| CSV + `zstd -19` | 140.4 MB | 22% | 188.8 s |
-| **Vortex** | **127.2 MB** | **20%** | **1.0 s** |
+| | Size | vs CSV | Vortex is smaller by | Compress time | Vortex is faster by |
+|---|---|---|---|---|---|
+| CSV | 632.9 MB | 100% | 80% (5.0x) | – | – |
+| CSV + `gzip -6` | 175.6 MB | 28% | 28% (1.4x) | 13.4 s | 13x |
+| CSV + `zstd -3` | 187.0 MB | 30% | 32% (1.5x) | 1.5 s | 1.5x |
+| CSV + `zstd -19` | 140.4 MB | 22% | 9% (1.1x) | 188.8 s | 189x |
+| **Vortex** | **127.2 MB** | **20%** | – | **1.0 s** | – |
 
-Compress times are medians of three runs inside one JVM, with JVM start-up and CSV parsing excluded (the Vortex time
-is encode and write only). Two things stand out. Vortex beat even
-`zstd -19` while taking about a second instead of three minutes, and it did so with no general-purpose compression
-at all: every byte is an encoding that knows something about the data. The file is also still a columnar,
-random-access format, so a reader can fetch one column, or skip chunks by their min/max statistics, without
-decompressing the whole thing. A compressed CSV cannot do either.
+Compress times are medians of three runs inside one JVM, with JVM start-up and CSV parsing excluded (the Vortex time is
+encode and write only). Vortex beat even `zstd -19` by 9% while taking about a second instead of three minutes (189x
+faster), and it did so with no general-purpose compression at all: every byte is an encoding that knows something about
+the data. The file is also still columnar and random-access, so a reader can fetch one column, or skip chunks by their
+min/max statistics, without decompressing the whole thing. A compressed CSV can do neither. With `--compact` the file
+gets smaller still, to 95.2 MB; see "What `--compact` changes" below.
 
 ## How the file is laid out
 
@@ -69,8 +71,8 @@ Struct            one child per column
        └ Flat     one encoded segment each
 ```
 
-The compressor works on one chunk at a time, so the same column can use different encodings in different places. That
-matters here: a chunk that happens to sit inside one trading pair looks nothing like the chunk that straddles two.
+The compressor works on one chunk at a time, so one column can use different encodings in different places. That matters
+here: a chunk inside one trading pair looks nothing like a chunk that straddles two.
 
 ## What each column became
 
@@ -88,30 +90,30 @@ matters here: a chunk that happens to sit inside one trading pair looks nothing 
 
 A tour of the encodings, in the order they appear:
 
-- **`constant`** stores one value for the whole chunk. `ignore` is all zeros, and in a single-pair chunk `symbol` is
-  one string; both cost a few bytes per chunk.
-- **`sequence`** stores a base and a step. A minute-by-minute timestamp is `base + i × 60000`, so a chunk of 131,072
-  of them is two scalars. The 4 MB that is left is the handful of chunks that cross from one pair to the next
-  (or a gap in the data) and so are not an exact sequence.
-- **`alp`** ("Adaptive Lossless floating-Point"[^alp]) turns decimals back into integers. `0.5939` is stored as `5939` plus the exponents that undo it; values that do not round-trip become
-  "patches". The integers are then handled by the next two encodings.
-- **`for`** (frame of reference) subtracts the chunk minimum so the numbers get small, and **`bitpacked`** stores
-  each in just as many bits as the largest needs, laid out the FastLanes way[^fastlanes]
-  so a CPU can decode them with SIMD. An `open` price takes about 16 bits per row where the CSV spends about 12
-  characters (96 bits).
+- **`constant`** stores one value for the whole chunk. `ignore` is all zeros, and in a single-pair chunk `symbol` is one
+  string; both cost a few bytes per chunk.
+- **`sequence`** stores a base and a step. A minute-by-minute timestamp is `base + i × 60000`, so a chunk of 131,072 of
+  them is two scalars. The remaining 4 MB is the chunks that cross from one pair to the next (or a gap in the data),
+  which are not an exact sequence.
+- **`alp`** ("Adaptive Lossless floating-Point"[^alp]) turns decimals back into integers: `0.5939` is stored as `5939`
+  plus the exponents that undo it, and values that do not round-trip become "patches". The integers go to the next two
+  encodings.
+- **`for`** (frame of reference) subtracts the chunk minimum so the numbers get small, and **`bitpacked`** stores each in
+  as many bits as the largest needs, laid out the FastLanes way[^fastlanes] so a CPU can decode them with SIMD. An
+  `open` price takes about 16 bits per row where the CSV spends about 12 characters (96 bits).
 - **`alprd`** ("real doubles") is for floats that are not short decimals, such as `quote_volume`, a product of two
   decimals. It splits each 64-bit value into a few high bits, which repeat and go through a small dictionary, and the
-  low bits, which are stored packed. It saves less (55 bits per value instead of 64, in a typical chunk), but it is the right tool when ALP cannot help.
-- **`dict`** and **`runend`** appear in the `symbol` chunks that are not constant: eight strings, stored once, plus
-  small codes, run-length encoded because the same pair repeats thousands of times in a row.
+  low bits, which are stored packed. It saves less (55 bits per value instead of 64 in a typical chunk), but it is the
+  right tool when ALP cannot help.
+- **`dict`** and **`runend`** appear in the `symbol` chunks that are not constant: eight strings stored once, plus small
+  codes, run-length encoded because the same pair repeats thousands of times in a row.
 
 ## Encodings that compose
 
-None of the encodings above is clever on its own. The savings come from stacking them, and that is the idea Vortex
-takes from BtrBlocks[^btrblocks]. For each chunk the compressor tries every candidate encoding on a small sample and
-keeps the best. Then it treats whatever the winner produces (ALP's integers, a dictionary's codes and values) as a new
-column and runs the same competition on it, again and again, down to a configurable depth. The Rust crate that does
-this is called `vortex-btrblocks`.
+None of these encodings is clever on its own. The savings come from stacking them, the idea Vortex takes from
+BtrBlocks[^btrblocks]. For each chunk the compressor tries every candidate encoding on a small sample and keeps the
+best. It then treats whatever the winner produces (ALP's integers, a dictionary's codes and values) as a new column and
+runs the same competition on it, down to a configurable depth. The Rust crate that does this is `vortex-btrblocks`.
 
 You can read the recursion in the tree that `inspect` prints. One `open` price chunk:
 
@@ -129,15 +131,14 @@ dict                   8 distinct strings, stored once
  └ values: varbin      the strings themselves
 ```
 
-Nobody told the compressor any of this. There is no schema hint saying "this column is a timestamp" or "these are
+Nobody told the compressor any of this: there is no schema hint saying "this column is a timestamp" or "these are
 prices". Each decision is a measurement on a sample, and each level only has to be good at one small thing. The next
-section shows what each level of that stack is worth.
+section shows what each level is worth.
 
 ## How much does the cascade matter?
 
-The compressor can stack encodings: ALP turns floats into integers, frame of reference makes those integers small,
-bit-packing stores them tightly. How many it may stack is the *cascade depth*, and `3` is the default. I wrote the same
-file at each depth to see what each level is worth:
+How many encodings the compressor may stack is the *cascade depth*; `3` is the default. I wrote the same file at each
+depth to see what each level is worth:
 
 | Cascade depth | Size | vs CSV | Encode + write |
 |---|---|---|---|
@@ -146,7 +147,7 @@ file at each depth to see what each level is worth:
 | 2 | 127.2 MB | 20% | 1.1 s |
 | 3 (default) | 127.2 MB | 20% | 1.0 s |
 
-Medians of three runs in one JVM. The three cascading rows are within noise of each other on time. Per column:
+Medians of three runs in one JVM; the three cascading rows are within noise of each other on time. Per column:
 
 | Column | depth 0 | depth 1 | depth 2 and 3 |
 |---|---|---|---|
@@ -159,20 +160,56 @@ Medians of three runs in one JVM. The three cascading rows are within noise of e
 
 What this shows:
 
-- **Depth 0 is the format without the compressor.** Each value takes its full width, 8 bytes, about 33.7 MB a column.
-  ALP is even chosen for the prices, but with nowhere to send its integers the chunk is the same size as raw. It is a
-  useful baseline: Vortex still lays the file out in zones and chunks, you just give up the encodings.
-- **Depth 1 does almost all the work.** One encoding per chunk is enough for `sequence`, `constant` and `dict`, which
-  is why timestamps, `symbol` and `ignore` are already at their final size. For prices, ALP can pass its integers to
-  bit-packing, and 129.8 MB is already within 2% of the best.
-- **Depth 2 pays only for prices.** With one more level, ALP's integers go through frame of reference first, which
-  subtracts the chunk minimum and saves two bits per value (23 down to 21 in a typical chunk): 9.0 MB to 8.3 MB per
-  price column.
-- **Depth 3 buys nothing here.** This file has no encoding that wants a fourth layer. It cost nothing measurable
-  (128 bytes more, no extra time), and a deeper default leaves room for nested cases, such as a dictionary whose
-  values are floats.
+- **Depth 0 is the format without the compressor.** Each value takes its full 8 bytes (33.7 MB a column). ALP is chosen
+  for the prices, but with nowhere to send its integers the chunk stays raw-sized. It is the baseline: zones and chunks,
+  no encodings.
+- **Depth 1 does almost all the work.** One encoding per chunk is enough for `sequence`, `constant` and `dict`, so
+  timestamps, `symbol` and `ignore` are already final. ALP passing its integers to bit-packing puts the prices within
+  about 2% of the best (129.8 MB).
+- **Depth 2 pays only for prices.** ALP's integers go through frame of reference first, saving two bits per value (23
+  down to 21 in a typical chunk): 9.0 MB to 8.3 MB per price column.
+- **Depth 3 buys nothing here.** No encoding in this file wants a fourth layer (128 bytes more, no extra time); the deeper
+  default leaves room for nested cases, such as a dictionary whose values are floats.
 
-Time is within noise across 1, 2 and 3 on this file, so the extra levels were free here.
+## What `--compact` changes
+
+Vortex has a second preset, *compact* (`--compact` in the CLI, `WriteOptions#withCompact` in the library, the same preset
+as Rust's compressor). It adds two encodings to the competition for each chunk: Zstandard for text and
+[Pco](https://github.com/pcodec/pcodec), a compressor for numbers. It is off by default.
+
+```bash
+java -jar vortex-cli-all.jar import --compact eod.csv eod-compact.vortex
+```
+
+| | Size | vs CSV | Encode + write |
+|---|---|---|---|
+| Vortex, default | 127.2 MB | 20% | 1.2 s |
+| Vortex, `--compact` | **95.2 MB** | **15%** | 1.7 s |
+
+The file is 25% smaller than the default one and 32% smaller than `zstd -19` (140.4 MB), for about 40% more encode time.
+Both rows were measured as above (one JVM, median of three runs, parsing excluded). In this run the default took 1.2 s,
+not the 1.0 s of the table above; sizes were identical across two JVMs and times within 0.05 s. I did not measure how
+fast the compact file is to read.
+
+Per column, against the default file:
+
+| Column | Default | `--compact` | Change |
+|---|---|---|---|
+| `symbol` | 4 KB | 4 KB | –7% |
+| `open_time`, `close_time` | 4.0 MB | 2.0 MB | –51% |
+| `open`, `high`, `low`, `close` | 8.3 MB each | 4.3 MB each | –48% |
+| `volume` | 13.4 MB | 11.6 MB | –14% |
+| `taker_base_volume` | 12.9 MB | 11.0 MB | –15% |
+| `quote_volume`, `taker_quote_volume` | 27.1 / 25.7 MB | 23.6 / 22.5 MB | –13% |
+| `trades` | 6.7 MB | 5.3 MB | –21% |
+| `ignore` | 5 KB | 5 KB | 0% |
+
+The gains are in the columns that ended in `bitpacked`; `ignore`, a `constant`, cannot shrink. The compact file has no
+`fastlanes.bitpacked` or `alprd` at all, and `pco` takes their place. For a price, `alp` still produces integers, but
+they now seem to go to Pco instead of `for` and `bitpacked`, and the column halves (8.3 MB to 4.3 MB). Bit-packing spends
+the same number of bits on every value of a chunk; Pco models the distribution of the values and entropy-codes them.
+`open_time` and `close_time` halve as well: the 4 MB that `sequence` could not cover, where one pair ends and the next
+begins, falls to 2 MB.
 
 ## What can you do with the file?
 
@@ -205,17 +242,17 @@ ORDER BY open_time;
 ```
 
 That takes 0.03 s, DuckDB start-up and extension load included. The same query on the CSV, through `read_csv('eod.csv')`,
-takes 0.30 s: DuckDB's CSV reader is quick and parallel, so that is a fair baseline, and the Vortex file is still about
+takes 0.30 s. DuckDB's CSV reader is quick and parallel, so that is a fair baseline, and the Vortex file is still about
 ten times faster, from a file one fifth the size.
 
 ### Reading a file another implementation wrote
 
 There is a second reason to run this query. I produced `eod.vortex` with a Java implementation of the format
 ([vortex-java](https://github.com/dfa1/vortex-java)), and DuckDB's extension is the `vortex-duckdb` crate of the Rust
-reference. So the query also checks that two independent implementations agree on the bytes.
+reference, so the query also checks that two independent implementations agree on the bytes.
 
-One query is a weak check, so I compared the whole table. For each of the 13 columns I summed a hash of every value,
-once reading the CSV and once reading the Vortex file:
+One query is a weak check, so I compared the whole table: for each of the 13 columns I summed a hash of every value,
+once reading the CSV and once the Vortex file:
 
 ```sql
 SELECT count(*) AS n,
@@ -225,14 +262,13 @@ SELECT count(*) AS n,
 FROM read_csv('eod.csv', header = true);       -- and the same over read_vortex('eod.vortex')
 ```
 
-The row count and all 13 sums are identical, so every one of the 4,216,320 values in 13 columns comes back exactly as
-it went in.
+The row count and all 13 sums are identical, so all 4,216,320 values of all 13 columns come back exactly as they went in.
 
 ### Without DuckDB: the CLI
 
-The CLI that ships with vortex-java does the basics. Add `--timing` to any command to see how long the operation took
-(printed to stderr, so a pipeline still gets only data; the clock starts after the JVM is up, so start-up is not
-counted). How many rows, and what range does each column cover?
+The CLI that ships with vortex-java does the basics. `--timing` on any command prints how long it took, to stderr so a
+pipeline still gets only data; the clock starts after the JVM is up, so start-up is not counted. How many rows, and what
+range does each column cover?
 
 ```
 $ java -jar vortex-cli-all.jar count eod.vortex --timing
@@ -247,8 +283,8 @@ open                  f64                   0.07434        108258.38
 ```
 
 The row count is stored in the file's layout metadata, so `count` takes 33 ms (60 ms for the whole process) without
-reading the data. `wc -l` is the fair comparison for a CSV: it takes 0.44 s for these 633 MB when the file is already in the
-page cache, because it has to read every byte to find the newlines (and it says 4216321, since it counts the header).
+reading the data. The fair comparison for a CSV is `wc -l`: 0.44 s for these 633 MB with the file in the page cache,
+since it must read every byte to find the newlines (and it says 4216321, because it counts the header).
 
 `select` prints chosen columns, and `--where` (repeatable, all conditions must hold) keeps only some rows. The same
 question as above is one command:
@@ -262,23 +298,24 @@ open_time,close
 ...                                                          # 60 rows
 ```
 
-With `--timing` it reports about 160 ms (0.18 s for the whole process), and returns the same 60 rows. Two details: string values go unquoted in
-the expression, and the pair is the selective filter on this file, since it is sorted by pair and then time.
+With `--timing` it reports about 160 ms (0.18 s for the whole process) and returns the same 60 rows. String values go
+unquoted in the expression, and the pair is the selective filter, since the file is sorted by pair and then time.
+
+## Where the gap came from
+
+My first vortex-java writer produced 155 MB from these rows, 22% more than the reference. Both files decode to identical
+CSV, so the whole gap was in which encodings were chosen. Comparing per-column sizes, then per-chunk encoding trees,
+against the reference showed where: my compressor never offered `sequence` as a candidate, for example, and the sample
+it measures on has to be the very one the reference draws. Closing the gap taught me most of what is in this article.
+The story is in [issue #507](https://github.com/dfa1/vortex-java/issues/507).
 
 ## Try it on your own data
 
 Pick a CSV you already know well, import it, run `inspect`, and read the per-column encodings. The column whose
 encoding surprises you is the one worth investigating.
 
-## Detail: where I found out how it works
-
-I came to this file while writing [vortex-java](https://github.com/dfa1/vortex-java), a native Java implementation.
-My first writer produced 155 MB from these same rows, 22% more than the reference, and since both files decode to
-identical CSV, the whole gap was in which encodings were chosen. Comparing the per-column sizes and then the
-per-chunk encoding trees against the reference showed where: for example, my compressor never offered `sequence` as a
-candidate, and the sample it measures on has to be the very one the reference draws. Closing the gap is what taught me
-most of what is in this article. The story is in [issue #507](https://github.com/dfa1/vortex-java/issues/507).
+---
 
 [^alp]: Azim Afroozeh, Leonardo Kuffó and Peter Boncz, [ALP: Adaptive Lossless floating-Point Compression](https://dl.acm.org/doi/10.1145/3626717), SIGMOD 2024.
 [^fastlanes]: Azim Afroozeh and Peter Boncz, [The FastLanes Compression Layout](https://www.vldb.org/pvldb/vol16/p2132-afroozeh.pdf), VLDB 2023.
-[^btrblocks]: Maximilian Kuschewski, David Sauerwein, Adnan Alhomssi and Viktor Leis, BtrBlocks: Efficient Columnar Compression for Data Lakes, SIGMOD 2023.
+[^btrblocks]: Maximilian Kuschewski, David Sauerwein, Adnan Alhomssi and Viktor Leis, [BtrBlocks: Efficient Columnar Compression for Data Lakes](https://dl.acm.org/doi/10.1145/3589263), SIGMOD 2023.
