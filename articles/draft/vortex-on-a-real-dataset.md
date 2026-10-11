@@ -45,15 +45,15 @@ java -jar vortex-cli-all.jar inspect eod.vortex
 
 ## The result
 
-| | Size | vs CSV | Vortex is smaller by | Compress time | Vortex is faster by |
-|---|---|---|---|---|---|
-| CSV | 632.9 MB | 100% | 80% (5.0x) | – | – |
-| CSV + `gzip -6` | 175.6 MB | 28% | 28% (1.4x) | 13.4 s | 13x |
-| CSV + `zstd -3` | 187.0 MB | 30% | 32% (1.5x) | 1.5 s | 1.5x |
-| CSV + `zstd -19` | 140.4 MB | 22% | 9% (1.1x) | 188.8 s | 189x |
-| **Vortex** | **127.2 MB** | **20%** | – | **1.0 s** | – |
+| | Size | Time elapsed |
+|---|---|---|
+| CSV | 632.9 MB | – |
+| CSV + `gzip -6` | 175.6 MB | 13.4 s |
+| CSV + `zstd -3` | 187.0 MB | 1.5 s |
+| CSV + `zstd -19` | 140.4 MB | 188.8 s |
+| **Vortex** | **127.2 MB** | **1.0 s** |
 
-Compress times are medians of three runs inside one JVM, with JVM start-up and CSV parsing excluded (the Vortex time is
+The times are medians of three runs inside one JVM, with JVM start-up and CSV parsing excluded (the Vortex time is
 encode and write only). Vortex beat even `zstd -19` by 9% while taking about a second instead of three minutes (189x
 faster), and it did so with no general-purpose compression at all: every byte is an encoding that knows something about
 the data. The file is also still columnar and random-access, so a reader can fetch one column, or skip chunks by their
@@ -140,12 +140,12 @@ section shows what each level is worth.
 How many encodings the compressor may stack is the *cascade depth*; `3` is the default. I wrote the same file at each
 depth to see what each level is worth:
 
-| Cascade depth | Size | vs CSV | Encode + write |
-|---|---|---|---|
-| 0 (no cascade) | 428.1 MB | 68% | 0.6 s |
-| 1 | 129.8 MB | 21% | 1.2 s |
-| 2 | 127.2 MB | 20% | 1.1 s |
-| 3 (default) | 127.2 MB | 20% | 1.0 s |
+| Cascade depth | Size | Encode + write |
+|---|---|---|
+| 0 (no cascade) | 428.1 MB | 0.6 s |
+| 1 | 129.8 MB | 1.2 s |
+| 2 | 127.2 MB | 1.1 s |
+| 3 (default) | 127.2 MB | 1.0 s |
 
 Medians of three runs in one JVM; the three cascading rows are within noise of each other on time. Per column:
 
@@ -181,10 +181,10 @@ as Rust's compressor). It adds two encodings to the competition for each chunk: 
 java -jar vortex-cli-all.jar import --compact eod.csv eod-compact.vortex
 ```
 
-| | Size | vs CSV | Encode + write |
-|---|---|---|---|
-| Vortex, default | 127.2 MB | 20% | 1.2 s |
-| Vortex, `--compact` | **95.2 MB** | **15%** | 1.7 s |
+| | Size | Encode + write |
+|---|---|---|
+| Vortex, default | 127.2 MB | 1.2 s |
+| Vortex, `--compact` | **95.2 MB** | 1.7 s |
 
 The file is 25% smaller than the default one and 32% smaller than `zstd -19` (140.4 MB), for about 40% more encode time.
 Both rows were measured as above (one JVM, median of three runs, parsing excluded). In this run the default took 1.2 s,
