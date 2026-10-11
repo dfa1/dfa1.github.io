@@ -44,7 +44,7 @@ java -jar vortex-cli-all.jar inspect eod.vortex
 
 ## The result
 
-| | Size | Time elapsed |
+| | Size | Time |
 |---|---|---|
 | CSV | 632.9 MB | – |
 | CSV + `gzip -6` | 175.6 MB | 13.4 s |
@@ -56,8 +56,14 @@ The times are medians of three runs inside one JVM, with JVM start-up and CSV pa
 encode and write only). Vortex beat even `zstd -19` by 9% while taking about a second instead of three minutes (189x
 faster), and it did so with no general-purpose compression at all: every byte is an encoding that knows something about
 the data. The file is also still columnar and random-access, so a reader can fetch one column, or skip chunks by their
-min/max statistics, without decompressing the whole thing. A compressed CSV can do neither. With `--compact` the file
-gets smaller still, to 95.2 MB; see "What `--compact` changes" below.
+min/max statistics, without decompressing the whole thing. A compressed CSV can do neither.
+
+Two caveats on the numbers. The size and timing tables use the library defaults, which write one global dictionary for
+`symbol`. The CLI's `import` turns the global dictionary off, so its file is 127.1 MB and `symbol` takes 17 KB instead of
+4 KB; the per-column table, the `inspect` report and the screenshot below come from that file. And `inspect` reports
+binary megabytes (1 MB = 1,048,576 bytes): the same 127.1 MB file shows up there as 121.2 MB.
+
+With `--compact` the file gets smaller still, to 95.2 MB; see "What `--compact` changes" below.
 
 ## How the file is laid out
 
@@ -184,7 +190,7 @@ What this shows:
   for the prices, but with nowhere to send its integers the chunk stays raw-sized. It is the baseline: zones and chunks,
   no encodings.
 - **Depth 1 does almost all the work.** One encoding per chunk is enough for `sequence`, `constant` and `dict`, so
-  timestamps, `symbol` and `ignore` are already final. ALP passing its integers to bit-packing puts the prices within
+  timestamps, `symbol` and `ignore` are already final. ALP passing its integers to bit-packing puts the file within
   about 2% of the best (129.8 MB).
 - **Depth 2 pays only for prices.** ALP's integers go through frame of reference first, saving two bits per value (23
   down to 21 in a typical chunk): 9.0 MB to 8.3 MB per price column.
@@ -226,7 +232,7 @@ Per column, against the default file:
 
 The gains are in the columns that ended in `bitpacked`; `ignore`, a `constant`, cannot shrink. The compact file has no
 `fastlanes.bitpacked` or `alprd` at all, and `pco` takes their place. For a price, `alp` still produces integers, but
-they now seem to go to Pco instead of `for` and `bitpacked`, and the column halves (8.3 MB to 4.3 MB). Bit-packing spends
+they now go to Pco instead of `for` and `bitpacked`, and the column halves (8.3 MB to 4.3 MB). Bit-packing spends
 the same number of bits on every value of a chunk; Pco models the distribution of the values and entropy-codes them.
 `open_time` and `close_time` halve as well: the 4 MB that `sequence` could not cover, where one pair ends and the next
 begins, falls to 2 MB.
