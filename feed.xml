@@ -3,11 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-09-14T00:00:00Z</updated>
+  <updated>2026-10-11T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>https://dfa1.github.io/feed.xml</id>
+
+  <entry>
+    <title>A Tour of the Vortex Columnar Format: using vortex-java</title>
+    <link href="https://dfa1.github.io/articles/vortex-on-a-real-dataset.html"/>
+    <id>https://dfa1.github.io/articles/vortex-on-a-real-dataset.html</id>
+    <updated>2026-10-11T00:00:00Z</updated>
+    <published>2026-10-11T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Vortex is a columnar file format whose compressor picks an encoding per column and per chunk. It follows the BtrBlocks paper: a handful of simple encodings, combined recursively, instead of one clever encoding. This is a tour of the format using the vortex-java library on a public CSV file. It is for someone new to Vortex: what went in, how it is laid out, and which encoding each column ended up with, and why. If you would rather start with pictures, SpiralDB's Vortex: One Format for Any Shape animates the dictionary, run-end and bit-packing encodings used below, and how they cascade.</summary>
+  </entry>
 
   <entry>
     <title>RFC 9842 for Microservices: It Depends</title>

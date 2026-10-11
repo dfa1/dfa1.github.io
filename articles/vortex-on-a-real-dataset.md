@@ -1,11 +1,11 @@
 # A Tour of the Vortex Columnar Format: using vortex-java
 
-*10 October 2026*
+*11 October 2026*
 
 *[Vortex](https://github.com/vortex-data/vortex) is a columnar file format whose compressor picks an encoding per column
 and per chunk. It follows the BtrBlocks paper[^btrblocks]: a handful of simple encodings, combined recursively, instead
-of one clever encoding. This is a tour of the format using vortex-java library on a public CSV file. It is for someone new to Vortex: what went in, how it is laid out, and which
-encoding each column ended up with, and why. If you would rather start with pictures, SpiralDB's
+of one clever encoding. This is a tour of the format using the vortex-java library on a public CSV file. It is for
+someone new to Vortex: what went in, how it is laid out, and which encoding each column ended up with, and why. If you would rather start with pictures, SpiralDB's
 [Vortex: One Format for Any Shape](https://spiraldb.com/blog/vortex-one-format-for-any-shape) animates the dictionary,
 run-end and bit-packing encodings used below, and how they cascade.*
 
