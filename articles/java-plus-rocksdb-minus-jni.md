@@ -159,7 +159,7 @@ options.setBlockSize(67108864L); // what unit? what range?
 options.setBlockSize(MemorySize.ofMB(64));
 ```
 
-The same principle [I wrote about in the domain primitives post](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) applies here: illegal
+The same principle [I wrote about in the domain primitives post](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html) applies here: illegal
 values should be unrepresentable. `MemorySize.ofMB(-1)` throws at construction.
 
 ### Path, not String

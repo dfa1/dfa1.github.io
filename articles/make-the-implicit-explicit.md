@@ -321,7 +321,7 @@ the same `userId`/`asOf` repeatedly until all data was delivered. When the deliv
 These gains weren't optimizations — they were the side-effects of making boundaries explicit.
 
 The strategy that ran through all of this was the same: make the implicit explicit and
-[writing down the why](https://dfa1.github.io/articles/write-down-the-why) to share the problem/solution pair with
+[writing down the why](https://dfa1.github.io/articles/write-down-the-why.html) to share the problem/solution pair with
 other teams.
 
 Software breaks at boundaries because that's where assumptions accumulate faster than feedback.

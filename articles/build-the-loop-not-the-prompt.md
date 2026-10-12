@@ -221,7 +221,7 @@ guards completeness where the first guards accuracy: the encodings table in
 `docs/compatibility.md` must list exactly the encodings the code registers via `ServiceLoader`.
 Both assert and never generate — on drift they print the exact rows to add or fix, a readable
 failure the agent closes like any other. Argue once, then let the build remember — the same
-move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules#rule-3).
+move as [Earn Your Rules](https://dfa1.github.io/articles/earn-your-rules.html#rule-3).
 
 ## The role of human engineers
 

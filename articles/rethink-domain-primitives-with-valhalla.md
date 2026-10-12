@@ -2,7 +2,7 @@
 
 *16 May 2026*
 
-*[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team) made the case for domain primitives — types that encode business constraints, as opposed to Java primitives (`int`, `double`, `long`). Wrap an `int` in a `PositiveInt` and the compiler rejects invalid states forever. The recurring objection: a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
+*[Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html) made the case for domain primitives — types that encode business constraints, as opposed to Java primitives (`int`, `double`, `long`). Wrap an `int` in a `PositiveInt` and the compiler rejects invalid states forever. The recurring objection: a wrapper class per `int` is one heap object per value, plus a pointer to reach it. Fine at the boundary; questionable in a hot loop where allocations and cache misses dominate.*
 
 *Project Valhalla changes the trade-off. Value classes let the JVM flatten the wrapper into the array slot, the register, the enclosing object — no header, no indirection. All experiments here run on `openjdk 27-jep401ea3`, the current Valhalla EA build implementing [JEP 401](https://openjdk.org/jeps/401).*
 
@@ -196,7 +196,7 @@ The library includes adapters for Jackson and JPA; register them with the usual 
 
 ## Conclusion
 
-Valhalla is on track to remove the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is close: value classes are in preview, not yet production-ready. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team), may soon carry no performance penalty at all.
+Valhalla is on track to remove the last reason to keep primitive types out of domain modeling. The promise — *codes like a class; works like an int* — is close: value classes are in preview, not yet production-ready. Domain primitives, as described in [Your Compiler Is Already Part of Your Security Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html), may soon carry no performance penalty at all.
 
 The code is at [github.com/dfa1/refined-type](https://github.com/dfa1/refined-type).
 Issues, discussions, and pull requests are welcome!

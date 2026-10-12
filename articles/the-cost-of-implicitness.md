@@ -13,14 +13,14 @@ always larger than expected.*
 This is a self-reflection post: each of the three posts
 below explores the same pattern at a different layer.
 
-[Write Down the Why](https://dfa1.github.io/articles/write-down-the-why) is about the
+[Write Down the Why](https://dfa1.github.io/articles/write-down-the-why.html) is about the
 process layer. A team without written rationale produces engineers who follow rules they
 don't understand — and override them the first time the rules are inconvenient. Writing
 down the *why* behind a testing philosophy or a branching model is not documentation; it
 is the verifiable contract between the team and its future members.
 
 [Your Compiler Is Already Part of Your Security
-Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team)
+Team](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html)
 is about the code layer. Consider a method that accepts `(long instrumentId, long marketId)`:
 transpose the arguments and the compiler says nothing. Replace both with `InstrumentId`
 and `MarketId` and the wrong-order call is a build failure. A domain primitive encodes a
@@ -28,7 +28,7 @@ constraint that a raw `int` or `String` cannot carry — the invalid operation d
 compile, the secret does not print.
 
 [Make the Implicit
-Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit) is about the
+Explicit](https://dfa1.github.io/articles/make-the-implicit-explicit.html) is about the
 boundary layer. Two services sharing an informal agreement about a DTO are one field
 rename away from a coordinated rollback. Versioned endpoints, isolated DTOs, and
 point-in-time contracts move the agreement out of both teams' heads and into something
@@ -99,7 +99,7 @@ compounding of errors at speed.
 
 The claim is not that agents fail on messy codebases — they often handle them impressively well.
 The narrower claim: in a system with explicit constraints, the agent has fewer ways to go
-wrong.[^ts] [`MarketId` and `InstrumentId` cannot be silently swapped](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team).
+wrong.[^ts] [`MarketId` and `InstrumentId` cannot be silently swapped](https://dfa1.github.io/articles/your-compiler-is-already-part-of-your-security-team.html).
 An ArchUnit rule cannot be quietly bypassed. The constraint system doesn't make the agent
 smarter — it makes the dangerous path the hard one to write, regardless of who is writing it.
 
