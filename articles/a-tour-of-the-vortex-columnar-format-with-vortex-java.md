@@ -134,9 +134,9 @@ column costs, and the per-chunk row ranges, min/max and sizes behind those total
 java -jar vortex-cli-all.jar inspect --html eod.vortex > report.html
 ```
 
-The report for this very file is here: [eod.vortex inspect report](vortex-on-a-real-dataset-inspect.html).
+The report for this very file is here: [eod.vortex inspect report](a-tour-of-the-vortex-columnar-format-with-vortex-java-inspect.html).
 
-[![inspect --html report of eod.vortex](vortex-on-a-real-dataset-inspect.png)](vortex-on-a-real-dataset-inspect.html)
+[![inspect --html report of eod.vortex](a-tour-of-the-vortex-columnar-format-with-vortex-java-inspect.png)](a-tour-of-the-vortex-columnar-format-with-vortex-java-inspect.html)
 
 One `open` price chunk:
 
