@@ -205,17 +205,16 @@ how many times; can ownership move to someone else without a free; and can this 
 released while something downstream still depends on it. All three projects answer the first two with the
 same base class, `NativeObject`, holding the pointer in an `AtomicReference<MemorySegment>`.
 
-The answers fall into three ownership shapes, named after their C++ smart-pointer cousins as a mental-model
-hook:
+The answers fall into three ownership shapes:
 
-| Shape | Class | Closing it |
-|---|---|---|
-| `unique_ptr` | `NativeObject` | frees the pointer exactly once |
-| `parent_ptr` | `NativeObjectWithChildren` | closes every child first, then frees |
-| `shared_ptr` | refcounted, proposed at the end of this item | frees when the last owner lets go |
+| Shape | Class | Closing it | C++ analogue |
+|---|---|---|---|
+| unique | `NativeObject` | frees the pointer exactly once | `std::unique_ptr` |
+| parent | `NativeObjectWithChildren` | closes every child first, then frees | none |
+| shared | refcounted, proposed at the end of this item | frees when the last owner lets go | `std::shared_ptr` |
 
-`parent_ptr` has no canonical name: neither the C++ STL nor Rust's stdlib has a smart pointer for cascading
-composition, and Qt's `QObject` parent/child ownership is the closest prior art.
+Cascading parent-to-child ownership has no C++ analogue, and neither the STL nor Rust's stdlib has one. Qt's
+`QObject` parent/child ownership is the closest prior art.
 
 **Free exactly once, from any thread.** `close()` has to run its cleanup exactly once no matter how many
 times, or from how many threads, it's called. All three projects independently arrived at the same small class
@@ -569,7 +568,7 @@ into a leak instead. Safer, but still a discipline-dependent bug class — the s
 child-registration discipline `NativeObjectWithChildren` already leans on above.
 
 **One base, three opt-in shapes, not one base accreting fields.** The refcount belongs on the class that
-needs `shared_ptr` semantics, the children `Set` on the one that needs `parent_ptr` — neither folded into
+needs shared ownership, the children `Set` on the one that needs a parent — neither folded into
 `NativeObject` itself, which every plain wrapper still extends and shouldn't have to carry weight it
 never uses.
 
@@ -1397,7 +1396,7 @@ since January 2023[^uber]. The same case gets made for other languages too[^just
 
 [^refdictionary-javadoc]: [`ZstdCompressContext#refDictionary`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressContext.java), zstd-ffm — the borrowed-reference contract, found unenforced while closing pitest-reported mutation gaps in the dictionary tests.
 
-[^why-lifetimes]: Maurizio Cimadamore, [*Lifetimes in the Foreign Function & Memory API*](https://cr.openjdk.org/~mcimadamore/panama/why_lifetimes.html) — a pre-`Arena` design note, written against the API's earlier `SegmentScope` name, arguing FFM should be lifetime-centric rather than pointer-centric: allocate related resources from one shared scope so they're deallocated atomically together. Worked examples: an array of native C strings sharing its elements' scope; `dlopen`/`dlsym` symbols sharing their library handle's scope — the JDK's own answer to the sibling/parent-owns-children shape (`parent_ptr` above). The many-independent-borrowers shape (`shared_ptr`) isn't part of its argument.
+[^why-lifetimes]: Maurizio Cimadamore, [*Lifetimes in the Foreign Function & Memory API*](https://cr.openjdk.org/~mcimadamore/panama/why_lifetimes.html) — a pre-`Arena` design note, written against the API's earlier `SegmentScope` name, arguing FFM should be lifetime-centric rather than pointer-centric: allocate related resources from one shared scope so they're deallocated atomically together. Worked examples: an array of native C strings sharing its elements' scope; `dlopen`/`dlsym` symbols sharing their library handle's scope — the JDK's own answer to the sibling/parent-owns-children shape (the parent shape above). The many-independent-borrowers shape (shared ownership) isn't part of its argument.
 
 [^arena-javadoc]: [`Arena` javadoc, JDK 25](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/lang/foreign/Arena.html) — access after close is always a clean `IllegalStateException`, for a segment the arena itself tracks. A pointer copied into a C struct by `refDictionary` isn't one of those; the arena's own guarantee never reaches it.
 
