@@ -80,13 +80,28 @@ public static byte[] compress(byte[] src, ZstdCompressionLevel level) throws Thr
     Objects.requireNonNull(src, "src");
     try (Arena arena = Arena.ofConfined()) {
         MemorySegment in = copyIn(arena, src);
-        ZstdByteSize bound = compressBound(new ZstdByteSize(src.length));
-        MemorySegment out = arena.allocate(bound.value());
+        MemorySegment out = arena.allocate(compressBound(src.length));
         long written = (long) Bindings.COMPRESS.invokeExact(
-                out, bound.value(), in, (long) src.length, level.value());
+                out, out.byteSize(), in, (long) src.length, level.value());
         // handle error if written < 0
         return copyOut(out, written);
     }
+}
+```
+
+`copyIn` and `copyOut` are the only two copies in the path, one per direction:
+
+```java
+static MemorySegment copyIn(Arena arena, byte[] src) {
+    MemorySegment seg = arena.allocate(Math.max(src.length, 1));
+    MemorySegment.copy(src, 0, seg, JAVA_BYTE, 0, src.length);
+    return seg;
+}
+
+static byte[] copyOut(MemorySegment seg, long len) {
+    byte[] out = new byte[Math.toIntExact(len)];
+    MemorySegment.copy(seg, JAVA_BYTE, 0, out, 0, out.length);
+    return out;
 }
 ```
 
@@ -125,10 +140,10 @@ try (Arena arena = Arena.ofConfined()) {
 }
 ```
 
-`JAVA_LONG` for `size_t*` is a guess wearing a layout's clothes. It happens to be right today because
-every mainstream platform FFM targets is 64-bit — but the same style of guess for C's `long` is exactly
-how a binding written on Linux quietly breaks on Windows, where `long` is 32 bits even in a 64-bit
-process (LLP64, not LP64). `Linker` already knows the answer, keyed by the C type's own name instead of
+`JAVA_LONG` for `size_t*` is a hardcoded assumption: it works because `size_t` is 8 bytes on every mainstream
+64-bit platform, but nothing in the code says so. The same assumption about C's `long` breaks on Windows,
+where `long` is 32 bits even in a 64-bit process (LLP64, not LP64), so a binding written on Linux fails there
+without warning. `Linker` already knows the answer, keyed by the C type's own name instead of
 by whatever a Java programmer assumes it maps to:
 
 ```java
@@ -144,8 +159,8 @@ correct answer instead of every call site repeating the same guess.
 
 ### Item 3: Give a borrowed native buffer a Java lifetime with `reinterpret` {#item-3}
 
-`rocksdb_get` returns a `malloc`'d value that the caller copies out and releases with `rocksdb_free`.
-RocksDB has a second read path that hands back values it owns instead:
+`rocksdb_get` copies the value out. `rocksdb_get_pinned` skips the copy by handing back a pointer into memory
+RocksDB keeps owning:
 
 ```c
 rocksdb_pinnableslice_t* rocksdb_get_pinned(rocksdb_t* db, const rocksdb_readoptions_t* options,
@@ -154,10 +169,9 @@ const char* rocksdb_pinnableslice_value(const rocksdb_pinnableslice_t* t, size_t
 void rocksdb_pinnableslice_destroy(rocksdb_pinnableslice_t* v);
 ```
 
-The slice pins the value in the block cache; `rocksdb_pinnableslice_value` returns a bare `const char*`
-into it — valid until `rocksdb_pinnableslice_destroy`, not yours to free. Copying it into a `byte[]`
-doubles the memory traffic of what was supposed to be a zero-copy read. The three-argument
-`reinterpret` avoids the copy:[^pinnable-slice]
+The slice pins the value in the block cache, so `rocksdb_pinnableslice_value` returns a `const char*` that is
+valid until `rocksdb_pinnableslice_destroy` and not yours to free. Reading it without a copy takes the
+three-argument `reinterpret`:[^pinnable-slice]
 
 ```java
 // The `null` cleanup is deliberate: this view borrows from the slice, it does
@@ -170,24 +184,18 @@ MemorySegment view = data.reinterpret(len, arena, null).asReadOnly();
 1. **Restores spatial bounds** — the segment now knows it is `len` bytes long.[^ffm-vs-unsafe]
 2. **Grafts on temporal bounds** — the segment dies when `arena` closes; accessing it after that throws
    instead of reading freed memory.
-3. **Registers a deallocator** — the consumer runs at close, for when the buffer really is yours to
-   free (`rocksdb_free` on a `rocksdb_get` result, say).
+3. **Registers a deallocator** — the consumer runs when the arena closes, for a buffer that really is yours
+   to free (`rocksdb_free` on a `rocksdb_get` result, say). Use it only then, and with a short-lived
+   arena: it runs on whichever thread closes the arena, and on an arena that lives forever it never runs.
 
-Steps 1 and 2 are what a zero-copy read tier is built on; step 3 is what makes "foreign allocator,
-Java lifetime" expressible at all. Who frees the memory is a different question from how long Java may
-look at it — pinned data needs the first two and a `null` for the third.
+Steps 1 and 2 are what a zero-copy read is built on. Who frees the memory is a different question from how
+long Java may look at it, so pinned data takes the first two and a `null` for the third.
 
-The failure modes, none of them obvious:
+Two ways to get it wrong:
 
 - **A wrong length is unrecoverable.** You've overridden the safety property, so
-  `IndexOutOfBoundsException` won't save you — read the length from the out-param, never infer it.
-- **The cleanup runs on whoever closes the arena** — an arbitrary thread, with a shared arena. A latent
-  crash if the native `free` has thread affinity, as some allocators do.
-- **Binding to a long-lived arena converts a bounded cost into an unbounded one** — fine per-read with
-  a confined arena, a leak against a global one.
-- **Ownership is not transitive.** Pointers inside the buffer to other native allocations go unfreed —
-  bind the whole graph or copy.
-- **Close the arena before destroying the slice.** The view dies with its arena; destroy the slice first and
+  `IndexOutOfBoundsException` won't save you. Read the length from the out-param (`vlen`), never infer it.
+- **Close the arena before destroying the slice.** The view dies with its arena. Destroy the slice first and
   the still-open arena lets Java read freed memory.
 
 ### Item 4: Wrap native pointers to provide ownership {#item-4}
