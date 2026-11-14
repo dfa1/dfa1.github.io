@@ -28,6 +28,10 @@ API's harder trade-offs (confinement, arenas, how segments address memory) were 
 
 ---
 
+TODO: add links between items
+
+TODO: instead of footnotes, let's add a section in every item for articles and examples
+
 ## Contents
 
 **[Memory and arenas](#memory)**
@@ -72,6 +76,8 @@ API's harder trade-offs (confinement, arenas, how segments address memory) were 
 
 ### Item 1: Prefer a confined arena per operation {#item-1}
 
+TODO: try to find a simpler method call first (rocksdb option?)
+
 The default, and usually the right answer: one arena, one thread, try-with-resources, memory freed at the
 closing brace. zstd-ffm's one-shot compression path is exactly this:[^zstd-compress]
 
@@ -81,8 +87,12 @@ size_t ZSTD_compress(void* dst, size_t dstCapacity,
                      const void* src, size_t srcSize, int compressionLevel);
 ```
 
+TODO: example C code
+
 **Ownership:** entirely on the caller's side. Java allocates both `src` and `dst`; `ZSTD_compress` only reads
-one and writes the other. Nothing here is allocated by C, so there is nothing to free.
+one and writes the other. Nothing here is allocated by C, so there is nothing to free:
+
+TODO: explain compressBound
 
 ```java
 public static byte[] compress(byte[] src, ZstdCompressionLevel level) throws Throwable {
@@ -152,6 +162,8 @@ out-param sized from it is right by construction.
 
 ### Item 3: Give a borrowed native buffer a Java lifetime with `reinterpret` {#item-3}
 
+TODO: this requires a C example with rocksdb_get
+
 `rocksdb_get` copies the value out. `rocksdb_get_pinned` skips the copy by handing back a pointer into memory
 RocksDB keeps owning:
 
@@ -209,8 +221,9 @@ parent/child ownership is the closest prior art.
 ### Item 4: Free a native pointer exactly once, from any thread {#item-4}
 
 `close()` has to run its cleanup exactly once no matter how many times, or from how many threads, it is
-called. All three projects arrived at the same small base class before any of them named it as a pattern.
-zstd-ffm's version:
+called. All three projects arrived at the same small base class before any of them named it as a pattern:
+
+TODO: constructor should refuse null
 
 ```java
 public abstract class NativeObject implements AutoCloseable {
@@ -245,6 +258,8 @@ public abstract class NativeObject implements AutoCloseable {
 }
 ```
 
+TODO: show to use it with a real example
+
 Three things this buys that a hand-written `close()` per wrapper doesn't:
 
 - **One atomic swap handles both "called twice" and "called from two threads at once".** A `boolean closed`
@@ -252,13 +267,10 @@ Three things this buys that a hand-written `close()` per wrapper doesn't:
   to fall out of sync.
 - **`tryClose` runs exactly once, with a pointer that is known to be non-NULL.** No null check repeated in
   every subclass.
-- **Whether to swallow exceptions is decided once.** rocksdb-ffm's version logs before swallowing; zstd-ffm's
-  swallows silently. Item 17 covers the one exception to that default.
 
-`close()` is `final`; only `tryClose(MemorySegment)` is abstract. `ZstdCompressStream.tryClose` and
-`LmdbEnv.tryClose` (Items 9 and 7) have nothing in common, and both plug into the same, already-correct
-plumbing. The concurrency argument is made once, here, instead of audited again in every subclass that
-touches a native pointer.
+`close()` is `final`; only `tryClose(MemorySegment)` is abstract.
+
+The concurrency argument is made once, here, instead of audited again in every subclass that touches a native pointer.
 
 Two smaller choices in that snippet:
 
@@ -289,10 +301,14 @@ rocksdb-ffm's `NativeObject` (same shape as Item 4's, field named `owningPointer
 package-private way to reach `MemorySegment.NULL` that skips `tryClose` entirely:
 
 ```java
+class NativePointer ... TODO
 void transferOwnership() {
     owningPointer.set(MemorySegment.NULL);
 }
 ```
+
+TODO: show a real example
+
 
 The hard part isn't the method, it's knowing when to call it: nothing in a C signature says "takes
 ownership." The class's own javadoc lists where to find out. Read the C source and check whether the
@@ -611,6 +627,8 @@ public final class ZstdCompressStream extends NativeObject {
 }
 ```
 
+TODO: explain NativeCall createOrThrow .. or inline it
+
 `super(createCctx())` hands the pointer to `NativeObject`; `arena` is a second, independent resource this same
 wrapper owns, backing the `in`/`out` buffers. `tryClose` is the one hook `NativeObject` calls, and everything
 inside it, including what order to free things in, is this class's own business.
@@ -642,7 +660,7 @@ Two things about the shown constructor and `tryClose`:
 
 ### Item 10: Scope an upcall stub to the life of the object that uses it {#item-10}
 
-Upcalls are where lifetime stops being about buffers.[^upcall-tutorial] A RocksDB custom comparator is
+Upcalls are where lifetime stops being about buffers: TODO: inline article of the foot note[^upcall-tutorial] A RocksDB custom comparator is
 registered once and called later, during compaction, on a thread you didn't create. The stub must stay valid not
 "until the call returns" but "until the comparator is destroyed".
 
@@ -674,14 +692,15 @@ comparator.
 Three rules for any binding's contributing guide:
 
 - **An exception escaping an upcall takes down the VM.** Item 18 has the catch-and-stash shape.
+TODO: please write an example here that can be copypasted easily
 - **Reachability is not enough.** A strong reference to the stub segment doesn't keep it callable; the arena
   being open does. Forgetting this produces a crash far from the cause.
-- **Per-instance stubs are cheap to write and expensive in bulk.** Binding context via
-  `MethodHandles.insertArguments` gives one stub per instance, each with its own generated code. Once there
-  are many, switch to the C idiom: one stub, plus the `void* state` pointer RocksDB passes back, keyed into a
-  registry.
+TODO: add example
 
 ## API shape {#api-shape}
+
+TODO: add a small intro to say to abstract a bit but not too much
+TODO: example of lambda to automate repetive code vs hot loop
 
 ### Item 11: Keep the generated raw layer out of the public API {#item-11}
 
@@ -702,6 +721,10 @@ length fixup there, and within a year nobody can tell which layer owns the seman
 A small example of the boundary doing real work: rocksdb-ffm takes `java.nio.file.Path` everywhere the C API
 takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file` and makes
 "absolute or relative?" someone else's already-solved problem.
+
+TODO: more examples from rocksdb-ffm
+
+TODO: link to compiler as security tool
 
 ### Item 12: Give a bitmask its own enum, and fold it back at one boundary {#item-12}
 
@@ -757,6 +780,8 @@ interface LmdbFlag {
 has the simpler version of the same idea: `CompressionType` maps one-to-one onto `rocksdb_*_compression`, so
 there is no bitmask to fold, just `getValue()` going out and `fromValue(int)` coming back.
 
+TODO: add code example on how to use it
+
 ### Item 13: Expose zero-copy as a declared tier, never as a leak {#item-13}
 
 "No `MemorySegment` in public signatures" is the right default and the wrong absolute rule. Some callers *want*
@@ -776,6 +801,8 @@ The interesting one is the last. The zero-copy tier doesn't hand a segment back;
 *into* a callback, and the arena behind it closes the moment the callback returns.[^mapper] Keeping the view
 isn't undefined behavior, it is an `IllegalStateException`, or `WrongThreadException` if smuggled to another
 thread. The library enforces the rule; the caller doesn't have to remember it.
+
+TODO: add code example here
 
 The workable rule is narrower:
 
@@ -799,11 +826,7 @@ static final MethodHandle COMPRESS =
 ```
 
 Not style: a `static final` `MethodHandle` is a constant to C2, which sees through it and inlines the downcall
-stub. That is where FFM's performance story comes from. rocksdb-ffm's iteration benchmarks put the FFM `byte[]`
-path 10–80% ahead of `rocksdbjni` depending on value size; the project's headline number for plain point reads
-is a rounder ~2×.[^scale-bench] Different operations, same underlying win. The reason is structural: no `JNIEnv`
-juggling, no array pinning, just a JIT-compiled stub. A handle read from an instance field or a map gives most of
-that back.
+stub.
 
 The same applies to `VarHandle`s derived from layouts, and to `FunctionDescriptor`s if you are building them at
 call time (don't). One caveat: zstd-ffm wraps its calls in `NativeCall.checkReturnValue(() -> ... invokeExact ...)`
@@ -832,9 +855,6 @@ because HotSpot's own bookkeeping assumed the thread never left native code:
 # guarantee(thread->thread_state() == _thread_in_native) failed:
 #     wrong thread state for upcall
 ```
-
-The fix links the symbol twice, once critical and once plain, and switches to the plain handle for the rest of
-that environment's life the moment a comparator is installed.[^lmdb-critical-upcall]
 
 **It must never block.** Skipping the transition also means the JVM cannot bring that thread to a safepoint
 while the critical call runs. The upcall crash above is loud and immediate; this one is quiet and more likely. A
@@ -1376,8 +1396,6 @@ January 2023.[^uber] The same case gets made for other languages too.[^justwork]
 [^lmdb-env-close]: [`LmdbEnv#tryClose`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
 
 [^lmdb-cursor-issue]: [Cursor outlives its transaction](https://github.com/dfa1/lmdb-ffm/issues/4), lmdb-ffm issue #4, open at the time of writing.
-
-[^lmdb-critical-upcall]: [Don't call the critical mdb_get/mdb_cursor_get through a comparator](https://github.com/dfa1/lmdb-ffm/pull/14), lmdb-ffm PR #14, merged.
 
 [^lmdb-contract-exception]: [`LmdbContractException`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
 
