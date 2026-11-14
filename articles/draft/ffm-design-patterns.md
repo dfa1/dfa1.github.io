@@ -4,11 +4,11 @@
 
 Java's Foreign Function & Memory API, one of the outcomes of [Project Panama](https://openjdk.org/projects/panama/),
 is well documented as an API. Wrapping a real C library with it is a different problem: ownership, cleanup, and
-type safety are left to you. These are the patterns I use to solve it, drawn from three bindings.
+type safety are left to you. These are the patterns I use to solve it.
 
 The format is borrowed from *Effective Java*: a short title states the pattern, the body explains why
-it earns its place, and the caveats after it are where the cost actually lives. Every example carries
-the C prototype it binds, copied from `zstd.h` or RocksDB's `c.h` — half of FFM is reading a header
+it earns its place, and the caveats after it are where the cost actually lives. Most examples carry
+the C prototype they bind, copied from `zstd.h`, `lmdb.h` or RocksDB's `c.h` — half of FFM is reading a header
 correctly, and a Java snippet without its prototype hides exactly the half that goes wrong. Code that shows a
 mistake is marked `// WRONG:` and followed by the fix, marked `// RIGHT:`.
 
@@ -24,7 +24,7 @@ Prerequisites: familiarity with `Arena`, `MemorySegment`, `Linker`, `FunctionDes
 `MethodHandle`. If they are new to you, [dev.java's FFM tutorials](https://dev.java/learn/ffm/) are the right starting point,
 [JEP 454](https://openjdk.org/jeps/454) is unusually readable on the design rationale, and Maurizio
 Cimadamore's [Project Panama design notes](https://cr.openjdk.org/~mcimadamore/panama/) are where the
-API's harder tradeoffs — confinement, arenas, memory-segment addressing — were actually argued out.
+API's harder trade-offs — confinement, arenas, memory-segment addressing — were actually argued out.
 
 ---
 
@@ -93,11 +93,9 @@ public static byte[] compress(byte[] src, ZstdCompressionLevel level) throws Thr
 Everything allocated inside the block dies with it: no lifetime to track, no ownership to document,
 no leak to find. Every other pattern here is a deviation that has to justify itself.
 
-Two reasons to prefer confined over shared:
-- A confined arena is single-threaded by construction — the JIT can hoist the owner check out of a
-  loop, unlike the shared arena's liveness handshake.
-- `Arena.ofShared()` buys thread-crossing at the cost of a far more expensive close, since deallocat
-  on has to become globally visible. Reach for it only when a segment genuinely must outlive one thread.
+Prefer confined over shared: `Arena.ofShared()` buys thread-crossing at the cost of a far more expensive
+close, since deallocation has to become globally visible. Reach for it only when a segment genuinely must
+outlive one thread.
 
 ### Item 2: Size out-params from the platform's own C types {#item-2}
 
@@ -128,7 +126,7 @@ try (Arena arena = Arena.ofConfined()) {
 ```
 
 `JAVA_LONG` for `size_t*` is a guess wearing a layout's clothes. It happens to be right today because
-every platform FFM currently targets is 64-bit — but the same style of guess for C's `long` is exactly
+every mainstream platform FFM targets is 64-bit — but the same style of guess for C's `long` is exactly
 how a binding written on Linux quietly breaks on Windows, where `long` is 32 bits even in a 64-bit
 process (LLP64, not LP64). `Linker` already knows the answer, keyed by the C type's own name instead of
 by whatever a Java programmer assumes it maps to:
@@ -189,6 +187,8 @@ The failure modes, none of them obvious:
   a confined arena, a leak against a global one.
 - **Ownership is not transitive.** Pointers inside the buffer to other native allocations go unfreed —
   bind the whole graph or copy.
+- **Close the arena before destroying the slice.** The view dies with its arena; destroy the slice first and
+  the still-open arena lets Java read freed memory.
 
 ### Item 4: Wrap native pointers to provide ownership {#item-4}
 
@@ -210,8 +210,8 @@ hook:
 composition, and Qt's `QObject` parent/child ownership is the closest prior art.
 
 **Free exactly once, from any thread.** `close()` has to run its cleanup exactly once no matter how many
-times, or from how many threads, it's called. All three projects independently arrived at the same twelve
-lines before any of them named it as a pattern — zstd-ffm's version:
+times, or from how many threads, it's called. All three projects independently arrived at the same small class
+before any of them named it as a pattern — zstd-ffm's version:
 
 ```java
 public abstract class NativeObject implements AutoCloseable {
@@ -252,9 +252,8 @@ Three things this buys that a hand-written `close()` per wrapper doesn't:
   one atomic swap.** A `boolean closed` flag checked then set is a race; here the pointer *is* the flag,
   so there's no second field to fall out of sync with it.
 - **`tryClose` runs exactly once, with a pointer the type already knows is non-NULL** — no defensive
-  null check duplicated in every subclass, no double-free even if a caller closes the same object
-  concurrently from two threads.
-- **The swallow-or-not decision is made once, not re-litigated per subclass.** rocksdbffm's version logs
+  null check duplicated in every subclass.
+- **The swallow-or-not decision is made once, not re-litigated per subclass.** rocksdb-ffm's version logs
   before swallowing; zstd-ffm's swallows silently — the LMDB carve-out in Item 12 is a narrow,
   deliberate exception to that default, not a rebuild of it.
 
@@ -286,7 +285,7 @@ void rocksdb_filterpolicy_destroy(rocksdb_filterpolicy_t*);
 **Ownership:** `set_filter_policy` transfers ownership of `filter_policy` into `options` — RocksDB's
 `c.cc` implements it as `options->rep.filter_policy.reset(filter_policy)`, so `options`'s own destructor
 frees it from here on. Calling `rocksdb_filterpolicy_destroy` on it afterward is a double-free of memory
-the caller no longer owns. rocksdbffm's `NativeObject` — same shape, field named `owningPointer` there —
+the caller no longer owns. rocksdb-ffm's `NativeObject` — same shape, field named `owningPointer` there —
 has a second, package-private way to reach `MemorySegment.NULL` that skips `tryClose` entirely:
 
 ```java
@@ -301,7 +300,7 @@ whether the destructor calls `delete` on what you handed it, check the API docs 
 say so explicitly, or copy whatever the official JNI binding already worked out. `close()` called after `transferOwnership()` is a no-op — the pointer is already NULL — which is the
 point: the object still gets closed, it just no longer owns anything by then. Reusing the same sentinel
 has one flaw: `ptr()`'s exception afterward reads "native object is closed," which is wrong — the object
-gave its pointer away, it wasn't closed. The message was written for the CAS-close path above and never
+gave its pointer away, it wasn't closed. The message was written for the swap-close path above and never
 adjusted for this second one.
 
 **Refuse to free while a child depends on you.** `mdb_env_close`, `mdb_txn_abort`, and `mdb_cursor_close`
@@ -313,12 +312,12 @@ void mdb_txn_abort(MDB_txn *txn);
 void mdb_cursor_close(MDB_cursor *cursor);
 ```
 
-**Ownership:** none of these take or return a pointer, so nothing here looks like a transfer — the
+**Ownership:** none of these returns a value, so nothing here looks like a transfer — the
 hazard is *hierarchy*, not a handoff. An `MDB_env*` owns every `MDB_txn*` opened against it, and each of
 those owns any `MDB_cursor*` opened against it; calling the first while a transaction from that
-environment is still open is undefined behavior, and a transaction must itself have no open cursors
-before *it* ends — but that rule lives entirely in LMDB's prose documentation, nowhere in these
-signatures. Left unenforced, the failure is a two-step one, which is what makes it easy to miss in
+environment is still open is undefined behavior. Cursors follow their own rules — one in a read-only transaction must be
+closed explicitly, one in a write transaction is closed with it — and all of it lives entirely in LMDB's
+prose documentation, nowhere in these signatures. Left unenforced, the failure is a two-step one, which is what makes it easy to miss in
 review: the mistake (closing the parent early) and the crash (the next, unrelated call on the child) are
 two different call sites, often two different stack traces, sometimes two different threads.
 
@@ -342,7 +341,7 @@ try (LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY))) {
 env.close();
 ```
 
-rocksdbffm already has a generic answer to "a parent must outlive its children": `NativeObjectWithChildren`
+rocksdb-ffm already has a generic answer to "a parent must outlive its children": `NativeObjectWithChildren`
 overrides `tryClose` as `final`, walks a `ConcurrentHashMap`-backed set of registered children, releases
 each one, then delegates to the subclass's own `tryCloseResource`. A child registers with its parent in its
 constructor and unregisters first thing in its own release, so a long-lived parent doesn't accumulate dead
@@ -382,7 +381,7 @@ any iterator or snapshot still alive. The fix is the same registration one level
 the bug**, however innocent the method that creates it.
 
 **Handed out, not handed over.** Most children are created by the caller and closed by
-the caller — an iterator, a snapshot, a transaction — with the parent's close as the safety net. A rocksdbffm
+the caller — an iterator, a snapshot, a transaction — with the parent's close as the safety net. A rocksdb-ffm
 `ColumnFamilyHandle` is the other kind: the database opens every handle itself, and `db.getColumnFamily(name)` hands
 the *same* object to every caller. If `close()` really closed it, the idiomatic
 `try (var cf = db.getColumnFamily(name))` — which tooling nags you to write, since it returns an `AutoCloseable` —
@@ -444,7 +443,7 @@ reached by a thread that's allowed to touch it, *leaving it alone* is the only s
 
 And "leaving it alone" here means permanently, not "until the transaction handling gets fixed and closing
 is retried." `NativeObject#close()` already swaps this environment's own pointer field to
-`MemorySegment.NULL` *before* calling `tryClose` — that CAS is what makes `close()` idempotent, and it
+`MemorySegment.NULL` *before* calling `tryClose` — that atomic swap is what makes `close()` idempotent, and it
 runs unconditionally, regardless of what `tryClose` goes on to decide. So by the time `tryClose` refuses,
 this object already considers itself closed: a second `close()` is a silent no-op, and every other method
 now fails fast with `IllegalStateException`. There is no path back to a state where closing succeeds,
@@ -455,11 +454,11 @@ this design refuses to make from an arbitrary thread, so the native `mdb_env` an
 are accepted as a permanent leak, not a retryable one, the moment the refusal happens.[^lmdb-env-close]
 
 The same shape exists one ownership level down — a transaction whose cursor is still open when it commits
-or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue] The fix there is the
-version of this pattern with no leak trade-off at all: neutralizing a `LmdbCursor` needs no native call
-whatsoever (LMDB already frees the C-level cursor struct as a side effect of ending the transaction), so
-it's safe to do from any thread — the transaction just swaps the cursor's pointer to `NULL` directly, the
-same swap `NativeObject#close()` already does to itself.
+or aborts — and is still an open issue at the time of writing.[^lmdb-cursor-issue] For a write transaction the
+fix is the version of this pattern with no leak trade-off: LMDB frees the C-level cursor as a side effect of
+ending the transaction, so neutralizing a `LmdbCursor` needs no native call and is safe from any thread —
+the transaction just swaps the cursor's pointer to `NULL`, the same swap `NativeObject#close()` already does
+to itself. A cursor in a read-only transaction must still be closed explicitly, so there the swap would leak it.
 
 **Share ownership when a borrower outlives its owner.** `NativeObject` answers "how does one wrapper free
 its own pointer exactly once." It doesn't answer what happens when a *second* wrapper depends on that
@@ -508,8 +507,8 @@ Indistinguishable from any other native library's use-after-free, because that's
 **The decision criterion.** Two shapes of "A depends on B's native pointer" show up across these
 bindings, and they want opposite remedies:
 
-- **Composition** — the dependent cannot exist without the parent (rocksdbffm's `Snapshot` needs its
-  owning `DB`'s pointer just to release itself via `rocksdb_release_snapshot`, above). Correct remedy:
+- **Composition** — the dependent cannot exist without the parent (rocksdb-ffm's `Snapshot` needs its
+  owning `DB`'s pointer just to release itself via `rocksdb_release_snapshot`). Correct remedy:
   cascade-close, covered above.
 - **Aggregation** — the dependent *borrows* a resource it doesn't own and stays valid for everything else
   even if that one reference breaks (`ZstdCompressContext` borrowing a `ZstdCompressDictionary`).
@@ -626,14 +625,16 @@ in, is this class's own business.
 Order matters: **free the native object first, then close the arena.** For
 a plain `ZSTD_CCtx` neither resource touches the other, so reversing the two lines above wouldn't
 actually crash — but the moment a wrapper's arena backs an upcall stub instead of a plain buffer (Item
-7's comparator, next), that stops being true: the native side can still call back into the stub while
+6's comparator, next), that stops being true: the native side can still call back into the stub while
 its own teardown runs, and closing the arena first pulls the stub out from under it mid-call. Freeing in
 this order everywhere costs nothing when the hazard isn't present, and means never having to re-derive
 the answer, case by case, for the wrappers where it is.
 
 This is also where you decide the object's thread policy rather than inherit it. `ZSTD_CCtx` isn't
-thread-safe; a confined arena turns misuse into a Java-level exception instead of silent corruption —
-the safety property and the C contract lining up for free.
+thread-safe, and a confined arena enforces that for the buffers it owns: touching them from another thread
+throws `WrongThreadException`. It does not guard the `ZSTD_CCtx` pointer itself, and it constrains `close()`:
+closing from another thread frees the native object, then fails in `arena.close()`, and
+`NativeObject.close()` swallows that exception, leaking the arena. Close from the creating thread.
 
 Two things about the shown constructor and `tryClose`:
 
@@ -644,9 +645,8 @@ Two things about the shown constructor and `tryClose`:
   failure happens later, in the subclass's own constructor. The fix is a `try`/`catch` around
   everything after `super(...)` that closes `this` before rethrowing. Add it wherever a constructor does
   real work after taking ownership of a pointer, this one included.
-- **The discarded `long` from `FREE_CCTX.invokeExact` is deliberate.** `zstd.h`
-  documents every `ZSTD_free*` function as always returning `0` — kept only for signature symmetry with
-  the rest of the API, not because failure is possible. `var _ =` says "read, and intentionally ignored,"
+- **The discarded `long` from `FREE_CCTX.invokeExact` is deliberate.** `ZSTD_freeCCtx`
+  reports an error only for a static context, which this binding never creates. `var _ =` says "read, and intentionally ignored,"
   which is a different claim than never having read it at all.
 
 ### Item 6: Scope an upcall stub to the life of the object that uses it {#item-6}
@@ -723,16 +723,17 @@ representation, and shipping it is how `MemorySegment` ends up in application co
 Every binding worth using has two layers:
 
 - **Raw layer**, package-private. One method per C symbol, signature mirrors the header exactly, no
-  interpretation, no cleverness. Generated, ideally mechanically.
+  interpretation, no cleverness. Generated by jextract, or listed by hand in one `Bindings` class — either
+  way mechanical.
 - **Idiomatic layer**, public. `byte[]`, `Optional`, records, exceptions, `Path`. No `MethodHandle`,
   no restricted methods, no arenas the caller has to know about, and no `MemorySegment` outside the
   tiers that declare one (Item 9).
 
-The generated raw layer is a precondition, not a convenience. Hand-write it and people put "just a
-little" interpretation in — a null check here, a length fixup there — and within a year nobody can
+A mechanical raw layer is a precondition, not a convenience. Let interpretation creep in and people put "just a
+little" in — a null check here, a length fixup there — and within a year nobody can
 tell which layer owns the semantics.
 
-A small example of the boundary doing real work: rocksdbffm takes `java.nio.file.Path` everywhere the
+A small example of the boundary doing real work: rocksdb-ffm takes `java.nio.file.Path` everywhere the
 C API takes `const char*` for a filesystem location. `Path` composes with the rest of `java.nio.file`
 and makes "absolute or relative?" someone else's already-solved problem.
 
@@ -797,7 +798,7 @@ interface LmdbFlag {
 
 `toBits` and `fromBits` are the only two places in the codebase that know these values are `int`s at all
 — `LmdbDbiFlag` and `LmdbWriteFlag` implement the same interface and get both directions for free.
-rocksdbffm has the simpler version of the same idea: `CompressionType` maps one-to-one onto
+rocksdb-ffm has the simpler version of the same idea: `CompressionType` maps one-to-one onto
 `rocksdb_*_compression`, so there's no bitmask to fold, just `getValue()` going out and `fromValue(int)`
 coming back — the same principle, without the OR because the C side never combines these values.
 
@@ -845,22 +846,17 @@ static final MethodHandle COMPRESS =
 ```
 
 Not style: a `static final` `MethodHandle` is a constant to C2, which sees through it and inlines the
-downcall stub — where FFM's performance story actually comes from. rocksdbffm's iteration benchmarks put
+downcall stub — where FFM's performance story actually comes from. rocksdb-ffm's iteration benchmarks put
 the FFM `byte[]` path 10–80% ahead of `rocksdbjni` depending on value size; the project's own headline
 number for plain point reads is a rounder ~2×[^scale-bench] — different operations, same underlying win.
-The reason is structural: no JNI frame setup, no thread-state transition, just a JIT-compiled
+The reason is structural: no `JNIEnv` handle juggling, no array pinning, just a JIT-compiled
 stub. A handle read from an instance field or a map gives most of that back.
 
 The same applies to `VarHandle`s derived from layouts, and to `FunctionDescriptor`s if you are
-building them at call time (don't). One caveat: Item 1's
-`NativeCall.checkReturnValue(() -> ... invokeExact ...)` — the same `Supplier`-wrapped shape recurs at
-similar call sites across the raw layer — funnels hundreds of distinct call sites through one shared
-helper. A `Supplier.get()` called from that many unrelated lambda shapes is exactly the kind of call site
-C2 gives up on inlining, the opposite of the constant-folded `invokeExact` this item is arguing for. The
-`invokeExact` itself still gets the direct, monomorphic call this item describes — it's the lambda
-wrapping it that's megamorphic, and the two benchmarks above ran through that same wrapper, so its cost is
-already inside those numbers. Measure it on its own if you're chasing the last bit of overhead; restructure
-only when a profile names it.
+building them at call time (don't). One caveat: zstd-ffm wraps its calls in `NativeCall.checkReturnValue(() -> ... invokeExact ...)` (Item 11),
+which funnels many call sites through one shared helper. Don't assume C2 inlines through that wrapper. The two
+benchmarks above ran through it, so its cost is already inside those numbers. Measure it on its own if you're
+chasing the last bit of overhead; restructure only when a profile names it.
 
 zstd's own header makes the complementary point: driven through a foreign function interface, "it's
 not rare that performance ends being spent more into the interface, rather than compression itself",
@@ -967,7 +963,7 @@ static String toJavaString(MemorySegment ptr) {
 
 Same `reinterpret(Long.MAX_VALUE).getString(0)`, one extra line. **The ownership decision was made
 before this method runs — at the C API boundary, not in how the string happens to be shaped.**
-rocksdbffm even keeps a second version, `toBorrowedJavaString`, identical except for the missing
+rocksdb-ffm even keeps a second version, `toBorrowedJavaString`, identical except for the missing
 `free(ptr)`, for RocksDB strings that are *not* `errptr` output — a pointer into an internal
 `std::string` that stays alive only as long as its parent object, say. Three near-identical methods, one
 line of difference apiece, because "does this string get freed" is a fact about the specific C call that
@@ -985,9 +981,9 @@ Related translations belong in the same place:
 
 ### Item 12: Never throw from `close()`, except to report a broken contract {#item-12}
 
-The shared `close()` from Item 4 calls `tryClose` and swallows anything it throws: a cleanup error must never
-mask the real exception when `close()` runs inside `try`-with-resources. One failure is the exception to that
-rule.
+The shared `close()` from Item 4 calls `tryClose` and swallows anything it throws: a failed native free is not
+something the caller can act on, and `AutoCloseable`'s javadoc advises marking the object closed before
+throwing, which is what the `getAndSet` there does. One failure is the exception to that rule.
 
 Take lmdb-ffm, where `LmdbEnv` counts its open transactions. A caller closes the environment while a
 transaction is still open:
@@ -1005,14 +1001,14 @@ protected void tryClose(MemorySegment ptr) throws Throwable {
     if (openTransactions.get() != 0) {
         throw new LmdbContractException(/* … */);
     }
-    Bindings.ENV_CLOSE.invokeExact(ptr);
+    Bindings.ENV_CLOSE.invokeExact(ptr);   // simplified: Item 4's version also closes the arena
 }
 ```
 
 But the default `close()` swallows that exception like any other, so `env.close()` above returns normally:
 
 ```java
-// WRONG: swallows the LmdbContractException too
+// WRONG for LmdbEnv: Item 4's default also swallows the LmdbContractException
 public final void close() {
     MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
     if (!MemorySegment.NULL.equals(p)) {
@@ -1026,8 +1022,8 @@ public final void close() {
 ```
 
 The caller believes the environment is closed, but it is still alive, and nothing told them otherwise. A log
-line doesn't help: with `try`-with-resources the caller never sees it. Rethrowing every failure is wrong too, because routine
-native-call errors would mask the real exception again. Only the broken-contract case should escape:
+line doesn't help: the caller's code proceeds as if the environment were closed. Rethrowing every failure is
+wrong too, because a failed native free is not something the caller can act on. Only the broken-contract case should escape:
 
 ```java
 // RIGHT: swallow everything except a broken contract
@@ -1066,8 +1062,8 @@ Without a guard, any exception from the delegate takes down the VM:
 
 ```java
 // WRONG: an exception from delegate escapes into native frames
-int compare(MemorySegment state, /* ... */) {
-    return delegate.compare(/* ... */);
+int compare(MemorySegment a, MemorySegment b) {
+    return delegate.compare(a, b);
 }
 ```
 
@@ -1076,36 +1072,38 @@ understands:
 
 ```java
 // RIGHT: catch everything, stash the failure, return a value the C side tolerates
-private final AtomicReference<Throwable> failure = new AtomicReference<>();
+private final ThreadLocal<Throwable> failure = new ThreadLocal<>();
 
-int compare(MemorySegment state, /* ... */) {
+int compare(MemorySegment a, MemorySegment b) {
     try {
-        return delegate.compare(/* ... */);
+        return delegate.compare(a, b);
     } catch (Throwable t) {
-        failure.compareAndSet(null, t);
+        failure.set(t);
         return 0;
     }
 }
 ```
 
-The stashed failure is read back at the call site, once the downcall that triggered the upcall has returned:
+The stash is per thread: many readers can call `mdb_get` through the same comparator, and a shared field would
+let one thread rethrow another's failure. It is read back at the call site, once the downcall that triggered
+the upcall has returned:
 
 ```java
 // after the downcall returns
-Throwable t = failure.getAndSet(null);
+Throwable t = failure.get();
 if (t != null) {
+    failure.remove();
     throw rethrow(t);
 }
 ```
 
 Two decisions hide in that catch block:
 
-- **What to return.** The C side keeps running after the upcall, so the value has to be one it tolerates. A
-  comparator that returns `0` on failure tells the B-tree that the two keys are equal, which is a lie the
-  library will act on until the downcall returns. Pick the value for what the caller does next, not for
-  what looks neutral.
+- **What to return.** The C side keeps running after the upcall, so return something it tolerates. `0` tells
+  the B-tree the two keys are equal, which is wrong; that is why the stashed failure is checked as soon as the
+  downcall returns, and the downcall's result is discarded.
 - **Where the exception goes.** When the upcall runs on the thread that made the downcall, as LMDB's comparator
-  does inside `mdb_get`, stash it in a field and rethrow once the downcall returns — Item 11's boundary, in the
+  does inside `mdb_get`, stash it per thread and rethrow once the downcall returns — Item 11's boundary, in the
   other direction. When it runs on a native-owned thread, as RocksDB's compaction does, no Java caller is waiting;
   the failure has to go to a logger or be recorded for the next call that can report it.
 
@@ -1139,13 +1137,13 @@ document the flag, and ship named modules so the grant can be narrow.
 ### Item 15: Load the library once, and know exactly where each symbol comes from {#item-15}
 
 Item 17 gets the shared library built for every target; getting it into the JVM process, and resolving
-each symbol from the right place once it's there, are separate, also-unglamorous problems of their own.
+each symbol from the right place once it's there, are two separate problems.
 
 **Extraction.** The dynamic loader opens files by path, and an entry inside a jar isn't one, so a library
 bundled in a jar has to be copied to disk before `SymbolLookup.libraryLookup` can load it. None of these
 three projects lets a caller point at an arbitrary path — a configurable
 `-Dlib.path` would mean loading whatever file a caller (or anyone who can set a system property) names,
-which is arbitrary native code execution inside the JVM process. All three extract their own bundled
+which is native code execution inside the JVM process for whoever controls that property. All three extract their own bundled
 library from a native-classifier jar on the classpath instead, once, at class-init time:
 
 ```java
@@ -1154,8 +1152,8 @@ private static final SymbolLookup LIB = SymbolLookup.libraryLookup(extractBundle
 
 Use `Arena.ofAuto()` here: the library has to outlive
 every downcall handle bound against it for the entire life of the process, and there is no natural point
-at which "close" would mean anything — so the real choice is between an auto arena nobody ever closes and
-a shared arena deliberately never closed either. What happens to the extracted *file* depends on the OS:
+at which "close" would mean anything — so the real choice is between an auto arena nobody closes and the
+global arena, which is never closed by design; the auto arena also lets the library unload with its class loader. What happens to the extracted *file* depends on the OS:
 
 - **Linux and macOS: a fresh owner-only temp directory per run.** Extract into an `rwx------` directory and
   `deleteOnExit()` it. The owner-only permission is the point: on a shared machine, it closes the window
@@ -1230,11 +1228,11 @@ are a sketch of the approach, not code copied from the projects.
 LINKER.downcallHandle(LIB.find(name).orElseThrow(...), fd);
 ```
 
-That's `libraryLookup` — an explicit path, an explicit library — and it isn't the only option. rocksdbffm
+That's `libraryLookup` — an explicit path, an explicit library — and it isn't the only option. rocksdb-ffm
 reaches for a different one where the C contract actually requires it: RocksDB's merge-operator callback
 protocol hands back a buffer that RocksDB itself later releases with a plain `free()`, which means that
 buffer has to come from the same allocator RocksDB's `free()` expects — not from wherever `librocksdb`'s
-own internal allocator happens to be, and never from JVM-managed memory. rocksdbffm binds libc's `malloc`
+own internal allocator happens to be, and never from JVM-managed memory. rocksdb-ffm binds libc's `malloc`
 directly for exactly this one callback, via `Linker.nativeLinker().defaultLookup()` — the process's own
 global symbols, resolved without loading anything:[^rocksdb-malloc]
 
@@ -1274,18 +1272,17 @@ void concurrentCloseReleasesExactlyOnce() throws Exception {
 }
 ```
 
-No `Arena`, no downcall, no real pointer — `POINTER` is a `MemorySegment` that's never dereferenced, only
-compared by identity. That's what makes this a *unit* test of the ownership machinery rather than an
+No `Arena`, no downcall, no real pointer — `POINTER` is a `MemorySegment` that's never dereferenced. That's what makes this a *unit* test of the ownership machinery rather than an
 integration test of LMDB: it runs in milliseconds, on every platform, with no native library to link
-against, and it would catch a regression in the CAS logic itself long before a flaky native crash ever
+against, and it would catch a regression in the atomic-swap logic itself long before a flaky native crash ever
 would.
 
 **An ownership tree needs one test per edge, against the real library.** The registration discipline from
 Item 4 lives at every call site that creates a child, not in `NativeObjectWithChildren`, so a unit test of
-the base class can't see a child that forgot to register. rocksdbffm's `TransactionIsChildOfDbTest` runs the same
+the base class can't see a child that forgot to register. rocksdb-ffm's `TransactionIsChildOfDbTest` runs the same
 scenarios over both transaction types — parent closed first, child closed first, parent closed twice, fifty children
 coming and going, a grandchild (an iterator or a snapshot) closed with its transaction, and the parent closed with the
-whole chain still open — and asserts `IllegalStateException` on the child afterwards, not merely "didn't crash". That
+whole chain still open — and asserts `IllegalStateException` on the child afterward, not merely "didn't crash". That
 assertion is what makes the test writable at all: a use-after-free is a nondeterministic crash, but a registered child
 turns it into a deterministic exception you can put an `assertThat` on.[^txn-child-test]
 
@@ -1309,7 +1306,7 @@ parameterization is what makes the failure diagnosable at all, not just detectab
 
 **Fault injection has to happen at a boundary the C API actually exposes, not one you invent.** RocksDB's
 C API has no callback-based custom `Env`, so there's no extension point to hand it a fake filesystem that
-fails on command — mocking one would test the mock, not the binding. rocksdbffm injects a real fault
+fails on command — mocking one would test the mock, not the binding. rocksdb-ffm injects a real fault
 instead: it revokes write permission on the database directory and lets the next flush hit a genuine
 `EACCES` from the OS.[^fault-injection] The binding either turns that into a `RocksDBException` correctly
 or it doesn't; there's no simulated layer in between to get subtly wrong.
@@ -1317,14 +1314,13 @@ or it doesn't; there's no simulated layer in between to get subtly wrong.
 ### Item 17: Ship one Java artifact and cross-compile the native library with Zig {#item-17}
 
 Half of what makes JNI bindings hard to maintain isn't the C glue — it's shipping a compiled
-shim per platform, built against whatever Java version users still run. Every target you didn't build
+shim per platform. Every target you didn't build
 for is an `UnsatisfiedLinkError` for somebody, and the matrix only grows.
 
 FFM removes the per-platform *Java* artifact — the glue is ordinary Java, compiled once. What remains
 is the C library, and that's where cross-compilation usually turns into a matrix of OS-specific CI
-runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that whole problem
-mostly disappears — not a footnote to the FFM story, but a large fraction of the practical benefit,
-and one that gets far less attention than the API itself.
+runners, Docker images, and hand-assembled sysroots. With Zig as the compiler, that problem
+shrinks to a `-target` flag, and that is a large part of the practical benefit of an FFM binding.
 
 `zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every
 target Zig supports — inside the toolchain download itself. `zstd-ffm` skips zstd's build system
@@ -1353,19 +1349,20 @@ windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
 
 That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced
 from a Linux or macOS runner — no MinGW install, no Wine, no Windows box anywhere in the pipeline.
-Neither this project nor its C++ sibling [rocksdbffm](https://github.com/dfa1/rocksdb-ffm) runs one job
+Neither this project nor its C++ sibling [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm) runs one job
 per OS to get there[^ci]; one host builds every target, because nothing about the build depends on
 which OS it runs on.
 
-One note: the Linux targets are `-gnu`, not `-musl`. The resulting `.so` still dynamically links glibc
-and expects a compatible one on the runtime host — Zig can target `-musl` for a fully static binary.
+One note: the Linux targets are `-gnu`, not `-musl`: the `.so` is loaded into a glibc-based JVM, so it
+dynamically links glibc and expects a compatible one on the runtime host.
 
 Three more things to pin down for a release pipeline, not just a local build:
 
 - **The `zig cc` version itself.** A toolchain upgrade changing codegen or its bundled libc between one
-  release and the next is exactly the kind of drift a build matrix is supposed to prevent — both
-  projects pin `mlugg/setup-zig` to a specific commit SHA in CI rather than a floating tag, for the same
-  reason a `pom.xml` pins dependency versions instead of ranges.
+  release and the next is exactly the kind of drift a build matrix is supposed to prevent — pin the Zig
+  version through the `version` input of `mlugg/setup-zig`, and pin the action itself to a commit SHA rather
+  than a floating tag (both projects do the latter), the same reason a `pom.xml` pins dependency versions
+  instead of ranges.
 - **Hermetic inputs.** Compiler, linker, and libc headers all come out of the one Zig download, so the build
   never reads the host's `/usr/include`, system `gcc`, or sysroot — the inputs are the vendored sources plus a
   pinned Zig version, on a laptop and on CI alike. That is what lets one job build all six targets, and it is
@@ -1374,7 +1371,7 @@ Three more things to pin down for a release pipeline, not just a local build:
   claims.
 
 Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64,
-since January 2023[^uber]. The experience generalizes with Go too[^justwork].
+since January 2023[^uber]. The same case gets made for other languages too[^justwork].
 
 ---
 
@@ -1386,7 +1383,7 @@ since January 2023[^uber]. The experience generalizes with Go too[^justwork].
 
 [^zstd-compress]: [`Zstd.compress`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java), zstd-ffm, simplified: the real method wraps the call in `NativeCall.checkReturnValue` (Item 11).
 
-[^pinnable-slice]: [`PinnableSlice.map`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/PinnableSlice.java), rocksdbffm.
+[^pinnable-slice]: [`PinnableSlice.map`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/PinnableSlice.java), rocksdb-ffm.
 
 [^cctx-close]: [`ZstdCompressStream.tryClose`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/ZstdCompressStream.java), zstd-ffm.
 
@@ -1398,7 +1395,7 @@ since January 2023[^uber]. The experience generalizes with Go too[^justwork].
 
 [^upcall-tutorial]: dev.java has a short, precise walkthrough of the mechanics: [Calling Java from native code](https://dev.java/learn/ffm/upcall/).
 
-[^mapper]: [`Mapper`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/Mapper.java), rocksdbffm.
+[^mapper]: [`Mapper`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/Mapper.java), rocksdb-ffm.
 
 [^scale-bench]: JMH `ScaleBenchmarkRunner`, `iterator.next()` + `value()`, two databases and two value sizes on an Apple M5 MacBook; numbers and caveats in [RocksDB Performance and Zero-Copy](https://dfa1.github.io/articles/rocksdb-performance-and-zero-copy.html). The project's README leads with a rounder "~2×" for plain point `get()` reads — a different JMH benchmark (`docs/benchmarks.md`), not the iteration one cited above.
 
@@ -1414,18 +1411,18 @@ since January 2023[^uber]. The experience generalizes with Go too[^justwork].
 
 [^lmdb-strerror]: [`NativeCall.errorMessage`](https://github.com/dfa1/lmdb-ffm/blob/main/lmdb/src/main/java/io/github/dfa1/lmdb/NativeCall.java), lmdb-ffm.
 
-[^rocksdb-tojavastring]: [`NativeCalls.toJavaString`/`toBorrowedJavaString`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/NativeCalls.java), rocksdbffm.
+[^rocksdb-tojavastring]: [`NativeCalls.toJavaString`/`toBorrowedJavaString`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/NativeCalls.java), rocksdb-ffm.
 
-[^rocksdb-malloc]: [`MergeOperator.MH_MALLOC`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/MergeOperator.java), rocksdbffm.
+[^rocksdb-malloc]: [`MergeOperator.MH_MALLOC`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/MergeOperator.java), rocksdb-ffm.
 
 [^native-object-test]: [`NativeObjectTest.concurrentCloseReleasesExactlyOnce`](https://github.com/dfa1/lmdb-ffm/blob/main/lmdb/src/test/java/io/github/dfa1/lmdb/NativeObjectTest.java), lmdb-ffm.
 
-[^fault-injection]: [`FaultInjectionTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/FaultInjectionTest.java), rocksdbffm.
+[^fault-injection]: [`FaultInjectionTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/FaultInjectionTest.java), rocksdb-ffm.
 
 [^rocksdb-txn-snapshot]: [`rocksdb_transaction_get_snapshot`](https://github.com/facebook/rocksdb/blob/main/db/c.cc), RocksDB `db/c.cc` — the wrapper is `malloc`'d, but the `rep` it points at belongs to the transaction.
 
-[^adr-0009]: [ADR 0009: the database owns its column family handles](https://github.com/dfa1/rocksdb-ffm/blob/main/docs/adr/0009-db-owned-column-family-handles.md), rocksdbffm.
+[^adr-0009]: [ADR 0009: the database owns its column family handles](https://github.com/dfa1/rocksdb-ffm/blob/main/docs/adr/0009-db-owned-column-family-handles.md), rocksdb-ffm.
 
-[^txn-child-test]: [`TransactionIsChildOfDbTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/TransactionIsChildOfDbTest.java), rocksdbffm.
+[^txn-child-test]: [`TransactionIsChildOfDbTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/TransactionIsChildOfDbTest.java), rocksdb-ffm.
 
 [^ffm-vs-unsafe]: Inside.java, [*FFM vs. Unsafe. Safety (Sometimes) Has a Cost*](https://inside.java/2025/06/12/ffm-vs-unsafe/) — builds a segment from a raw address with `MemorySegment.ofAddress(...).reinterpret(size)` and compares the cost of FFM's bounds checks with `Unsafe`.
