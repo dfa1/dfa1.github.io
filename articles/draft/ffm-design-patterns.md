@@ -74,28 +74,28 @@ API's harder trade-offs (confinement, arenas, how segments address memory) were 
 
 Most calls need a few bytes of native memory for the length of one call and nothing after. The default, and
 usually the right answer: one arena, one thread, try-with-resources, memory freed at the closing brace. The
-smallest example is opening a database, where the only native memory is the path string:
+smallest example is reading a zstd frame header: one input buffer in, one number out.
 
 ```c
-rocksdb_t* rocksdb_open(const rocksdb_options_t* options, const char* name, char** errptr);
+unsigned long long ZSTD_getFrameContentSize(const void* src, size_t srcSize);
 ```
 
 ```java
-public static ReadWriteDB openReadWrite(Path path, Options options) {
+static long frameContentSize(byte[] compressed) throws Throwable {
     try (Arena arena = Arena.ofConfined()) {
-        MemorySegment err = NativeCalls.errHolder(arena);             // char**, sized per Item 2
-        MemorySegment name = arena.allocateFrom(path.toString());     // NUL-terminated copy of the path
-        MemorySegment db = (MemorySegment) MH_OPEN.invokeExact(options.ptr(), name, err);
-        NativeCalls.checkError(err);                                  // Item 16
-        return new ReadWriteDB(db);                                   // owns the rocksdb_t*, Item 4
-    } catch (Throwable t) {
-        throw NativeCalls.wrapInvokeFailure("openReadWrite failed", t);
+        MemorySegment in = arena.allocate(compressed.length);
+        MemorySegment.copy(compressed, 0, in, JAVA_BYTE, 0, compressed.length);
+        return (long) Bindings.GET_FRAME_CONTENT_SIZE.invokeExact(in, (long) compressed.length);
     }
 }
 ```
 
-The path string and the error slot live exactly as long as the call. The `rocksdb_t*` that comes back is the
-one thing that outlives the block, and it goes straight to a wrapper that owns it.
+The copy of `compressed` lives exactly as long as the call. Nothing comes back but a `long`, so there is
+nothing left to own when the block ends. Most of a binding is this simple or simpler. In rocksdb-ffm, roughly
+455 of the 835 bound symbols are plain scalar getters and setters, mostly on the `*Options` classes, that take
+or return an `int`, a `long` or a `boolean` and need no arena at all; the ones that do take a buffer follow the
+shape above. That is a grep-based count, so treat it as approximate, but the proportion is the point: the bulk
+of the mapping work is mechanical, and the rest of this article is about the other half.
 
 The same shape with buffers in both directions is zstd-ffm's one-shot compression:
 
@@ -146,7 +146,7 @@ really must outlive one thread.
 
 **Sources and examples**
 
-- [`RocksDB.openReadWrite`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/RocksDB.java), rocksdb-ffm. Simplified above; the real method also opens the default column family.
+- [`Zstd.frameContentSize`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java), zstd-ffm. Simplified above; the real method also checks the returned value for zstd's "unknown size" and error sentinels.
 - [`Zstd.compress`](https://github.com/dfa1/zstd-ffm/blob/main/zstd/src/main/java/io/github/dfa1/zstd/Zstd.java), zstd-ffm. Simplified above; the real method wraps the call in `NativeCall.checkReturnValue` ([Item 16](#item-16)).
 
 ### Item 2: Size out-params from the platform's own C types {#item-2}
