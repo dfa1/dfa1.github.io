@@ -4,6 +4,9 @@
 Editorial notes, stripped by Jekyll at build time and never shipped.
 - Versioning: edit in place, one URL. Minor bump for new or split items, patch for wording, major only if
   item numbers or advice change in a way that invalidates earlier citations. Keep item numbers stable.
+- Never reuse or renumber an item; the `{#item-N}` anchor is a permanent ID. Remove an item by tombstone: keep the
+  heading and anchor, add one line saying why and linking the replacement. On a merge or split, the original
+  anchor stays on the part that keeps the advice, and the other part links to its new number.
 - On a minor or major bump: update the version line below, add a changelog line, bump <updated> in feed.xml.
 - Open design notes: Item 8 refcount is a design, not code; Item 7 cursor issue is lmdb-ffm #4.
 {% endcomment %}
@@ -524,15 +527,15 @@ parent.
 ### Item 7: Refuse to close what is still in use {#item-7}
 
 [Item 6](#item-6) closes children on the parent's behalf. That works when the borrower is an object the parent
-can release. It does not work when the borrower is a *call in progress*: a callback runs in the middle of a
-native call that is still using the parent, and there is nothing to release, only a stack frame to return to.
+can release. It does not work when the borrower is a *call in progress*: a callback running inside a native call
+that still uses the parent, with nothing to release, only a stack frame to return to.
 
 ```c
 void rocksdb_close(rocksdb_t* db);
 ```
 
 **Ownership:** `rocksdb_close` deletes the `DB`. Nothing in the signature says that every native call currently
-inside that `DB`, on any thread including this one, is left holding freed memory.
+inside it, including the one running this callback, is left holding freed memory.
 
 ```java
 // WRONG: closes the database under the read that is running this callback
@@ -542,19 +545,10 @@ db.get(key, value -> {
 });   // SIGSEGV — CachableEntry<Block>::ReleaseCacheHandle
 ```
 
-The pinned value handed to the callback points into the block cache; when the callback returns, the read
-releases it into a cache the close already destroyed. Each of these was reproduced in rocksdb-ffm, in a forked
-JVM, before the fix:
-
-| Callback that closes the database | Runs on | What happened |
-|---|---|---|
-| mapper of a pinned get | the reading thread | SIGSEGV releasing the pinned value |
-| merge operator during a `get` | the reading thread | SIGSEGV in `ThreadLocalPtr::CompareAndSwap` |
-| logger during a `flush` | the flushing thread | SIGSEGV in `DBImpl::Flush` |
-| merge operator, compaction filter, event listener | a background thread | `rocksdb_close` waits forever for the job running the callback |
-
-The last row is a hang, not a crash: the close waits for background work to finish, and the callback *is* that
-background work.
+The pinned value points into the block cache, and when the callback returns the read releases it into a cache the
+close already destroyed. Reproduced in rocksdb-ffm, in a forked JVM: the same SIGSEGV from a merge operator during
+a `get` and from a logger during a `flush`. From a background thread (merge operator, compaction filter, event
+listener) it is a hang instead: `rocksdb_close` waits for the job that is running the callback.
 
 Cascading cannot help, so the database refuses:
 
@@ -580,54 +574,26 @@ private static boolean inCallback() {
 }
 ```
 
-Three properties of that refusal are worth copying:
-
-- **It happens before anything is released.** The check runs ahead of [Item 4](#item-4)'s pointer swap, so the
-  database is still open after the exception: the read in progress finishes, the caller can close it properly
-  once the callback has returned, and nothing leaks.
-- **It pays on the cold path.** The first version set a `ScopedValue` around each event-listener
-  callback and tested it in `close()`. Extending that to every callback would have put a binding, about 6.5 ns
-  in a rough loop, on a pinned get and on a merge or filter call per key. A stack walk costs more, about 1 µs at
-  10 frames and 9 µs at 200, but only inside `close()`, once per database.
-- **It asks about classes, not names.** A frame of one of those classes on the stack means the thread is inside
-  the one method of that class that runs caller code. No string matching, nothing to rename out of sync.
-
-Three caveats:
-
-- **The list is maintained by hand.** A new callback type has to be added to `CALLBACK_HOSTS`; forgetting brings
-  the crash back for that callback only. One test per callback kind pins the list down.
-- **It guards the database, not everything.** Closing the *iterator* a mapper is reading from, inside that
-  mapper, still leaves its view pointing at freed memory.
-- **It is per thread.** Another thread closing the database while this one is inside a callback is the ordinary
+- **It refuses before anything is released.** The check runs ahead of [Item 4](#item-4)'s pointer swap, so the
+  database stays open: the read finishes and the caller closes it once the callback has returned.
+- **It pays on the cold path.** A `ScopedValue` set around every callback costs about 6.5 ns in a rough loop, on
+  every pinned get and every merge or filter call. A stack walk costs about 1 µs at 10 frames and 9 µs at 200, but
+  only inside `close()`.
+- **The list is maintained by hand.** Forgetting a new callback type brings the crash back for that callback only;
+  one test per callback kind pins the list down.
+- **It guards the database, not everything.** Closing the *iterator* a mapper is reading from, inside that mapper,
+  still leaves its view pointing at freed memory. Another thread closing the database mid-callback is the ordinary
   close-versus-call race, which none of these libraries protect against.
 
-**Refuse before you release, not after.** LMDB has the same problem one shape over: an `MDB_txn` belongs to
-the thread that began it, so `env.close()` on another thread cannot abort it without corrupting the reader table
-or racing a call in flight. Cascading is out, and refusing is right. lmdb-ffm's `LmdbEnv` counts its open
-transactions and refuses, but in the wrong place:
+**Refuse before you release, not after.** LMDB has the same problem one shape over: an `MDB_txn` belongs to the
+thread that began it, so `env.close()` on another thread cannot abort it without corrupting the reader table or
+racing a call in flight. lmdb-ffm's `LmdbEnv` counts open transactions and refuses, but in `tryClose`, after
+[Item 4](#item-4)'s `close()` already swapped the pointer. The wrapper then considers itself closed whatever
+`tryClose` decides: `mdb_env_close` can never be called, and the environment and its upcall-stub arena leak until the
+process exits. The caller is told about their bug and handed a second one. Refusing before the swap fixes it:
 
 ```java
-// WRONG: refuses in tryClose, after close() already swapped the pointer to NULL
-@Override
-protected void tryClose(MemorySegment ptr) throws Throwable {
-    if (openTransactions.get() != 0) {
-        throw new LmdbContractException(/* … */);   // mdb_env_close is never called
-    }
-    try {
-        Bindings.ENV_CLOSE.invokeExact(ptr);
-    } finally {
-        arena.close();
-    }
-}
-```
-
-By the time `tryClose` runs, [Item 4](#item-4)'s `close()` has already swapped the pointer, so the wrapper
-considers itself closed whatever `tryClose` decides. A second `close()` is a no-op, every other method throws,
-and nothing can ever call `mdb_env_close`: the native environment and its upcall-stub arena leak until the
-process exits. The caller is told about their bug and handed a second one.
-
-```java
-// RIGHT: refuses before the swap, so the environment stays open and can be closed later
+// RIGHT: the environment stays open and can be closed later
 @Override
 public void close() {
     if (openTransactions.get() != 0) {
@@ -637,13 +603,9 @@ public void close() {
 }
 ```
 
-Same count, same exception, no leak: the caller ends the transactions and closes again. It requires a `close()`
-that a subclass can wrap, where lmdb-ffm's is `final`; that is the shape of rocksdb-ffm's guard above. lmdb-ffm
-ships the first version at the time of writing.
-
-Neither version is airtight. `mdb_txn_begin` returns before the transaction registers with the count, so a
-`beginTxn()` racing `close()` on another thread can slip through. The count shrinks that window; it does not
-close it.
+This needs a `close()` a subclass can wrap, where lmdb-ffm's is `final`, so it ships the first version at the time
+of writing. Neither version is airtight: `mdb_txn_begin` returns before the transaction registers with the count,
+so a `beginTxn()` racing `close()` can slip through.
 
 **Sources and examples**
 
@@ -1296,18 +1258,14 @@ private static String errorMessage(int code) {
 }
 ```
 
-`reinterpret(Long.MAX_VALUE)` does less than [Item 3](#item-3)'s three-argument form: no arena, no cleanup, just enough
-of a size to let `getString` scan forward for the NUL terminator instead of failing the bounds check on byte
-zero. `Long.MAX_VALUE` isn't a real length. It says "trust me, there is a NUL in there somewhere," which is
-exactly what a bare `const char*` promises and nothing more. One trap that comes with delegating to
-`strerror(3)`: its buffer is only as thread-safe as the platform call itself, which is to say, not. A concurrent
-`mdb_strerror` on another thread can overwrite it before the copy above finishes. Doing the copy in the same
-expression that reads the pointer narrows that window, but doesn't close it.
+`reinterpret(Long.MAX_VALUE)` is [Item 3](#item-3) without the arena or cleanup: `Long.MAX_VALUE` isn't a real
+length, it only lets `getString` scan for the NUL instead of failing the bounds check on byte zero. It says "trust
+me, there is a NUL in there", which is all a bare `const char*` promises. One trap: `strerror(3)`'s buffer is only as
+thread-safe as the platform call, so a concurrent `mdb_strerror` can overwrite it mid-copy. Copying in the same
+expression that reads the pointer narrows that window, not closes it.
 
-RocksDB's version looks almost identical, because the mechanical problem, an unknown-length NUL-terminated
-string, is the same. What differs is what RocksDB has already told you: this pointer came out of an `errptr`
-slot ([Item 2](#item-2)), which only ever holds a message RocksDB `malloc`'d for this one call and handed to the
-caller:
+RocksDB's version looks the same, but its pointer came out of an `errptr` slot ([Item 2](#item-2)), which only holds
+a message RocksDB `malloc`'d for this one call:
 
 ```java
 static String toJavaString(MemorySegment ptr) {
@@ -1317,12 +1275,9 @@ static String toJavaString(MemorySegment ptr) {
 }
 ```
 
-Same `reinterpret(Long.MAX_VALUE).getString(0)`, one extra line. **The ownership decision was made before this
-method runs, at the C API boundary, not from the shape of the string.** rocksdb-ffm even keeps a second version,
-`toBorrowedJavaString`, identical except for the missing `free(ptr)`, for RocksDB strings that are *not*
-`errptr` output, such as a pointer into an internal `std::string` that stays alive only as long as its parent
-object. Three near-identical methods, one line of difference each, because "does this string get freed" is a
-fact about the specific C call that produced the pointer, not about `char*` as a type.
+**The ownership decision is made at the C API boundary, not from the shape of the string.** rocksdb-ffm keeps a
+`toBorrowedJavaString`, identical minus `free(ptr)`, for strings that are *not* `errptr` output, such as a pointer
+into an `std::string` owned by its parent object.
 
 Related translations belong in the same place:
 
