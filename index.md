@@ -22,6 +22,7 @@ My GPG public key: [DAAAD56F0AA0B8F2](gpgkey.asc)
 
 ## Writings
 
+- [FFM Design Patterns](articles/ffm-design-patterns.html) (2026)
 - [A Tour of the Vortex Columnar Format with vortex-java](articles/a-tour-of-the-vortex-columnar-format-with-vortex-java.html) (2026)
 - [RFC 9842 for Microservices: It Depends](articles/rfc-9842-for-microservices.html) (2026)
 - [RocksDB Performance and Zero-Copy](articles/rocksdb-performance-and-zero-copy.html) (2026)
@@ -82,4 +83,4 @@ All my public presentations made with [reveal.js](https://revealjs.com)
 
 > *If you think good architecture is expensive, try bad architecture.* — [Brian Foote and Joseph Yoder, Big Ball of Mud](https://www.laputan.org/mud/)
 
-Updated: 11 October 2026
+Updated: 15 November 2026

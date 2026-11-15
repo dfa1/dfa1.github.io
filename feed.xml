@@ -3,11 +3,23 @@
   <title>Davide Angelocola</title>
   <link href="https://dfa1.github.io/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://dfa1.github.io/"/>
-  <updated>2026-10-11T00:00:00Z</updated>
+  <updated>2026-11-15T00:00:00Z</updated>
   <author>
     <name>Davide Angelocola</name>
   </author>
   <id>https://dfa1.github.io/feed.xml</id>
+
+  <entry>
+    <title>FFM Design Patterns</title>
+    <link href="https://dfa1.github.io/articles/ffm-design-patterns.html"/>
+    <id>https://dfa1.github.io/articles/ffm-design-patterns.html</id>
+    <updated>2026-11-15T00:00:00Z</updated>
+    <published>2026-11-15T00:00:00Z</published>
+    <author>
+      <name>Davide Angelocola</name>
+    </author>
+    <summary>Java's Foreign Function &amp; Memory API, one of the outcomes of Project Panama, is well documented as an API. Wrapping a real C library with it is a different problem: who owns each pointer, who frees it, and when, is left to you. These are the patterns I use.</summary>
+  </entry>
 
   <entry>
     <title>A Tour of the Vortex Columnar Format with vortex-java</title>
