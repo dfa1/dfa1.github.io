@@ -56,8 +56,7 @@ public class NativeLibrary {
 }
 ```
 
-`resolveLibPath()` is [Item 20](#item-20), the symbol lookup is [Item 21](#item-21), and `SIZE_T` is
-[Item 2](#item-2).
+`resolveLibPath()` is [Item 19](#item-19) and `SIZE_T` is [Item 2](#item-2).
 
 ---
 
@@ -90,16 +89,14 @@ public class NativeLibrary {
 **[Errors](#errors)**
 
 - [Item 16: Translate every C error convention at a single boundary](#item-16)
-- [Item 17: Never throw from `close()`, except to report a broken contract](#item-17)
-- [Item 18: Never let an exception escape an upcall](#item-18)
+- [Item 17: Never let an exception escape an upcall](#item-17)
 
 **[Build, loading, and testing](#build)**
 
-- [Item 19: Let the caller grant native access](#item-19)
-- [Item 20: Extract the bundled library once, into a directory only you can write](#item-20)
-- [Item 21: Pick the symbol lookup per symbol](#item-21)
-- [Item 22: Test the ownership rules, not just the happy path](#item-22)
-- [Item 23: Ship one Java artifact and cross-compile the native library with Zig](#item-23)
+- [Item 18: Let the caller grant native access](#item-18)
+- [Item 19: Extract the bundled library once, into a directory only you can write](#item-19)
+- [Item 20: Test the ownership rules, not just the happy path](#item-20)
+- [Item 21: Ship one Java artifact and cross-compile the native library with Zig](#item-21)
 
 ## Memory and arenas {#memory}
 
@@ -890,7 +887,7 @@ public final class LmdbEnv extends NativeObject {
 Three rules for any binding's contributing guide:
 
 - **An exception escaping an upcall takes down the VM.** Every stub body is a `try`/`catch (Throwable)`;
-  [Item 18](#item-18) covers what to do with the failure. The complete stub builder from lmdb-ffm, with the catch in place:
+  [Item 17](#item-17) covers what to do with the failure. The complete stub builder from lmdb-ffm, with the catch in place:
 
   ```java
   final class LmdbComparators {
@@ -915,7 +912,7 @@ Three rules for any binding's contributing guide:
           try {
               return comparator.compare(asValue(a), asValue(b));
           } catch (Throwable t) {
-              t.printStackTrace();   // never let it escape; Item 18 on what to return
+              t.printStackTrace();   // never let it escape; Item 17 on what to return
               return 0;
           }
       }
@@ -986,9 +983,6 @@ Abstract the check, not the call. A helper that also chose buffers, levels, or a
 the second kind, and would soon need options of its own.
 
 ### Item 11: Keep the generated raw layer out of the public API {#item-11}
-
-jextract generates a faithful mirror of the header. That mirror isn't an API, it is a step on the way to one,
-and shipping it is how `MemorySegment` ends up in application code.
 
 Every binding worth using has two layers:
 
@@ -1208,9 +1202,8 @@ the biggest performance win and the biggest blocking-I/O risk in the same call.
 
 ## Errors {#errors}
 
-Failures cross the Java/C boundary in three directions: C reports one to Java ([Item 16](#item-16)), Java fails while
-cleaning up a native object ([Item 17](#item-17)), and Java code that C calls fails inside a native frame ([Item 18](#item-18)). Each
-item has one rule, and each rule decides who gets to see the failure.
+Failures cross the Java/C boundary in two directions: C reports one to Java ([Item 16](#item-16)), and Java code that
+C calls fails inside a native frame ([Item 17](#item-17)). Each item has one rule, and each rule decides who gets to see the failure.
 
 ### Item 16: Translate every C error convention at a single boundary {#item-16}
 
@@ -1317,70 +1310,7 @@ Related translations belong in the same place:
 - [`NativeCall.errorMessage`](https://github.com/dfa1/lmdb-ffm/blob/main/lmdb/src/main/java/io/github/dfa1/lmdb/NativeCall.java), lmdb-ffm.
 - [`NativeCalls.toJavaString`/`toBorrowedJavaString`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/NativeCalls.java), rocksdb-ffm.
 
-### Item 17: Never throw from `close()`, except to report a broken contract {#item-17}
-
-The shared `close()` from [Item 4](#item-4) calls `tryClose` and swallows anything it throws: a failed native free is not
-something the caller can act on. One failure is the exception to that rule: the caller asked to close something
-that is still in use ([Item 7](#item-7)), and the wrapper refuses.
-
-```java
-LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY));
-env.close();   // the caller's bug: txn is still open
-```
-
-Closing the environment unmaps the database file, which would crash that transaction, so `LmdbEnv` refuses.
-The refusal has to reach the caller. A log line doesn't help: `env.close()` returns normally, the caller's code
-proceeds as if the environment were closed, and it is still alive. So it is thrown, as a dedicated unchecked
-type that says whose bug it is:
-
-```java
-// RIGHT: checked first, thrown before anything is released
-@Override
-public void close() {
-    if (openTransactions.get() != 0) {
-        throw new LmdbContractException(/* … */);
-    }
-    super.close();   // Item 4: swap, tryClose, swallow
-}
-```
-
-Everything after `super.close()` keeps the old rule: whatever `tryClose` throws is swallowed. Only the check in
-front of it can throw, and when it does the object is exactly as it was before the call. rocksdb-ffm's database
-does the same with a plain `IllegalStateException` when it is closed from inside a callback.
-
-The tempting alternative is to throw from `tryClose` and let that one type through:
-
-```java
-// WRONG: the contract check lives in tryClose, and close() rethrows it
-public final void close() {
-    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);   // the object is closed from here on
-    if (!MemorySegment.NULL.equals(p)) {
-        try {
-            tryClose(p);                                    // throws LmdbContractException
-        } catch (LmdbContractException e) {
-            throw e;
-        } catch (Throwable _) {
-            // destructors must not throw
-        }
-    }
-}
-```
-
-It does report the bug, and it follows `AutoCloseable`'s advice to mark the object closed before throwing. That
-advice assumes the resource was released and only the reporting failed. Here nothing was released, so marking it
-closed turns a refusal into a permanent leak: no later `close()` can reach `tryClose` again. lmdb-ffm ships this
-version at the time of writing.
-
-One limit applies to both: inside `try`-with-resources, the exception reaches the caller directly only if the
-body completed normally. If the body already threw, it becomes a *suppressed* exception on the original, and a
-bare `catch (LmdbContractException e)` around the block never sees it.
-
-**Sources and examples**
-
-- [`NativeDB#close`](https://github.com/dfa1/rocksdb-ffm/pull/342), rocksdb-ffm PR #342: refuses before releasing anything.
-- [`LmdbContractException`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15: the version that refuses after the swap.
-
-### Item 18: Never let an exception escape an upcall {#item-18}
+### Item 17: Never let an exception escape an upcall {#item-17}
 
 [Item 10](#item-10) keeps an upcall stub alive; this item is about what runs inside it. The example is a custom comparator:
 LMDB and RocksDB call back into Java to order keys, in the middle of `mdb_get` or a compaction.
@@ -1448,7 +1378,7 @@ Two decisions hide in that catch block:
 
 ## Build, loading, and testing {#build}
 
-### Item 19: Let the caller grant native access {#item-19}
+### Item 18: Let the caller grant native access {#item-18}
 
 `SymbolLookup.libraryLookup`, `reinterpret`, `Linker.upcallStub` and the downcall handle lookup are *restricted*
 methods: misused, they can crash the JVM, so the JDK only lets a module call them once it has been granted native
@@ -1477,7 +1407,7 @@ levers: document the flag, and ship named modules so the grant can be narrow.
 
 - [JEP 472: Prepare to Restrict the Use of JNI](https://openjdk.org/jeps/472).
 
-### Item 20: Extract the bundled library once, into a directory only you can write {#item-20}
+### Item 19: Extract the bundled library once, into a directory only you can write {#item-19}
 
 The dynamic loader opens files by path, and an entry inside a jar isn't one, so a library bundled in a jar has
 to be copied to disk before `SymbolLookup.libraryLookup` can load it. None of the three projects lets a caller
@@ -1566,44 +1496,12 @@ are a sketch of the approach, not code copied from the projects.
 
 - [`NativeLibrary`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/NativeLibrary.java), rocksdb-ffm.
 
-### Item 21: Pick the symbol lookup per symbol {#item-21}
+### Item 20: Test the ownership rules, not just the happy path {#item-20}
 
-All three projects bind their own downcall handles through the library they just loaded:
-
-```java
-LINKER.downcallHandle(LIB.find(name).orElseThrow(...), fd);
-```
-
-That is `libraryLookup`: an explicit path, an explicit library. It isn't the only option. rocksdb-ffm reaches
-for a different one where the C contract requires it. RocksDB's merge-operator callback hands back a buffer that
-RocksDB itself later releases with a plain `free()`, so that buffer has to come from the allocator RocksDB's
-`free()` expects: not from wherever `librocksdb`'s own internal allocator happens to be, and never from
-JVM-managed memory. rocksdb-ffm binds libc's `malloc` directly for this one callback, via
-`Linker.nativeLinker().defaultLookup()`, the process's own global symbols, resolved without loading
-anything:
-
-```java
-private static final MethodHandle MH_MALLOC = Linker.nativeLinker().downcallHandle(
-        Linker.nativeLinker().defaultLookup().find("malloc")
-                .orElseThrow(() -> new UnsatisfiedLinkError("Symbol not found: malloc")),
-        FunctionDescriptor.of(ValueLayout.ADDRESS, SIZE_T));
-```
-
-The third option, `SymbolLookup.loaderLookup()`, resolves symbols from whatever some other component already
-loaded via `System.load`/`loadLibrary`. It doesn't come up in any of the three projects, because none of them
-share a load with anything else. The choice between the three is one question, asked per symbol: does it live in
-the library this binding just loaded, somewhere already in the process, or in a library someone else is
-responsible for loading? Get that answer right for each symbol, and the rest is mechanical.
-
-**Sources and examples**
-
-- [`MergeOperator.MH_MALLOC`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/main/java/io/github/dfa1/rocksdbffm/MergeOperator.java), rocksdb-ffm.
-
-### Item 22: Test the ownership rules, not just the happy path {#item-22}
-
-Three hundred native functions and a handful of ownership rules is also three hundred places a test suite has to
-prove the rules hold, not just that the happy path returns the right bytes. The tests split cleanly by what they
-need in order to run at all.
+Ownership and order of operations are where an FFM binding breaks, so test them carefully. A mistake there
+doesn't throw: closing a parent before its child, or using a handle after `close()`, is a use-after-free in
+native code, and the JVM dies with a `SIGSEGV` and an `hs_err_pid` file instead of a stack trace. The happy path
+returning the right bytes is the easy part. The tests split cleanly by what they need in order to run at all.
 
 **Concurrency and ownership invariants need no native library.** [Item 4](#item-4)'s whole argument, that `close()`
 releases its native resource exactly once no matter how many times or from how many threads it is called, is a
@@ -1636,23 +1534,6 @@ closed with the whole chain still open. Each asserts `IllegalStateException` on 
 crash, but a registered child turns it into a deterministic exception you can put an `assertThat`
 on.
 
-**Round-trip correctness needs the real library, and needs to sweep the parameter space rather than sample
-it.** zstd-ffm's compression tests are parameterized over every `ZstdCompressionLevel`, not just the default:
-
-```java
-@ParameterizedTest
-@MethodSource("io.github.dfa1.zstd.ZstdTestSupport#levels")
-void roundTripAtEveryLevel(ZstdCompressionLevel level) {
-    byte[] original = "payload-data-".repeat(500).getBytes(StandardCharsets.UTF_8);
-    byte[] restored = Zstd.decompress(Zstd.compress(original, level));
-    assertThat(restored).as("level %s", level).isEqualTo(original);
-}
-```
-
-One level passing doesn't say much about the binding. Every level failing the same way points at the binding;
-a single level failing alone points at the library. The parameterization is what makes the failure diagnosable,
-not just detectable.
-
 **Fault injection has to happen at a boundary the C API exposes, not one you invent.** RocksDB's C API has no
 callback-based custom `Env`, so there is no extension point to hand it a fake filesystem that fails on command.
 Mocking one would test the mock, not the binding. rocksdb-ffm injects a real fault instead: it revokes write
@@ -1666,7 +1547,7 @@ no simulated layer in between to get subtly wrong.
 - [`TransactionIsChildOfDbTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/TransactionIsChildOfDbTest.java), rocksdb-ffm.
 - [`FaultInjectionTest`](https://github.com/dfa1/rocksdb-ffm/blob/main/core/src/test/java/io/github/dfa1/rocksdbffm/FaultInjectionTest.java), rocksdb-ffm.
 
-### Item 23: Ship one Java artifact and cross-compile the native library with Zig {#item-23}
+### Item 21: Ship one Java artifact and cross-compile the native library with Zig {#item-21}
 
 Half of what makes JNI bindings hard to maintain isn't the C glue, it is shipping a compiled shim per platform.
 Every target you didn't build for is an `UnsatisfiedLinkError` for somebody, and the matrix only grows.
@@ -1703,14 +1584,7 @@ windows-aarch64) ZIG_TARGET="aarch64-windows-gnu"
 ```
 
 That last pair is the one that stood out: a working Windows `.dll`, PE export table and all, produced from a
-Linux or macOS runner. No MinGW install, no Wine, no Windows box anywhere in the pipeline. Neither this project
-nor its C++ sibling [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm) runs one job per OS to get there;
-one host builds every target, because nothing about the build depends on which OS it runs on.
-
-One note: the Linux targets are `-gnu`, not `-musl`. The `.so` is loaded into a glibc-based JVM, so it
-dynamically links glibc and expects a compatible one on the runtime host.
-
-Two more things to pin down for a release pipeline, not just a local build:
+Linux or macOS runner. No MinGW install, no Wine, no Windows box anywhere in the pipeline.
 
 - **The `zig cc` version itself.** A toolchain upgrade changing codegen or its bundled libc between one release
   and the next is exactly the kind of drift a build matrix is supposed to prevent. Pin the Zig version through
@@ -1727,7 +1601,7 @@ January 2023. The same case gets made for other languages too.
 
 **Sources and examples**
 
-- Both projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
+- All mentioned projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
 - Uber Engineering, [*Bootstrapping Uber's Infrastructure on arm64 with Zig*](https://www.uber.com/us/en/blog/bootstrapping-ubers-infrastructure-on-arm64-with-zig/) (2023).
 - Loris Cro, [*Zig Makes Go Cross Compilation Just Work*](https://dev.to/kristoff/zig-makes-go-cross-compilation-just-work-29ho): the same claim, and title, shows up for Rust and other languages once people reach for `zig cc` as their C toolchain.
 
