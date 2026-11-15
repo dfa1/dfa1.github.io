@@ -1,6 +1,14 @@
 # FFM Design Patterns
 
-*22 August 2026*
+{% comment %}
+Editorial notes, stripped by Jekyll at build time and never shipped.
+- Versioning: edit in place, one URL. Minor bump for new or split items, patch for wording, major only if
+  item numbers or advice change in a way that invalidates earlier citations. Keep item numbers stable.
+- On a minor or major bump: update the version line below, add a changelog line, bump <updated> in feed.xml.
+- Open design notes: Item 8 refcount is a design, not code; Item 7 cursor issue is lmdb-ffm #4.
+{% endcomment %}
+
+*22 August 2026, version 1.0*
 
 *Java's Foreign Function & Memory API, one of the outcomes of [Project Panama](https://openjdk.org/projects/panama/),
 is well documented as an API. Wrapping a real C library with it is a different problem: who owns each pointer, who
@@ -12,7 +20,7 @@ they bind, copied from `zstd.h`, `lmdb.h` or RocksDB's `c.h`. Half of FFM is rea
 snippet without its prototype hides the half that goes wrong. Code that shows a mistake is marked `// WRONG:` and
 followed by the fix, marked `// RIGHT:`.
 
-The material comes from three small projects: [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm), FFM
+The material comes from three projects: [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm), FFM
 bindings for [RocksDB](https://rocksdb.org/), [zstd-ffm](https://github.com/dfa1/zstd-ffm), FFM
 bindings for [Zstandard](https://facebook.github.io/zstd/), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm),
 FFM bindings for [LMDB](https://www.lmdb.tech/). They are useful together because their C APIs disagree
@@ -41,7 +49,7 @@ API's harder trade-offs (confinement, arenas, how segments address memory) were 
 - [Item 4: Free a native pointer exactly once, from any thread](#item-4)
 - [Item 5: Drop the pointer when C takes ownership of it](#item-5)
 - [Item 6: Close children before their parent](#item-6)
-- [Item 7: Refuse to close while a child is still in use](#item-7)
+- [Item 7: Refuse to close what is still in use](#item-7)
 - [Item 8: Share ownership when a borrower can outlive its owner](#item-8)
 - [Item 9: Give a handle its own arena when it owns buffers or stubs](#item-9)
 - [Item 10: Scope an upcall stub to the life of the object that uses it](#item-10)
@@ -513,35 +521,97 @@ parent.
 - [`rocksdb_transaction_get_snapshot`](https://github.com/facebook/rocksdb/blob/main/db/c.cc), RocksDB `db/c.cc`: the wrapper is `malloc`'d, but the `rep` it points at belongs to the transaction.
 - [ADR 0009: the database owns its column family handles](https://github.com/dfa1/rocksdb-ffm/blob/main/docs/adr/0009-db-owned-column-family-handles.md), rocksdb-ffm.
 
-### Item 7: Refuse to close while a child is still in use {#item-7}
+### Item 7: Refuse to close what is still in use {#item-7}
 
-[Item 6](#item-6) closes children on the parent's behalf. That only works when closing a child is safe from any thread.
-An LMDB transaction is confined to the thread that began it, so forcing one closed from whatever thread is
-calling `env.close()` trades a predictable crash for an unpredictable one: it can corrupt LMDB's reader-table
-bookkeeping, or race a call the owning thread has in flight right now. Cascading is unsafe here, so lmdb-ffm's
-`LmdbEnv` tracks a count instead of a set, and refuses to close rather than closing on the child's behalf:
+[Item 6](#item-6) closes children on the parent's behalf. That works when the borrower is an object the parent
+can release. It does not work when the borrower is a *call in progress*: a callback runs in the middle of a
+native call that is still using the parent, and there is nothing to release, only a stack frame to return to.
+
+```c
+void rocksdb_close(rocksdb_t* db);
+```
+
+**Ownership:** `rocksdb_close` deletes the `DB`. Nothing in the signature says that every native call currently
+inside that `DB`, on any thread including this one, is left holding freed memory.
 
 ```java
-// LmdbEnv
-private final AtomicInteger openTransactions = new AtomicInteger();
+// WRONG: closes the database under the read that is running this callback
+db.get(key, value -> {
+    db.close();
+    return value.get(ValueLayout.JAVA_BYTE, 0);
+});   // SIGSEGV — CachableEntry<Block>::ReleaseCacheHandle
+```
 
-void registerTransaction() {
-    openTransactions.incrementAndGet();
-}
+The pinned value handed to the callback points into the block cache; when the callback returns, the read
+releases it into a cache the close already destroyed. Each of these was reproduced in rocksdb-ffm, in a forked
+JVM, before the fix:
 
-void unregisterTransaction() {
-    openTransactions.decrementAndGet();
-}
+| Callback that closes the database | Runs on | What happened |
+|---|---|---|
+| mapper of a pinned get | the reading thread | SIGSEGV releasing the pinned value |
+| merge operator during a `get` | the reading thread | SIGSEGV in `ThreadLocalPtr::CompareAndSwap` |
+| logger during a `flush` | the flushing thread | SIGSEGV in `DBImpl::Flush` |
+| merge operator, compaction filter, event listener | a background thread | `rocksdb_close` waits forever for the job running the callback |
+
+The last row is a hang, not a crash: the close waits for background work to finish, and the callback *is* that
+background work.
+
+Cascading cannot help, so the database refuses:
+
+```java
+// RIGHT: NativeDB, the base of every database type
+private static final Set<Class<?>> CALLBACK_HOSTS = Set.of(
+        EventNotifierBridge.class, MergeOperator.Custom.class, CompactionFilter.class,
+        CompactionFilterFactory.class, Logger.class,                  // the upcall dispatchers
+        PinnableHandle.class, PinnableSlice.class, RocksIterator.class);   // the scoped zero-copy readers
+
+private static final StackWalker STACK = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
 
 @Override
+public void close() {
+    if (inCallback()) {
+        throw new IllegalStateException("a database cannot be closed from inside a callback: ...");
+    }
+    super.close();
+}
+
+private static boolean inCallback() {
+    return STACK.walk(frames -> frames.anyMatch(frame -> CALLBACK_HOSTS.contains(frame.getDeclaringClass())));
+}
+```
+
+Three properties of that refusal are worth copying:
+
+- **It happens before anything is released.** The check runs ahead of [Item 4](#item-4)'s pointer swap, so the
+  database is still open after the exception: the read in progress finishes, the caller can close it properly
+  once the callback has returned, and nothing leaks.
+- **It pays on the cold path.** The first version set a `ScopedValue` around each event-listener
+  callback and tested it in `close()`. Extending that to every callback would have put a binding, about 6.5 ns
+  in a rough loop, on a pinned get and on a merge or filter call per key. A stack walk costs more, about 1 µs at
+  10 frames and 9 µs at 200, but only inside `close()`, once per database.
+- **It asks about classes, not names.** A frame of one of those classes on the stack means the thread is inside
+  the one method of that class that runs caller code. No string matching, nothing to rename out of sync.
+
+Three caveats:
+
+- **The list is maintained by hand.** A new callback type has to be added to `CALLBACK_HOSTS`; forgetting brings
+  the crash back for that callback only. One test per callback kind pins the list down.
+- **It guards the database, not everything.** Closing the *iterator* a mapper is reading from, inside that
+  mapper, still leaves its view pointing at freed memory.
+- **It is per thread.** Another thread closing the database while this one is inside a callback is the ordinary
+  close-versus-call race, which none of these libraries protect against.
+
+**Refuse before you release, not after.** LMDB has the same problem one shape over: an `MDB_txn` belongs to
+the thread that began it, so `env.close()` on another thread cannot abort it without corrupting the reader table
+or racing a call in flight. Cascading is out, and refusing is right. lmdb-ffm's `LmdbEnv` counts its open
+transactions and refuses, but in the wrong place:
+
+```java
+// WRONG: refuses in tryClose, after close() already swapped the pointer to NULL
+@Override
 protected void tryClose(MemorySegment ptr) throws Throwable {
-    int open = openTransactions.get();
-    if (open != 0) {
-        // Do not call mdb_env_close — a still-open transaction may hold a
-        // zero-copy view into the mapping it would free. Leak the native
-        // handle instead of freeing memory a live transaction still depends
-        // on; Item 17 covers why this throws rather than logs.
-        throw new LmdbContractException(/* … */);
+    if (openTransactions.get() != 0) {
+        throw new LmdbContractException(/* … */);   // mdb_env_close is never called
     }
     try {
         Bindings.ENV_CLOSE.invokeExact(ptr);
@@ -551,42 +621,36 @@ protected void tryClose(MemorySegment ptr) throws Throwable {
 }
 ```
 
-`LmdbTxn`'s constructor calls `registerTransaction()`; `commit()`, `abort()`, and the transaction's own
-`tryClose()` each call `unregisterTransaction()`. Exactly one of the three runs per transaction, so the count
-never drifts.
+By the time `tryClose` runs, [Item 4](#item-4)'s `close()` has already swapped the pointer, so the wrapper
+considers itself closed whatever `tryClose` decides. A second `close()` is a no-op, every other method throws,
+and nothing can ever call `mdb_env_close`: the native environment and its upcall-stub arena leak until the
+process exits. The caller is told about their bug and handed a second one.
 
-The check is not airtight. `LmdbTxn.begin()` calls the native `mdb_txn_begin` before its constructor reaches
-`registerTransaction()`, so a `beginTxn()` in flight on another thread can slip through that gap: `tryClose`
-reads zero and proceeds, and the transaction finishes registering against an environment whose native handle is
-already gone. The counter shrinks the window; it doesn't close it. If `beginTxn()` and `close()` can race in your
-application, serialize them yourself.
+```java
+// RIGHT: refuses before the swap, so the environment stays open and can be closed later
+@Override
+public void close() {
+    if (openTransactions.get() != 0) {
+        throw new LmdbContractException(/* … */);
+    }
+    super.close();
+}
+```
 
-**The safe recovery is refuse, not repair.** An earlier version of this fix aborted every still-open transaction
-before closing the environment, on the theory that a clean abort beats a leak. That version was wrong, for the
-thread-confinement reason above. Once a resource can't be reached by a thread that is allowed to touch it,
-*leaving it alone* is the only safe move.
+Same count, same exception, no leak: the caller ends the transactions and closes again. It requires a `close()`
+that a subclass can wrap, where lmdb-ffm's is `final`; that is the shape of rocksdb-ffm's guard above. lmdb-ffm
+ships the first version at the time of writing.
 
-And "leaving it alone" means for good, not "until the transactions end and closing is retried."
-`NativeObject#close()` swaps this environment's own pointer to `MemorySegment.NULL` *before* calling `tryClose`,
-and that swap runs no matter what `tryClose` goes on to decide. So by the time `tryClose` refuses, the object
-already considers itself closed: a second `close()` is a silent no-op, and every other method fails fast with
-`IllegalStateException`. There is no path back to a state where closing succeeds. Restoring the pointer so a
-later `close()` could retry would mean deciding, from whatever thread makes that second call, that it is *now*
-safe to free memory some transaction might still be reading. That is exactly the judgment this design refuses to
-make from an arbitrary thread, so the native `mdb_env` and its upcall-stub arena become a permanent leak the
-moment the refusal happens.
-
-The same shape exists one level down, a transaction whose cursor is still open when it commits or aborts, and
-is still an open issue at the time of writing. For a write transaction the fix has no leak
-trade-off: LMDB frees the C-level cursor as a side effect of ending the transaction, so neutralizing a
-`LmdbCursor` needs no native call and is safe from any thread. The transaction just swaps the cursor's pointer
-to `NULL`, the same swap `NativeObject#close()` does to itself. A cursor in a read-only transaction must still
-be closed explicitly, so there the swap would leak it.
+Neither version is airtight. `mdb_txn_begin` returns before the transaction registers with the count, so a
+`beginTxn()` racing `close()` on another thread can slip through. The count shrinks that window; it does not
+close it.
 
 **Sources and examples**
 
+- [`NativeDB#close`](https://github.com/dfa1/rocksdb-ffm/pull/342), rocksdb-ffm PR #342; the first, listener-only version is [PR #341](https://github.com/dfa1/rocksdb-ffm/pull/341).
+- [Closing from inside a callback](https://github.com/dfa1/rocksdb-ffm/blob/main/docs/explanation.md#closing-from-inside-a-callback), rocksdb-ffm `docs/explanation.md`.
 - [`LmdbEnv#tryClose`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
-- [Cursor outlives its transaction](https://github.com/dfa1/lmdb-ffm/issues/4), lmdb-ffm issue #4, open at the time of writing.
+- [Cursor outlives its transaction](https://github.com/dfa1/lmdb-ffm/issues/4), lmdb-ffm issue #4: the same shape one level down, open at the time of writing.
 
 ### Item 8: Share ownership when a borrower can outlive its owner {#item-8}
 
@@ -1278,58 +1342,44 @@ Related translations belong in the same place:
 ### Item 17: Never throw from `close()`, except to report a broken contract {#item-17}
 
 The shared `close()` from [Item 4](#item-4) calls `tryClose` and swallows anything it throws: a failed native free is not
-something the caller can act on, and `AutoCloseable`'s javadoc advises marking the object closed before
-throwing, which is what the `getAndSet` there does. One failure is the exception to that rule.
-
-Take lmdb-ffm, where `LmdbEnv` counts its open transactions ([Item 7](#item-7)). A caller closes the environment while a
-transaction is still open:
+something the caller can act on. One failure is the exception to that rule: the caller asked to close something
+that is still in use ([Item 7](#item-7)), and the wrapper refuses.
 
 ```java
 LmdbTxn txn = env.beginTxn(EnumSet.of(LmdbEnvFlag.RDONLY));
 env.close();   // the caller's bug: txn is still open
 ```
 
-Closing the environment unmaps the database file, which would crash that transaction, so `LmdbEnv` refuses to
-free it. The question is how `close()` reports the refusal. `tryClose` throws:
+Closing the environment unmaps the database file, which would crash that transaction, so `LmdbEnv` refuses.
+The refusal has to reach the caller. A log line doesn't help: `env.close()` returns normally, the caller's code
+proceeds as if the environment were closed, and it is still alive. So it is thrown, as a dedicated unchecked
+type that says whose bug it is:
 
 ```java
-protected void tryClose(MemorySegment ptr) throws Throwable {
+// RIGHT: checked first, thrown before anything is released
+@Override
+public void close() {
     if (openTransactions.get() != 0) {
         throw new LmdbContractException(/* … */);
     }
-    Bindings.ENV_CLOSE.invokeExact(ptr);   // simplified: Item 7's version also closes the arena
+    super.close();   // Item 4: swap, tryClose, swallow
 }
 ```
 
-But the default `close()` swallows that exception like any other, so `env.close()` above returns normally:
+Everything after `super.close()` keeps the old rule: whatever `tryClose` throws is swallowed. Only the check in
+front of it can throw, and when it does the object is exactly as it was before the call. rocksdb-ffm's database
+does the same with a plain `IllegalStateException` when it is closed from inside a callback.
+
+The tempting alternative is to throw from `tryClose` and let that one type through:
 
 ```java
-// WRONG for LmdbEnv: Item 4's default also swallows the LmdbContractException
+// WRONG: the contract check lives in tryClose, and close() rethrows it
 public final void close() {
-    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
+    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);   // the object is closed from here on
     if (!MemorySegment.NULL.equals(p)) {
         try {
-            tryClose(p);
-        } catch (Throwable _) {
-            // destructors must not throw
-        }
-    }
-}
-```
-
-The caller believes the environment is closed, but it is still alive, and nothing told them. A log line doesn't
-help: the caller's code proceeds as if the environment were closed. Rethrowing every failure is wrong too,
-because a failed native free is not something the caller can act on. Only the broken-contract case should
-escape:
-
-```java
-// RIGHT: swallow everything except a broken contract
-public final void close() {
-    MemorySegment p = ptr.getAndSet(MemorySegment.NULL);
-    if (!MemorySegment.NULL.equals(p)) {
-        try {
-            tryClose(p);
-        } catch (LmdbContractException e) {   // the only difference from the version above
+            tryClose(p);                                    // throws LmdbContractException
+        } catch (LmdbContractException e) {
             throw e;
         } catch (Throwable _) {
             // destructors must not throw
@@ -1338,17 +1388,19 @@ public final void close() {
 }
 ```
 
-`LmdbContractException` is unchecked, so `close()` needs no `throws` clause. It escapes after the wrapper's own
-bookkeeping is done: the pointer field is NULL and every method fails fast, even though the native environment
-was not freed.
+It does report the bug, and it follows `AutoCloseable`'s advice to mark the object closed before throwing. That
+advice assumes the resource was released and only the reporting failed. Here nothing was released, so marking it
+closed turns a refusal into a permanent leak: no later `close()` can reach `tryClose` again. lmdb-ffm ships this
+version at the time of writing.
 
-One limit: inside `try`-with-resources, the exception reaches the caller directly only if the body completed
-normally. If the body already threw, it becomes a *suppressed* exception on the original, and a bare
-`catch (LmdbContractException e)` around the block never sees it.
+One limit applies to both: inside `try`-with-resources, the exception reaches the caller directly only if the
+body completed normally. If the body already threw, it becomes a *suppressed* exception on the original, and a
+bare `catch (LmdbContractException e)` around the block never sees it.
 
 **Sources and examples**
 
-- [`LmdbContractException`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15.
+- [`NativeDB#close`](https://github.com/dfa1/rocksdb-ffm/pull/342), rocksdb-ffm PR #342: refuses before releasing anything.
+- [`LmdbContractException`](https://github.com/dfa1/lmdb-ffm/pull/15), lmdb-ffm PR #15: the version that refuses after the swap.
 
 ### Item 18: Never let an exception escape an upcall {#item-18}
 
@@ -1699,3 +1751,9 @@ January 2023. The same case gets made for other languages too.
 - Both projects run their native builds under [`mlugg/setup-zig`](https://github.com/mlugg/setup-zig) in GitHub Actions; the classifier matrix is a loop over `-target` strings inside one job, not one job per OS.
 - Uber Engineering, [*Bootstrapping Uber's Infrastructure on arm64 with Zig*](https://www.uber.com/us/en/blog/bootstrapping-ubers-infrastructure-on-arm64-with-zig/) (2023).
 - Loris Cro, [*Zig Makes Go Cross Compilation Just Work*](https://dev.to/kristoff/zig-makes-go-cross-compilation-just-work-29ho): the same claim, and title, shows up for Rust and other languages once people reach for `zig cc` as their C toolchain.
+
+---
+
+## Changelog
+
+- **1.0**, 22 August 2026: first edition.
