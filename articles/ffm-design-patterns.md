@@ -37,6 +37,28 @@ Prerequisites: familiarity with `Arena`, `MemorySegment`, `Linker`, `FunctionDes
 Cimadamore's [Project Panama design notes](https://cr.openjdk.org/~mcimadamore/panama/) are where the
 API's harder trade-offs (confinement, arenas, how segments address memory) were actually argued out.
 
+Snippets assume this plumbing, the same in all three projects, and a static import of `ValueLayout.*`:
+
+```java
+public class NativeLibrary {
+
+    static final MemoryLayout SIZE_T = Linker.nativeLinker().canonicalLayouts().get("size_t");
+
+    private static final Linker LINKER = Linker.nativeLinker();
+    private static final SymbolLookup LIB = SymbolLookup.libraryLookup(resolveLibPath(), Arena.ofAuto());
+
+    static MethodHandle lookup(String name, FunctionDescriptor fd, Linker.Option... options) {
+        return LINKER.downcallHandle(
+                LIB.find(name).orElseThrow(() ->
+                        new UnsatisfiedLinkError("Symbol not found: " + name)),
+                fd, options);
+    }
+}
+```
+
+`resolveLibPath()` is [Item 20](#item-20), the symbol lookup is [Item 21](#item-21), and `SIZE_T` is
+[Item 2](#item-2).
+
 ---
 
 ## Contents
@@ -194,12 +216,13 @@ the C type's own name:
 
 ```java
 // RIGHT: ask the Linker for the platform's size_t
-MemoryLayout SIZE_T = Linker.nativeLinker().canonicalLayouts().get("size_t");
 MemorySegment vallen = arena.allocate(SIZE_T);
 ```
 
+`SIZE_T` is the plumbing's `Linker.nativeLinker().canonicalLayouts().get("size_t")`.
+
 `canonicalLayouts()` returns the target platform's C types (`"size_t"`, `"long"`, `"wchar_t"`, and the rest)
-as resolved by the same `Linker` that will make the call. Do this once per C type in the raw layer, and every
+as resolved by the same `Linker` that will make the call. Resolve it once per C type in the raw layer, and every
 out-param sized from it is right by construction.
 
 **Sources and examples**
@@ -1132,7 +1155,7 @@ size_t ZSTD_compress(void* dst, size_t dstCapacity,
 ```java
 static final MethodHandle COMPRESS =
         NativeLibrary.lookup("ZSTD_compress",
-                FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
+                FunctionDescriptor.of(SIZE_T, ADDRESS, SIZE_T, ADDRESS, SIZE_T, JAVA_INT));
 ```
 
 Not style: a `static final` `MethodHandle` is a constant to C2, which sees through it and inlines the downcall
@@ -1563,7 +1586,7 @@ anything:
 private static final MethodHandle MH_MALLOC = Linker.nativeLinker().downcallHandle(
         Linker.nativeLinker().defaultLookup().find("malloc")
                 .orElseThrow(() -> new UnsatisfiedLinkError("Symbol not found: malloc")),
-        FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
+        FunctionDescriptor.of(ValueLayout.ADDRESS, SIZE_T));
 ```
 
 The third option, `SymbolLookup.loaderLookup()`, resolves symbols from whatever some other component already
