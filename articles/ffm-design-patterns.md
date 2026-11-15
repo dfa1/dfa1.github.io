@@ -1673,8 +1673,9 @@ Every target you didn't build for is an `UnsatisfiedLinkError` for somebody, and
 
 FFM removes the per-platform *Java* artifact: the glue is ordinary Java, compiled once. What remains is the C
 library, and that is where cross-compilation usually turns into a matrix of OS-specific CI runners, Docker
-images, and hand-assembled sysroots. With Zig as the compiler, that problem shrinks to a `-target` flag, and
-that is a large part of the practical benefit of an FFM binding.
+images, and hand-assembled sysroots. With Zig as the compiler, that problem shrinks to a `-target` flag.
+Using Zig is a personal preference, not a requirement of FFM: any toolchain that produces the per-platform
+libraries works. It is the one that made the matrix disappear for me.
 
 `zig cc` is a drop-in replacement for `cc` that bundles clang, its own libc, and the headers for every target
 Zig supports, inside the toolchain download itself. `zstd-ffm` skips zstd's build system entirely: the sources
