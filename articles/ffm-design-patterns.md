@@ -11,7 +11,7 @@ Editorial notes, stripped by Jekyll at build time and never shipped.
 - Open design notes: Item 8 refcount is a design, not code; Item 7 cursor issue is lmdb-ffm #4.
 {% endcomment %}
 
-*15 November 2026, version 0.9 (draft, living document)*
+*17 November 2026, version 0.9.1 (draft, living document)*
 
 *Java's Foreign Function & Memory API, one of the outcomes of [Project Panama](https://openjdk.org/projects/panama/),
 is well documented as an API. Wrapping a real C library with it is a different problem: who owns each pointer, who
@@ -1614,4 +1614,5 @@ January 2023.
 
 ## Changelog
 
-- **1.0**, 22 August 2026: first edition.
+- **0.9.1**, 17 November 2026: proposal-notes intro, wording and snippet fixes (Items 3, 4, 7, 10, 12, 14, 18, 19, 21).
+- **0.9**, 22 August 2026: first edition.
