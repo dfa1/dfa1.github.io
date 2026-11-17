@@ -17,16 +17,20 @@ Editorial notes, stripped by Jekyll at build time and never shipped.
 is well documented as an API. Wrapping a real C library with it is a different problem: who owns each pointer, who
 frees it, and when, is left to you. These are the patterns I use.*
 
+These are notes toward a design-pattern proposal, not a finished catalog. Some items are established practice
+with a name; others are rules I kept rediscovering and have no name yet, so the titles are working labels and may
+change.
+
 The format is borrowed from *Effective Java*: each item has a short title that states the rule, an opening that
 says why, an example from real code, and the caveats where the cost lives. Most examples come with the C prototype
 they bind, copied from `zstd.h`, `lmdb.h` or RocksDB's `c.h`. Half of FFM is reading a header correctly, and a Java
 snippet without its prototype hides the half that goes wrong. Code that shows a mistake is marked `// WRONG:` and
 followed by the fix, marked `// RIGHT:`.
 
-The material comes from three projects: [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm), FFM
-bindings for [RocksDB](https://rocksdb.org/), [zstd-ffm](https://github.com/dfa1/zstd-ffm), FFM
-bindings for [Zstandard](https://facebook.github.io/zstd/), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm),
-FFM bindings for [LMDB](https://www.lmdb.tech/). They are useful together because their C APIs disagree
+The material comes from three projects: [rocksdb-ffm](https://github.com/dfa1/rocksdb-ffm) (FFM
+bindings for [RocksDB](https://rocksdb.org/)), [zstd-ffm](https://github.com/dfa1/zstd-ffm) (FFM
+bindings for [Zstandard](https://facebook.github.io/zstd/)), and [lmdb-ffm](https://github.com/dfa1/lmdb-ffm)
+(FFM bindings for [LMDB](https://www.lmdb.tech/)). They are useful together because their C APIs disagree
 about almost everything: how errors are reported, who owns a buffer, whether calls carry state, how transactions
 work. Yet the Java side kept landing on the same handful of rules. That is why these read as patterns rather than
 one-off fixes.
@@ -262,12 +266,12 @@ three-argument `reinterpret`:
 ```java
 // The `null` cleanup is deliberate: this view borrows from the slice, it does
 // not own the memory, so closing `arena` must not attempt to free it.
-MemorySegment view = data.reinterpret(len, arena, null).asReadOnly();
+MemorySegment view = data.reinterpret(vlen, arena, null).asReadOnly();
 ```
 
 `reinterpret(long, Arena, Consumer<MemorySegment>)` does three separate things:
 
-1. **Sets the size.** The segment now knows it is `len` bytes long.
+1. **Sets the size.** The segment now knows it is `vlen` bytes long.
 2. **Ties the lifetime to `arena`.** The segment dies when the arena closes; reading it after that throws
    instead of touching freed memory.
 3. **Registers a cleanup action.** The consumer runs when the arena closes. Use it only for a buffer that
@@ -281,8 +285,8 @@ Two ways to get it wrong:
 
 - **A wrong length cannot be caught.** You have told FFM the size, so `IndexOutOfBoundsException` won't save
   you. Read the length from the out-param (`vlen`), never guess it.
-- **Closing the arena after destroying the slice.** The view dies with its arena. Destroy the slice first and
-  the still-open arena lets Java read freed memory.
+- **Destroying the slice before closing the arena.** The view dies with its arena, not with the slice. Destroy
+  the slice first and the still-open arena lets Java read freed memory.
 
 **Sources and examples**
 
@@ -367,7 +371,7 @@ The constructor check is not in the projects' versions yet. Without it, a wrappe
 `MemorySegment.NULL` is born closed, and the first `ptr()` call reports "native object is closed" for an object
 nobody closed. Refusing at construction moves the error to the call site that produced the bad pointer.
 
-Three things this buys that a hand-written `close()` per wrapper doesn't:
+Two things this buys that a hand-written `close()` per wrapper doesn't:
 
 - **One atomic swap handles both "called twice" and "called from two threads at once".** A `boolean closed`
   flag that is checked and then set is a race. Here the pointer *is* the flag, so there is no second field
@@ -623,8 +627,8 @@ public void close() {
 }
 ```
 
-This needs a `close()` a subclass can wrap, where lmdb-ffm's is `final`, so it ships the first version at the time
-of writing. Neither version is airtight: `mdb_txn_begin` returns before the transaction registers with the count,
+This needs a `close()` a subclass can override, and lmdb-ffm's is `final`, so at the time of writing it still
+ships the `tryClose` version. Neither version is airtight: `mdb_txn_begin` returns before the transaction registers with the count,
 so a `beginTxn()` racing `close()` can slip through.
 
 **Sources and examples**
@@ -840,8 +844,9 @@ Two things about the shown constructor and `tryClose`:
 
 Upcalls are where lifetime stops being about buffers. dev.java's
 [Calling Java from native code](https://dev.java/learn/ffm/upcall/) covers the mechanics; this item is about
-how long the stub has to live. A RocksDB custom comparator is registered once and called later, during compaction, on a thread you didn't create. The stub must stay valid not
-"until the call returns" but "until the comparator is destroyed".
+how long the stub has to live. A RocksDB custom comparator is registered once and called later, during
+compaction, on a thread you didn't create. The stub must stay valid until the comparator is destroyed, not
+until the call returns.
 
 RocksDB takes the comparator as three function pointers plus a state pointer:
 
@@ -1158,8 +1163,8 @@ stub.
 The same applies to `VarHandle`s derived from layouts, and to `FunctionDescriptor`s if you are building them at
 call time (don't). One caveat: zstd-ffm wraps its calls in `NativeCall.checkReturnValue(() -> ... invokeExact ...)`
 ([Item 16](#item-16)), which funnels many call sites through one shared helper. Don't assume C2 inlines through that
-wrapper. The two benchmarks above ran through it, so its cost is already inside those numbers. Measure it on its
-own if you are chasing the last bit of overhead; restructure only when a profile names it.
+wrapper. Measure it on its own if you are chasing the last bit of overhead; restructure only when a profile
+names it.
 
 zstd's own header makes the complementary point: through a foreign function interface, "it's not rare that
 performance ends being spent more into the interface, rather than compression itself", and it recommends buffers
@@ -1380,7 +1385,7 @@ Two decisions hide in that catch block:
 
 ### Item 18: Let the caller grant native access {#item-18}
 
-`SymbolLookup.libraryLookup`, `reinterpret`, `Linker.upcallStub` and the downcall handle lookup are *restricted*
+`SymbolLookup.libraryLookup`, `reinterpret`, `Linker.upcallStub` and `Linker.downcallHandle` are *restricted*
 methods: misused, they can crash the JVM, so the JDK only lets a module call them once it has been granted native
 access. Without the grant the JVM prints a warning today, and [JEP 472](https://openjdk.org/jeps/472) states the
 intent to turn it into an error.
@@ -1416,7 +1421,7 @@ can set a system property, names, which is native code execution inside the JVM 
 own bundled library from a native-classifier jar on the classpath instead, once, at class-init time:
 
 ```java
-private static final SymbolLookup LIB = SymbolLookup.libraryLookup(extractBundledLib(), Arena.ofAuto());
+private static final SymbolLookup LIB = SymbolLookup.libraryLookup(resolveLibPath(), Arena.ofAuto());
 ```
 
 Use `Arena.ofAuto()` here. The library has to outlive every downcall handle bound against it for the life of the
@@ -1593,11 +1598,11 @@ Linux or macOS runner. No MinGW install, no Wine, no Windows box anywhere in the
 - **Self-contained inputs.** Compiler, linker, and libc headers all come out of the one Zig download, so the
   build never reads the host's `/usr/include`, system `gcc`, or sysroot. The inputs are the vendored sources
   plus a pinned Zig version, on a laptop and on CI alike. That is what lets one job build all six targets, and
-  it is also why the glibc floor above belongs to the toolchain rather than to whichever runner image happens to
-  be current. Bit-for-bit identical output is a separate property, and not one this item claims.
+  it is also why the glibc version a Linux build links against belongs to the toolchain rather than to whichever
+  runner image happens to be current. Bit-for-bit identical output is a separate property, and not one this item claims.
 
 Uber has compiled every line of C/C++ in its Go monorepo with `zig cc`, for both x86_64 and arm64, since
-January 2023. The same case gets made for other languages too.
+January 2023.
 
 **Sources and examples**
 
