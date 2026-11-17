@@ -21,8 +21,8 @@ These are notes toward a design-pattern proposal, not a finished catalog. Some i
 with a name; others are rules I kept rediscovering and have no name yet, so the titles are working labels and may
 change.
 
-The format is borrowed from *Effective Java*: each item has a short title that states the rule, an opening that
-says why, an example from real code, and the caveats where the cost lives. Most examples come with the C prototype
+The format of the items is not final. For now each has a short title that states the rule, an opening that says
+why, an example from real code, and the caveats where the cost lives. Most examples come with the C prototype
 they bind, copied from `zstd.h`, `lmdb.h` or RocksDB's `c.h`. Half of FFM is reading a header correctly, and a Java
 snippet without its prototype hides the half that goes wrong. Code that shows a mistake is marked `// WRONG:` and
 followed by the fix, marked `// RIGHT:`.
@@ -772,7 +772,7 @@ public final class ZstdCompressStream extends NativeObject {
     private final ZstdStreamBuffer in;    // backed by `arena`
     private final ZstdStreamBuffer out;   // backed by `arena`
 
-    public ZstdCompressStream(ZstdCompressionLevel level) {
+    public ZstdCompressStream() {
         super(createCctx());              // NativeObject owns the CCtx pointer, freed by tryClose below
         this.arena = Arena.ofConfined();  // this wrapper's own resource, independent of the pointer above
         this.in = new ZstdStreamBuffer(arena);
@@ -1086,11 +1086,11 @@ try (LmdbEnv env = LmdbEnv.create()
 ```
 
 ```java
-public LmdbEnv open(Path path, Set<LmdbEnvFlag> flags, int mode) {
+public LmdbEnv open(Path path, Set<LmdbEnvFlag> flags) {
     int bits = LmdbFlag.toBits(flags);                               // the only conversion
     try (Arena arena = Arena.ofConfined()) {
         MemorySegment pathPtr = arena.allocateFrom(path.toString());
-        int code = (int) Bindings.ENV_OPEN.invokeExact(ptr(), pathPtr, bits, mode);
+        int code = (int) Bindings.ENV_OPEN.invokeExact(ptr(), pathPtr, bits, 0644);
         NativeCall.check(code);                                      // Item 16
     }
     return this;
@@ -1593,8 +1593,8 @@ Linux or macOS runner. No MinGW install, no Wine, no Windows box anywhere in the
 
 - **The `zig cc` version itself.** A toolchain upgrade changing codegen or its bundled libc between one release
   and the next is exactly the kind of drift a build matrix is supposed to prevent. Pin the Zig version through
-  the `version` input of `mlugg/setup-zig`, and pin the action itself to a commit SHA rather than a floating tag
-  (both projects do the latter), for the same reason a `pom.xml` pins dependency versions instead of ranges.
+  the `version` input of `mlugg/setup-zig`, and pin the action itself to a commit SHA rather than a floating
+  tag, for the same reason a `pom.xml` pins dependency versions instead of ranges.
 - **Self-contained inputs.** Compiler, linker, and libc headers all come out of the one Zig download, so the
   build never reads the host's `/usr/include`, system `gcc`, or sysroot. The inputs are the vendored sources
   plus a pinned Zig version, on a laptop and on CI alike. That is what lets one job build all six targets, and
